@@ -1,0 +1,381 @@
+/**
+ * ROIController — handles all ROI interaction (creation, drag, resize, delete).
+ *
+ * Operates entirely independently of React.  Mouse events come from canvas
+ * DOM listeners registered during init().  All state is stored in this class.
+ *
+ * Screen ↔ Data coordinate conversion:
+ *   ViewportController.screenXToData / screenYToData handle this using the
+ *   current axis scales.  This means ROI positions are always in data space
+ *   and remain valid across zoom/pan operations.
+ *
+ * Creation modes:
+ *   'L' key → LinearRegion creation (2 clicks: x1, x2)
+ *   'R' key → RectROI creation (2 clicks: top-left, bottom-right)
+ *   'D' key → delete active/selected ROI
+ *   Escape  → cancel creation
+ *
+ * Event flow:
+ *   ROIController emits → PlotController listens → re-emits on own EventEmitter
+ */
+
+import { EventEmitter } from 'events';
+import { RectROI, HANDLES } from './RectROI.js';
+import { LinearRegion, LR_HANDLES } from './LinearRegion.js';
+import { ConstraintEngine } from './ConstraintEngine.js';
+
+export class ROIController extends EventEmitter {
+  /**
+   * @param {ViewportController} viewport
+   */
+  constructor(viewport) {
+    super();
+
+    this._viewport       = viewport;
+    this._constraintEngine = new ConstraintEngine();
+
+    // All ROIs keyed by id
+    this._rois = new Map();
+
+    // Interaction state
+    this._mode          = 'idle'; // 'idle' | 'createLinear' | 'createRect'
+    this._creationStep  = 0;      // 0 = waiting for first click, 1 = waiting for second
+    this._creationData  = null;   // partial bounds during creation
+
+    // Drag/resize state
+    this._dragging      = false;
+    this._dragROI       = null;   // ROI being dragged
+    this._dragHandle    = null;   // handle type
+    this._dragStartData = null;   // { dataX, dataY } at mousedown
+    this._dragStartBounds = null; // ROI bounds at mousedown
+
+    // Currently selected ROI
+    this._activeROI     = null;
+
+    // Canvas reference (set during init)
+    this._canvas        = null;
+
+    // Bound handlers for cleanup
+    this._onMouseDown   = this._onMouseDown.bind(this);
+    this._onMouseMove   = this._onMouseMove.bind(this);
+    this._onMouseUp     = this._onMouseUp.bind(this);
+    this._onKeyDown     = this._onKeyDown.bind(this);
+  }
+
+  // ─── Lifecycle ───────────────────────────────────────────────────────────────
+
+  /**
+   * Attach to canvas and start listening for events.
+   * @param {HTMLElement} canvas
+   */
+  init(canvas) {
+    this._canvas = canvas;
+    canvas.addEventListener('mousedown', this._onMouseDown);
+    canvas.addEventListener('mousemove', this._onMouseMove);
+    canvas.addEventListener('mouseup',   this._onMouseUp);
+    window.addEventListener('keydown',   this._onKeyDown);
+  }
+
+  destroy() {
+    if (this._canvas) {
+      this._canvas.removeEventListener('mousedown', this._onMouseDown);
+      this._canvas.removeEventListener('mousemove', this._onMouseMove);
+      this._canvas.removeEventListener('mouseup',   this._onMouseUp);
+    }
+    window.removeEventListener('keydown', this._onKeyDown);
+  }
+
+  // ─── Public ROI management ───────────────────────────────────────────────────
+
+  getAllROIs() {
+    return [...this._rois.values()];
+  }
+
+  getROI(id) {
+    return this._rois.get(id);
+  }
+
+  addROI(roi) {
+    this._rois.set(roi.id, roi);
+  }
+
+  deleteROI(id) {
+    const roi = this._rois.get(id);
+    if (!roi) return;
+
+    // Remove children from map recursively
+    roi.walkChildren(child => this._rois.delete(child.id));
+
+    roi.onDelete();
+    this._rois.delete(id);
+
+    if (this._activeROI && this._activeROI.id === id) {
+      this._activeROI = null;
+    }
+
+    this.emit('roiDeleted', { id });
+    this.emit('roisChanged', { rois: this.getAllROIs() });
+  }
+
+  // ─── Creation mode ────────────────────────────────────────────────────────────
+
+  enterCreateMode(type) {
+    this._mode         = type === 'linear' ? 'createLinear' : 'createRect';
+    this._creationStep = 0;
+    this._creationData = null;
+    this.emit('modeChanged', { mode: this._mode });
+  }
+
+  cancelCreateMode() {
+    this._mode         = 'idle';
+    this._creationStep = 0;
+    this._creationData = null;
+    this.emit('modeChanged', { mode: 'idle' });
+  }
+
+  // ─── Event handlers ───────────────────────────────────────────────────────────
+
+  _onKeyDown(e) {
+    switch (e.key.toLowerCase()) {
+      case 'l':
+        this.enterCreateMode('linear');
+        break;
+      case 'r':
+        this.enterCreateMode('rect');
+        break;
+      case 'd':
+        if (this._activeROI) {
+          this.deleteROI(this._activeROI.id);
+        }
+        break;
+      case 'escape':
+        this.cancelCreateMode();
+        break;
+      default:
+        break;
+    }
+  }
+
+  _onMouseDown(e) {
+    if (e.button !== 0) return; // left button only
+
+    const { dataX, dataY, screenX, screenY } = this._viewport.eventToData(e, this._canvas);
+
+    if (!this._viewport.isInPlotArea(screenX, screenY)) return;
+
+    // ── Creation mode: handle clicks for 2-click workflow ──────────────────
+    if (this._mode === 'createLinear') {
+      this._handleLinearCreationClick(dataX, dataY);
+      return;
+    }
+
+    if (this._mode === 'createRect') {
+      this._handleRectCreationClick(dataX, dataY);
+      return;
+    }
+
+    // ── Idle mode: check for ROI hit ────────────────────────────────────────
+    const hit = this._hitTest(screenX, screenY);
+
+    if (hit) {
+      this._activeROI     = hit.roi;
+      this._dragging      = true;
+      this._dragROI       = hit.roi;
+      this._dragHandle    = hit.handle;
+      this._dragStartData = { dataX, dataY };
+      this._dragStartBounds = hit.roi.getBounds();
+
+      // Deselect all, select hit ROI
+      this._selectOnly(hit.roi);
+      this.emit('roiSelected', { roi: hit.roi });
+    } else {
+      // Click on empty space → deselect
+      this._deselectAll();
+      this._activeROI = null;
+      this.emit('roiDeselected', {});
+    }
+  }
+
+  _onMouseMove(e) {
+    const { dataX, dataY, screenX, screenY } = this._viewport.eventToData(e, this._canvas);
+
+    if (this._dragging && this._dragROI) {
+      // Compute data-space delta from drag start
+      const dx = dataX - this._dragStartData.dataX;
+      const dy = dataY - this._dragStartData.dataY;
+
+      const roi = this._dragROI;
+
+      // Restore to start bounds then apply delta (avoids float drift)
+      const sb = this._dragStartBounds;
+      roi.x1 = sb.x1; roi.x2 = sb.x2;
+      roi.y1 = sb.y1; roi.y2 = sb.y2;
+
+      if (roi.type === 'linearRegion') {
+        roi.applyDelta(this._dragHandle, dx);
+      } else {
+        roi.applyDelta(this._dragHandle, dx, dy);
+      }
+
+      // Enforce constraints upward (parent might clip this ROI)
+      if (roi.parent) {
+        // xLocked rects always track parent x bounds exactly
+        if (roi.xLocked) {
+          roi.x1 = roi.parent.x1;
+          roi.x2 = roi.parent.x2;
+        } else {
+          this._constraintEngine._clampChild(roi, roi.parent);
+        }
+        roi.emit('onUpdate', { roi, bounds: roi.getBounds() });
+      }
+
+      // Enforce constraints downward (children follow)
+      const delta = roi.type === 'linearRegion'
+        ? { dx: roi.x1 - sb.x1, dy: 0 }
+        : { dx: roi.x1 - sb.x1, dy: roi.y1 - sb.y1 };
+
+      this._constraintEngine.enforceConstraints(roi, delta);
+
+      this.emit('roiUpdated', { roi, bounds: roi.getBounds() });
+      this.emit('roisChanged', { rois: this.getAllROIs() });
+      return;
+    }
+
+    // Hover detection (update hovered state for visual feedback)
+    for (const roi of this._rois.values()) {
+      roi.hovered = false;
+    }
+
+    if (this._viewport.isInPlotArea(screenX, screenY)) {
+      const hit = this._hitTest(screenX, screenY);
+      if (hit) hit.roi.hovered = true;
+    }
+  }
+
+  _onMouseUp(e) {
+    if (this._dragging) {
+      this._dragging      = false;
+      this._dragROI       = null;
+      this._dragHandle    = null;
+      this._dragStartData = null;
+    }
+  }
+
+  // ─── Creation helpers ─────────────────────────────────────────────────────────
+
+  _handleLinearCreationClick(dataX, dataY) {
+    if (this._creationStep === 0) {
+      this._creationData  = { x1: dataX };
+      this._creationStep  = 1;
+    } else {
+      const { x1 } = this._creationData;
+      const x2 = dataX;
+      const lr  = new LinearRegion({
+        x1: Math.min(x1, x2),
+        x2: Math.max(x1, x2),
+      });
+
+      this._rois.set(lr.id, lr);
+      lr.onCreate();
+      this._activeROI = lr;
+      this._selectOnly(lr);
+
+      this.emit('roiCreated', { roi: lr, type: 'linearRegion' });
+      this.emit('roisChanged', { rois: this.getAllROIs() });
+      this.cancelCreateMode();
+    }
+  }
+
+  _handleRectCreationClick(dataX, dataY) {
+    if (this._creationStep === 0) {
+      this._creationData = { x1: dataX, y1: dataY };
+      this._creationStep = 1;
+    } else {
+      const { x1, y1 } = this._creationData;
+      const x2 = dataX;
+      const y2 = dataY;
+
+      const rect = new RectROI({
+        x1: Math.min(x1, x2),
+        x2: Math.max(x1, x2),
+        y1: Math.min(y1, y2),
+        y2: Math.max(y1, y2),
+      });
+
+      // Try to parent this rect inside the first LinearRegion it overlaps
+      const parent = this._findLinearRegionParent(rect);
+      if (parent) {
+        rect.setParent(parent);
+        // Bind x bounds exactly to the parent LinearRegion
+        rect.xLocked = true;
+        rect.x1 = parent.x1;
+        rect.x2 = parent.x2;
+        // Clamp y within parent (no-op for LinearRegion which has ±Infinity y)
+        this._constraintEngine._clampChild(rect, parent);
+      }
+
+      this._rois.set(rect.id, rect);
+      rect.onCreate();
+      this._activeROI = rect;
+      this._selectOnly(rect);
+
+      this.emit('roiCreated', { roi: rect, type: 'rect' });
+      this.emit('roisChanged', { rois: this.getAllROIs() });
+      this.cancelCreateMode();
+    }
+  }
+
+  /**
+   * Find the first LinearRegion that contains the given RectROI (by x-overlap).
+   */
+  _findLinearRegionParent(rect) {
+    for (const roi of this._rois.values()) {
+      if (roi.type !== 'linearRegion') continue;
+      if (rect.x1 >= roi.x1 && rect.x2 <= roi.x2) {
+        return roi;
+      }
+    }
+    return null;
+  }
+
+  // ─── Hit testing ─────────────────────────────────────────────────────────────
+
+  /**
+   * Find the topmost ROI under screen position.
+   * @returns {{ roi, handle } | null}
+   */
+  _hitTest(screenX, screenY) {
+    // Iterate in reverse insertion order (later = on top)
+    const rois = [...this._rois.values()].reverse();
+
+    for (const roi of rois) {
+      if (!roi.flags.visible) continue;
+
+      if (roi.type === 'linearRegion') {
+        const handle = roi.hitTest(screenX, screenY, this._viewport);
+        if (handle !== LR_HANDLES.NONE) return { roi, handle };
+      } else {
+        const handle = roi.hitTestHandles(screenX, screenY, this._viewport);
+        if (handle !== HANDLES.NONE) return { roi, handle };
+      }
+    }
+
+    return null;
+  }
+
+  // ─── Selection helpers ────────────────────────────────────────────────────────
+
+  _selectOnly(target) {
+    for (const roi of this._rois.values()) {
+      roi.selected = roi === target;
+    }
+  }
+
+  _deselectAll() {
+    for (const roi of this._rois.values()) {
+      roi.selected = false;
+    }
+  }
+}
+
+export default ROIController;
