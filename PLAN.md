@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 2.1
+**Plan Version:** 2.2
 **Last Updated:** 2026-02-21
-**Status:** All items COMPLETED
+**Status:** F10 PENDING
 
 ---
 
@@ -29,7 +29,127 @@ This document tracks the multi-step implementation of MasterPlot. Each step has 
 
 ---
 
-## ✅ ALL ITEMS COMPLETED
+## F10 [PENDING] Feature: Audio file loading in SpectrogramExample
+
+**File:** `examples/SpectrogramExample.jsx` (only file changed — no webpack changes needed)
+
+**Behaviour:**
+- Add an **"Open audio file"** button in the header that triggers a hidden `<input type="file" accept="audio/*">`. The browser's native file picker lets the user navigate to the `sounds/` folder and select a file.
+- Supported formats: anything the browser's `AudioContext.decodeAudioData` can decode (WAV, MP3, OGG, FLAC, etc.).
+- On file select:
+  1. Stop live-append (clear interval, uncheck checkbox).
+  2. Decode audio via `AudioContext.decodeAudioData` — uses the file's actual `sampleRate` (may differ from 44100).
+  3. Clear all existing sample + waveform data.
+  4. Load decoded PCM (`audioBuffer.getChannelData(0)`) directly into `samplesRef`.
+  5. Downsample for waveform using the same `WAVEFORM_STEP = 50` logic as `appendSamples`.
+  6. Update both x-axis domains to `[0, durationSecs]` and spectrogram y-axis to `[0, sr / 2]`.
+  7. Trigger dirty flags on both panels.
+  8. Log: `Loaded: <filename>  ·  <sr> Hz  ·  <dur>s`
+- While decoding, button shows "Loading…" and is disabled.
+- After load, clicking "Open audio file" again clears old data and loads the new file.
+
+**New refs and state:**
+```js
+const fileInputRef        = useRef(null);
+const loadedSampleRateRef = useRef(SAMPLE_RATE);  // actual sr of loaded audio
+const [loading, setLoading] = useState(false);
+```
+
+**`handleFileLoad` async function** (add after `handleWindowSizeChange`):
+```js
+const handleFileLoad = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  setLoading(true);
+  clearInterval(intervalRef.current);
+  setLiveAppend(false);
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const audioCtx    = new AudioContext();
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    audioCtx.close();
+    const pcm = audioBuffer.getChannelData(0);
+    const sr  = audioBuffer.sampleRate;
+    loadedSampleRateRef.current = sr;
+    // Clear all existing data
+    samplesRef.current   = new Float32Array(0);
+    sampleCntRef.current = 0;
+    waveXRef.current     = new Float32Array(0);
+    waveYRef.current     = new Float32Array(0);
+    // Load PCM
+    samplesRef.current   = pcm;
+    sampleCntRef.current = pcm.length;
+    dataTriggerRef.current += 1;
+    // Downsample for waveform
+    const numWavePts = Math.floor(pcm.length / WAVEFORM_STEP);
+    const newWX = new Float32Array(numWavePts);
+    const newWY = new Float32Array(numWavePts);
+    for (let i = 0; i < numWavePts; i++) {
+      newWX[i] = (i * WAVEFORM_STEP) / sr;
+      newWY[i] = pcm[i * WAVEFORM_STEP];
+    }
+    waveXRef.current = newWX;
+    waveYRef.current = newWY;
+    waveDataTrigger.current += 1;
+    const durationSecs = pcm.length / sr;
+    xAxisRef.current?.setDomain([0, durationSecs]);
+    waveXAxisRef.current?.setDomain([0, durationSecs]);
+    yAxisRef.current?.setDomain([0, sr / 2]);   // Nyquist for this file
+    dirtyRef.current     = true;
+    waveDirtyRef.current = true;
+    addLog(`Loaded: ${file.name}  ·  ${sr} Hz  ·  ${durationSecs.toFixed(2)}s`);
+  } catch (err) {
+    addLog(`Error loading file: ${err.message}`);
+  }
+  setLoading(false);
+  e.target.value = '';  // allow re-loading same file
+};
+```
+
+**Fix `renderFrame`** — replace hardcoded `SAMPLE_RATE` with ref so it matches loaded audio:
+```js
+// BEFORE:
+sampleRate:  SAMPLE_RATE,
+// AFTER:
+sampleRate:  loadedSampleRateRef.current,
+```
+
+**JSX header** — add after the "Live append" label:
+```jsx
+<label style={checkboxLabelStyle}>
+  <button
+    onClick={() => fileInputRef.current?.click()}
+    disabled={loading}
+    style={{
+      background: '#222', border: '1px solid #555', borderRadius: 3,
+      color: loading ? '#555' : '#adf', padding: '2px 8px',
+      fontSize: 12, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'monospace',
+    }}
+  >
+    {loading ? 'Loading…' : 'Open audio file'}
+  </button>
+  <input
+    ref={fileInputRef}
+    type="file"
+    accept="audio/*"
+    style={{ display: 'none' }}
+    onChange={handleFileLoad}
+  />
+</label>
+```
+
+**After fix:** Build with `npx webpack --mode development`, 0 errors. Verify:
+- Click "Open audio file" → navigate to `sounds/07069030.wav` → Open.
+- Chirp + noise data clears immediately; spectrogram fills with real audio STFT.
+- Waveform panel shows decoded PCM shape.
+- X-axis domain matches file duration; y-axis Nyquist matches file's sample rate.
+- Live append checkbox is unchecked; no new data added.
+- Log shows `Loaded: 07069030.wav · <sr> Hz · <dur>s`.
+- Re-loading the same file or a different file works correctly.
+
+---
+
+## ✅ PREVIOUSLY COMPLETED (B7–B8, F7–F9)
 
 ---
 
@@ -954,4 +1074,5 @@ const row = bin;
 - **2026-02-21 [Claude]**: F4, F5, F6 all implemented. F4: added `_panMode` state and `setPanMode()` public method; drag-pan branch in `_onMouseMove` uses restore-and-reapply with inverted signs. F5: `_panCurrentPos` added; `_scheduleRender` RAF loop applies velocity tick for follow mode (dead zone 5 px, speed 0.02). F6: `contextmenu` event suppressed; `_handleRightDown`/`_handleRightMove` private methods handle right-click drag zoom centred on click origin, restore-and-reapply pattern prevents float drift. ExampleApp: "Drag pan" checkbox added to header wired to `setPanMode`. Build: `webpack compiled successfully` 0 errors.
 - **2026-02-21 [Claude]**: B7 — Fixed y-axis pan direction bugs in F4 and F5. Root cause: the d3 y scale uses an inverted range `[plotBottom, plotTop]`, making `pxSpan` negative inside `panByPixels`, which reverses its effective direction vs x. Follow velocity (F5): changed `+dy * speed` → `-dy * speed`. Drag mode (F4): changed `panByPixels(-dy)` → `panByPixels(dy)`. Both fixes make y-axis pan direction consistent with x-axis behavior. Also added Y-axis Coordinate Convention section to `prompt.md` documenting this gotcha. Build: `webpack compiled successfully` 0 errors.
 - **2026-02-21 [Claude]**: F7 — `FOLLOW_PAN_SPEED` hardcoded constant removed from `_scheduleRender`; all 4 usages replaced with `this._followPanSpeed`. Pan speed slider (`<input type="range">` 0.005–0.1, step 0.001) added to ExampleApp header, wired to `setFollowPanSpeed()`. F8 — `LinePlotController.js` created (signal registry, mutable path arrays with `updateTriggers`, drag-pan, wheel-zoom, RAF loop, auto domain expand). `LineExample.jsx` demonstrates 3 random-walk signals (cyan/orange/lime) with live 500-sample/s append and Reset. `src/line.js` entry point + `public/line.html` template added. F9 — `fft.js` installed (npm). `SpectrogramLayer.js` (CompositeLayer): STFT with Hann window via fft.js → dB normalization → 16-stop Viridis LUT → OffscreenCanvas `ImageData` → `BitmapLayer` with bounds `[0,0,durationSecs,sampleRate/2]`. `SpectrogramExample.jsx` demonstrates chirp (440→4400 Hz) + pink noise at 44100 Hz with live 0.25 s/tick append and windowSize selector. `src/spectrogram.js` + `public/spectrogram.html` added. `webpack.config.js` converted to multi-entry (`main`/`line`/`spectrogram`) with separate `HtmlWebpackPlugin` instances per page. Build: `webpack compiled successfully` 0 errors, 3 HTML outputs.
+- **2026-02-21 [Claude]**: F10 added (PENDING) — Audio file loading for SpectrogramExample. Uses browser `<input type="file">` + `AudioContext.decodeAudioData`; no webpack changes needed. Clears existing data on load, uses file's actual sampleRate for both spectrogram and waveform panels. Next agent implements F10 then rebuilds.
 - **2026-02-21 [Claude]**: B8 — Four fixes applied to resolve blank spectrogram. (A) `dataTrigger` numeric prop added to `SpectrogramLayer.defaultProps`; `SpectrogramExample` increments `dataTriggerRef` on every `appendSamples()` and `windowSize` change, passes it to the layer — guarantees deck.gl re-invokes `renderLayers()`. (B) `updateTriggers: { image: this.props.dataTrigger }` added to BitmapLayer inside `renderLayers()` — forces luma.gl texture re-upload. (C) `buildImage()` now calls `canvas.transferToImageBitmap()` if available before returning — luma.gl 8.5.x silently fails with raw `OffscreenCanvas`. (D) Manual row-flip removed (`row = bin` instead of `row = numBins - 1 - bin`): BitmapLayer/luma.gl already applies `UNPACK_FLIP_Y_WEBGL`; the previous double-flip put 0 Hz at the top. Build: `webpack compiled successfully` 0 errors.
