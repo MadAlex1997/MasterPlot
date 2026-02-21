@@ -36,6 +36,7 @@ export default function ExampleApp() {
   const [liveAppend, setLiveAppend] = useState(true);
   const [autoExpand, setAutoExpand] = useState(true);
   const [dragPan, setDragPan] = useState(false);
+  const [panSpeed, setPanSpeed] = useState(0.02);
 
   const addLog = (msg) => {
     setLog(prev => [msg, ...prev].slice(0, 20));
@@ -139,6 +140,12 @@ export default function ExampleApp() {
     setDragPan(checked);
   };
 
+  const handlePanSpeedChange = (e) => {
+    const v = parseFloat(e.target.value);
+    plotRef.current?.getController()?.setFollowPanSpeed(v);
+    setPanSpeed(v);
+  };
+
   const containerStyle = {
     display:       'flex',
     flexDirection: 'column',
@@ -222,6 +229,13 @@ export default function ExampleApp() {
         <label style={checkboxLabelStyle}>
           <input type="checkbox" checked={dragPan} onChange={handleDragPanChange} />
           Drag pan
+        </label>
+        <label style={checkboxLabelStyle}>
+          Pan speed
+          <input type="range" min="0.005" max="0.1" step="0.001"
+            value={panSpeed} onChange={handlePanSpeedChange}
+            style={{ verticalAlign: 'middle', margin: '0 4px' }} />
+          {panSpeed.toFixed(3)}
         </label>
         <span style={{ marginLeft: 'auto', color: '#666' }}>ROIs: {roiCount}</span>
       </div>

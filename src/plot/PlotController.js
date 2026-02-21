@@ -92,6 +92,9 @@ export class PlotController extends EventEmitter {
     // F4: pan mode toggle
     this._panMode = opts.panMode || 'follow';
 
+    // F7: follow pan speed — runtime-tunable (default matches original hardcoded value)
+    this._followPanSpeed = 0.02;
+
     // F5: follow pan velocity — current cursor position updated each mousemove
     this._panCurrentPos = null;  // { x, y }
 
@@ -210,6 +213,11 @@ export class PlotController extends EventEmitter {
     this._panMode = (mode === 'drag') ? 'drag' : 'follow';
   }
 
+  /** @param {number} speed  Tuning range: 0.005 – 0.1 */
+  setFollowPanSpeed(speed) {
+    this._followPanSpeed = Math.max(0.001, Number(speed));
+  }
+
   // ─── Zoom / Pan ────────────────────────────────────────────────────────────
 
   /**
@@ -264,16 +272,15 @@ export class PlotController extends EventEmitter {
         const dx   = this._panCurrentPos.x - this._panStart.screenX;
         const dy   = this._panCurrentPos.y - this._panStart.screenY;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        const DEAD_ZONE        = 5;
-        const FOLLOW_PAN_SPEED = 0.02;
+        const DEAD_ZONE = 5;
         if (dist > DEAD_ZONE) {
-          this._xAxis.panByPixels(-dx * FOLLOW_PAN_SPEED);
-          this._yAxis.panByPixels(-dy * FOLLOW_PAN_SPEED); // negate: inverted y range flips panByPixels direction
+          this._xAxis.panByPixels(-dx * this._followPanSpeed);
+          this._yAxis.panByPixels(-dy * this._followPanSpeed); // negate: inverted y range flips panByPixels direction
           this._updateScales();
           this._dirty = true;
           this.emit('panChanged', {
-            dx: Math.round(-dx * FOLLOW_PAN_SPEED),
-            dy: Math.round( dy * FOLLOW_PAN_SPEED),
+            dx: Math.round(-dx * this._followPanSpeed),
+            dy: Math.round( dy * this._followPanSpeed),
           });
         }
       }

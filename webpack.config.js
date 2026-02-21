@@ -5,7 +5,12 @@ module.exports = (env, argv) => {
   const isDev = argv.mode === 'development';
 
   return {
-    entry: './src/index.js',
+    // Multi-entry: one bundle per example page
+    entry: {
+      main:        './src/index.js',
+      line:        './src/line.js',
+      spectrogram: './src/spectrogram.js',
+    },
     output: {
       path: path.resolve(__dirname, 'dist'),
       filename: isDev ? '[name].js' : '[name].[contenthash].js',
@@ -33,6 +38,17 @@ module.exports = (env, argv) => {
       new HtmlWebpackPlugin({
         template: './public/index.html',
         filename: 'index.html',
+        chunks:   ['main'],
+      }),
+      new HtmlWebpackPlugin({
+        template: './public/line.html',
+        filename: 'line.html',
+        chunks:   ['line'],
+      }),
+      new HtmlWebpackPlugin({
+        template: './public/spectrogram.html',
+        filename: 'spectrogram.html',
+        chunks:   ['spectrogram'],
       }),
     ],
     devServer: {

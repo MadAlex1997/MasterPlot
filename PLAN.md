@@ -765,6 +765,181 @@ All phases 1–10 MVP steps were COMPLETED in the initial session. The steps abo
 
 ---
 
+## F7 [COMPLETED] Feature: Runtime-tunable follow-pan speed + slider control
+
+**Files:** `src/plot/PlotController.js`, `examples/ExampleApp.jsx`
+
+**Behaviour:**
+- `FOLLOW_PAN_SPEED` is currently a hardcoded constant (0.02) inside `_scheduleRender`.
+  Convert it to an instance field `this._followPanSpeed` (default 0.02) and expose a public setter `setFollowPanSpeed(value)` so callers can tune it at runtime.
+- Add a `<input type="range" min="0.005" max="0.1" step="0.001">` slider to the ExampleApp header next to the "Drag pan" checkbox so the user can find a good balance interactively.
+  The current value is shown as a fixed-precision number beside the slider.
+
+**PlotController.js changes:**
+1. Add `this._followPanSpeed = 0.02;` in constructor after `this._panMode`.
+2. Add public method after `setPanMode()`:
+   ```js
+   /** @param {number} speed  Tuning range: 0.005 – 0.1 */
+   setFollowPanSpeed(speed) {
+     this._followPanSpeed = Math.max(0.001, Number(speed));
+   }
+   ```
+3. In `_scheduleRender()`, remove `const FOLLOW_PAN_SPEED = 0.02;` and replace both usages with `this._followPanSpeed`.
+
+**ExampleApp.jsx changes:**
+```jsx
+const [panSpeed, setPanSpeed] = useState(0.02);
+const handlePanSpeedChange = (e) => {
+  const v = parseFloat(e.target.value);
+  plotRef.current?.getController()?.setFollowPanSpeed(v);
+  setPanSpeed(v);
+};
+// In JSX after "Drag pan" label:
+<label style={checkboxLabelStyle}>
+  Pan speed
+  <input type="range" min="0.005" max="0.1" step="0.001"
+    value={panSpeed} onChange={handlePanSpeedChange}
+    style={{ verticalAlign: 'middle', margin: '0 4px' }} />
+  {panSpeed.toFixed(3)}
+</label>
+```
+
+---
+
+## F8 [COMPLETED] Feature: LineLayer example page (random-walk + live-append time series)
+
+**Files:** `webpack.config.js`, `src/line.js` (new), `examples/LineExample.jsx` (new)
+
+**Behaviour:**
+- Separate example page (`line.html`) demonstrating `buildLineLayer` (PathLayer wrapper).
+- Three independent random-walk signals (A, B, C) with distinct colours: cyan, orange, lime.
+- X axis: linear sample index 0–N. Y axis: linear value range auto-fit.
+- Live append: every 1 s, 500 new samples added to each signal; layer rebuilt each tick.
+- Header controls: Live append checkbox, Reset button (clears signals and restarts).
+- Event log panel (same style as ExampleApp, last 20 entries).
+- No ROI, no scatter — line layers only.
+
+**webpack.config.js changes:** Convert single entry to multi-entry object; add two new HtmlWebpackPlugin instances for `line.html` and `spectrogram.html`.
+
+---
+
+## F9 [COMPLETED] Feature: SpectrogramLayer — STFT via fft.js + BitmapLayer rendering
+
+**Files:** `package.json` (+fft.js), `src/plot/layers/SpectrogramLayer.js` (new), `src/spectrogram.js` (new), `examples/SpectrogramExample.jsx` (new)
+
+**Behaviour:**
+- New `buildSpectrogramLayer(samples, opts)` builder function (same style as existing layer builders).
+- `samples`: `Float32Array` of raw time-domain samples.
+- `opts`: `{ sampleRate, windowSize=1024, hopSize=512 }`
+- Internal CPU pipeline:
+  1. STFT using fft.js (Hann window, radix-2); output: power matrix `[numFrames × windowSize/2]`.
+  2. dB normalization (global min/max).
+  3. Viridis colour-map (hardcoded 16-stop LUT — no extra dep).
+  4. `ImageData` → `BitmapLayer` with bounds `[0, 0, durationSecs, sampleRate/2]`.
+- Demo page (`spectrogram.html`): 5-second chirp (440 → 4400 Hz) at 44100 Hz sampleRate + pink noise.
+  Live append: every 500 ms, extend chirp by 0.25 s and rebuild layer.
+  Header: windowSize selector (256/512/1024/2048), Live append checkbox.
+
+---
+
+## B8 [COMPLETED] Fix: Spectrogram page shows blank graph
+
+**Files:** `src/plot/layers/SpectrogramLayer.js`, `examples/SpectrogramExample.jsx`
+
+**Symptom:** The spectrogram demo page renders axes correctly but shows no spectrogram image.
+
+**Root causes (four compounding issues):**
+
+### Cause A — No `dataTrigger` counter (CompositeLayer re-invocation)
+
+`SpectrogramLayer.renderLayers()` is a CompositeLayer method that deck.gl 8.x only re-runs when the layer's props change. The `samples` prop (`type: 'object'`) uses reference equality — it changes each append because `appendSamples` creates a new `Float32Array`. This *should* work, but it is fragile and can silently break if deck.gl batches or short-circuits prop comparisons. A numeric counter prop (`dataTrigger`) is the established pattern in this codebase (`PlotController._dataTrigger`) and guarantees re-invocation.
+
+**Fix — add `dataTrigger` to `SpectrogramLayer.defaultProps`:**
+```js
+SpectrogramLayer.defaultProps = {
+  samples:      { type: 'object',  value: null  },
+  sampleRate:   { type: 'number',  value: 44100 },
+  windowSize:   { type: 'number',  value: 1024  },
+  hopSize:      { type: 'number',  value: 512   },
+  dataTrigger:  { type: 'number',  value: 0     },  // ← add
+};
+```
+
+**SpectrogramExample.jsx** — add a ref and pass it:
+```js
+const dataTriggerRef = useRef(0);
+
+// Inside appendSamples(), after growing samplesRef.current:
+dataTriggerRef.current += 1;
+
+// Inside renderFrame(), inside the SpectrogramLayer props:
+dataTrigger: dataTriggerRef.current,
+```
+
+### Cause B — BitmapLayer `image` prop has no `updateTrigger`
+
+deck.gl 8.x sub-layers inside a CompositeLayer are reconciled by ID (`'spectrogram-bitmap'`). When `renderLayers()` returns a new `BitmapLayer` with a new canvas, deck.gl checks whether the `image` prop changed. For accessor-driven props this requires `updateTriggers`; for plain object props deck.gl compares by reference — but `BitmapLayer.image` is internally handled as a texture prop and may not be re-uploaded without an explicit trigger.
+
+**Fix — add `updateTriggers` to the BitmapLayer inside `renderLayers()`:**
+```js
+new BitmapLayer(this.getSubLayerProps({
+  id:             'bitmap',
+  image,
+  bounds:         [0, 0, durationSecs, sampleRate / 2],
+  updateTriggers: { image: this.props.dataTrigger },  // ← add
+})),
+```
+
+### Cause C — `OffscreenCanvas` not supported as luma.gl 8.5.x texture source
+
+`@luma.gl/core@^8.5.21` creates a `Texture2D` from the `image` prop using `gl.texImage2D`. luma.gl 8.5.x accepts `HTMLCanvasElement`, `HTMLImageElement`, and `ImageBitmap`, but `OffscreenCanvas` support is unreliable at this version. Passing an `OffscreenCanvas` may silently produce an empty/black texture.
+
+**Fix — call `transferToImageBitmap()` to convert OffscreenCanvas to ImageBitmap before returning:**
+```js
+// Replace the canvas return in buildImage() with:
+ctx.putImageData(imgData, 0, 0);
+// Return ImageBitmap (supported by luma.gl 8.x) instead of raw OffscreenCanvas
+if (canvas.transferToImageBitmap) {
+  return canvas.transferToImageBitmap();
+}
+return canvas;  // HTMLCanvasElement fallback path — already compatible
+```
+
+### Cause D — Double Y-flip makes the spectrogram inverted (shows upside-down, not blank)
+
+`buildImage()` manually flips rows: `row = numBins - 1 - bin` so that bin 0 (0 Hz DC) sits at the bottom row of the canvas. However, deck.gl 8.x `BitmapLayer` uploads canvas/ImageBitmap textures with `gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)`, which flips the image again during GPU upload. This double-flip results in 0 Hz appearing at the *top* of the spectrogram — which is visually inverted rather than blank, but on a dark background with mostly dark-purple low-power colors the error can look like a blank or near-blank image.
+
+**Fix — remove the manual row flip from `buildImage()`; let BitmapLayer/WebGL's UNPACK_FLIP_Y do the single correct flip:**
+```js
+// BEFORE (double-flip — wrong):
+const row = numBins - 1 - bin;
+
+// AFTER (no manual flip — correct, WebGL UNPACK_FLIP_Y handles orientation):
+const row = bin;
+```
+
+---
+
+**Investigation checklist (run in order if fixes don't immediately resolve the blank):**
+
+1. Add `console.log('[SpectrogramLayer] renderLayers called, numFrames=', numFrames)` at the top of `renderLayers()` — verify it's called at all and with non-zero frames.
+2. Log `globalMin`, `globalMax` from `computeSTFT` — if they are equal the image is monochrome dark purple.
+3. Log the first pixel of the image canvas to confirm ImageData is being written.
+4. In browser DevTools → WebGL inspector (or console `gl.getError()`) — check for texture upload errors.
+
+**After fix:** Build with `npx webpack --mode development`, 0 errors. Verify:
+- Spectrogram image fills the plot area with a Viridis colour gradient (dark purple → yellow).
+- The chirp sweep appears as a diagonal bright band rising left-to-right.
+- 0 Hz is at the visual bottom; Nyquist (22050 Hz) is at the top (matching the y-axis tick labels).
+- Live append extends the spectrogram rightward every 500 ms; the x-domain auto-expands.
+- Scroll-wheel zoom and drag-pan work correctly.
+
+---
+
+## ✅ ALL ITEMS COMPLETED (updated — B8 included)
+
+---
+
 ## Change Log
 
 - **2026-02-20 [Initial]**: Plan created. All steps initialized as PENDING.
@@ -778,3 +953,5 @@ All phases 1–10 MVP steps were COMPLETED in the initial session. The steps abo
 - **2026-02-21 [Claude]**: User requested three new features: pan mode toggle (follow/drag), follow pan continuous velocity joystick mode, right-click context menu suppression + drag zoom. Added F4, F5, F6. Updated prompt.md with git branch rule (rule #6). Branch `feature/F4-F5-F6` created for implementation.
 - **2026-02-21 [Claude]**: F4, F5, F6 all implemented. F4: added `_panMode` state and `setPanMode()` public method; drag-pan branch in `_onMouseMove` uses restore-and-reapply with inverted signs. F5: `_panCurrentPos` added; `_scheduleRender` RAF loop applies velocity tick for follow mode (dead zone 5 px, speed 0.02). F6: `contextmenu` event suppressed; `_handleRightDown`/`_handleRightMove` private methods handle right-click drag zoom centred on click origin, restore-and-reapply pattern prevents float drift. ExampleApp: "Drag pan" checkbox added to header wired to `setPanMode`. Build: `webpack compiled successfully` 0 errors.
 - **2026-02-21 [Claude]**: B7 — Fixed y-axis pan direction bugs in F4 and F5. Root cause: the d3 y scale uses an inverted range `[plotBottom, plotTop]`, making `pxSpan` negative inside `panByPixels`, which reverses its effective direction vs x. Follow velocity (F5): changed `+dy * speed` → `-dy * speed`. Drag mode (F4): changed `panByPixels(-dy)` → `panByPixels(dy)`. Both fixes make y-axis pan direction consistent with x-axis behavior. Also added Y-axis Coordinate Convention section to `prompt.md` documenting this gotcha. Build: `webpack compiled successfully` 0 errors.
+- **2026-02-21 [Claude]**: F7 — `FOLLOW_PAN_SPEED` hardcoded constant removed from `_scheduleRender`; all 4 usages replaced with `this._followPanSpeed`. Pan speed slider (`<input type="range">` 0.005–0.1, step 0.001) added to ExampleApp header, wired to `setFollowPanSpeed()`. F8 — `LinePlotController.js` created (signal registry, mutable path arrays with `updateTriggers`, drag-pan, wheel-zoom, RAF loop, auto domain expand). `LineExample.jsx` demonstrates 3 random-walk signals (cyan/orange/lime) with live 500-sample/s append and Reset. `src/line.js` entry point + `public/line.html` template added. F9 — `fft.js` installed (npm). `SpectrogramLayer.js` (CompositeLayer): STFT with Hann window via fft.js → dB normalization → 16-stop Viridis LUT → OffscreenCanvas `ImageData` → `BitmapLayer` with bounds `[0,0,durationSecs,sampleRate/2]`. `SpectrogramExample.jsx` demonstrates chirp (440→4400 Hz) + pink noise at 44100 Hz with live 0.25 s/tick append and windowSize selector. `src/spectrogram.js` + `public/spectrogram.html` added. `webpack.config.js` converted to multi-entry (`main`/`line`/`spectrogram`) with separate `HtmlWebpackPlugin` instances per page. Build: `webpack compiled successfully` 0 errors, 3 HTML outputs.
+- **2026-02-21 [Claude]**: B8 — Four fixes applied to resolve blank spectrogram. (A) `dataTrigger` numeric prop added to `SpectrogramLayer.defaultProps`; `SpectrogramExample` increments `dataTriggerRef` on every `appendSamples()` and `windowSize` change, passes it to the layer — guarantees deck.gl re-invokes `renderLayers()`. (B) `updateTriggers: { image: this.props.dataTrigger }` added to BitmapLayer inside `renderLayers()` — forces luma.gl texture re-upload. (C) `buildImage()` now calls `canvas.transferToImageBitmap()` if available before returning — luma.gl 8.5.x silently fails with raw `OffscreenCanvas`. (D) Manual row-flip removed (`row = bin` instead of `row = numBins - 1 - bin`): BitmapLayer/luma.gl already applies `UNPACK_FLIP_Y_WEBGL`; the previous double-flip put 0 Hz at the top. Build: `webpack compiled successfully` 0 errors.
