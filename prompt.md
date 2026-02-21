@@ -37,6 +37,11 @@ All implementation work follows the plan in `PLAN.md`. **Read that file first be
    - Don't add features that aren't in the plan
    - If you finish early, ask before moving to the next phase
 
+6. **Before starting any implementation, create a new git branch:**
+   - Run: `git checkout -b feature/<step-ids>` (e.g., `git checkout -b feature/F4-F5-F6`)
+   - All commits for this work go on the feature branch — do NOT commit directly to main/master
+   - After build verification, the branch is ready for review/merge
+
 ---
 
 You are building a **production-grade scientific plotting engine** in:
@@ -288,6 +293,27 @@ Implement:
 - Drag to pan
 - Zoom modifies axis domain
 - Data buffers must NOT change during zoom
+
+## Y-axis Coordinate Convention
+
+deck.gl `OrthographicView` is explicitly `flipY: false` in MasterPlot — y is **NOT** flipped at the GPU/projection level.
+
+However, the d3 y scale uses an **inverted range** `[plotBottom_px, plotTop_px]` so that data-y=0 appears at the visual bottom and data-y=max at the top (standard scientific convention). This makes `pxSpan` inside `AxisController.panByPixels` **negative** for y.
+
+**Consequence for interaction code:**
+
+```
+dataDelta = -(pixelDelta / pxSpan) * domainSpan
+
+x axis: pxSpan > 0  →  panByPixels(+n) decreases domain (viewport shifts right)
+y axis: pxSpan < 0  →  panByPixels(+n) increases domain (double-negation — opposite of x!)
+```
+
+**Rule for any new pan/interaction code:** to achieve the same directional behavior on y as on x, **negate `dy`** relative to what you would use for `dx`.
+
+Examples:
+- Follow scroll: x uses `panByPixels(-dx)`, y must use `panByPixels(+dy)` ← `+dy` not `-dy`
+- Drag (grab) pan: x uses `panByPixels(+dx)`, y must use `panByPixels(+dy)` as well ← same sign, NOT negated
 
 ---
 

@@ -89,6 +89,17 @@ export class PlotController extends EventEmitter {
     this._isPanning    = false;
     this._panStart     = null;  // { screenX, screenY, xDomain, yDomain }
 
+    // F4: pan mode toggle
+    this._panMode = opts.panMode || 'follow';
+
+    // F5: follow pan velocity — current cursor position updated each mousemove
+    this._panCurrentPos = null;  // { x, y }
+
+    // F6: right-click drag zoom state
+    this._isRightDragging = false;
+    this._rightDragStart  = null;  // { x, y, xDomain, yDomain }
+    this._onContextMenu   = e => e.preventDefault();
+
     // Bound event handlers for cleanup
     this._onWheel      = this._onWheel.bind(this);
     this._onMouseDown  = this._onMouseDown.bind(this);
@@ -139,6 +150,7 @@ export class PlotController extends EventEmitter {
     this._roiController.init(webglCanvas);
 
     // Attach zoom/pan listeners (before ROI so priority is correct)
+    webglCanvas.addEventListener('contextmenu', this._onContextMenu);
     webglCanvas.addEventListener('wheel',     this._onWheel,     { passive: false });
     webglCanvas.addEventListener('mousedown', this._onMouseDown);
     webglCanvas.addEventListener('mousemove', this._onMouseMove);
@@ -153,6 +165,7 @@ export class PlotController extends EventEmitter {
     if (this._rafId) cancelAnimationFrame(this._rafId);
 
     if (this._webglCanvas) {
+      this._webglCanvas.removeEventListener('contextmenu', this._onContextMenu);
       this._webglCanvas.removeEventListener('wheel',     this._onWheel);
       this._webglCanvas.removeEventListener('mousedown', this._onMouseDown);
       this._webglCanvas.removeEventListener('mousemove', this._onMouseMove);
@@ -190,6 +203,11 @@ export class PlotController extends EventEmitter {
   /** Toggle whether new data appended via appendData() expands the visible domain. */
   setAutoExpand(enabled) {
     this._autoExpand = !!enabled;
+  }
+
+  /** @param {'follow'|'drag'} mode */
+  setPanMode(mode) {
+    this._panMode = (mode === 'drag') ? 'drag' : 'follow';
   }
 
   // ─── Zoom / Pan ────────────────────────────────────────────────────────────
@@ -241,6 +259,25 @@ export class PlotController extends EventEmitter {
 
   _scheduleRender() {
     this._rafId = requestAnimationFrame(() => {
+      // F5: follow pan velocity tick — runs every frame while panning in follow mode
+      if (this._isPanning && this._panMode === 'follow' && this._panCurrentPos && this._panStart) {
+        const dx   = this._panCurrentPos.x - this._panStart.screenX;
+        const dy   = this._panCurrentPos.y - this._panStart.screenY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const DEAD_ZONE        = 5;
+        const FOLLOW_PAN_SPEED = 0.02;
+        if (dist > DEAD_ZONE) {
+          this._xAxis.panByPixels(-dx * FOLLOW_PAN_SPEED);
+          this._yAxis.panByPixels(-dy * FOLLOW_PAN_SPEED); // negate: inverted y range flips panByPixels direction
+          this._updateScales();
+          this._dirty = true;
+          this.emit('panChanged', {
+            dx: Math.round(-dx * FOLLOW_PAN_SPEED),
+            dy: Math.round( dy * FOLLOW_PAN_SPEED),
+          });
+        }
+      }
+
       if (this._dirty) {
         this._render();
         this._dirty = false;
@@ -398,6 +435,9 @@ export class PlotController extends EventEmitter {
   // ─── Internal: pan ────────────────────────────────────────────────────────
 
   _onMouseDown(e) {
+    // F6: route right-click before the left-click-only guard
+    if (e.button === 2) { this._handleRightDown(e); return; }
+
     if (e.button !== 0) return;
     if (this._roiController._mode !== 'idle') return; // ROI creation takes priority
     if (this._roiController._hitTest) {
@@ -416,32 +456,79 @@ export class PlotController extends EventEmitter {
       xDomain: this._xAxis.getDomain(),
       yDomain: this._yAxis.getDomain(),
     };
+    // F5: track current cursor position for velocity pan
+    this._panCurrentPos = { x: pos.x, y: pos.y };
   }
 
   _onMouseMove(e) {
+    // F6: handle right-click drag zoom (independent of left-click pan)
+    if (this._isRightDragging) { this._handleRightMove(e); }
+
     if (!this._isPanning || !this._panStart) return;
 
     const pos = this._viewport.getCanvasPosition(e, this._webglCanvas);
-    const dx  = pos.x - this._panStart.screenX;
-    const dy  = pos.y - this._panStart.screenY;
 
-    // Restore original domain then apply delta (avoids float drift)
-    this._xAxis.setDomain(this._panStart.xDomain);
-    this._yAxis.setDomain(this._panStart.yDomain);
-
-    this._xAxis.panByPixels(-dx);
-    this._yAxis.panByPixels(dy); // y: drag up → domain shifts up
-
-    this._updateScales();
-    this._dirty = true;
-    this.emit('panChanged', { dx, dy });
+    if (this._panMode === 'drag') {
+      // F4: drag pan — data moves with cursor (restore-and-reapply, inverted signs)
+      const dx = pos.x - this._panStart.screenX;
+      const dy = pos.y - this._panStart.screenY;
+      this._xAxis.setDomain(this._panStart.xDomain);
+      this._yAxis.setDomain(this._panStart.yDomain);
+      this._xAxis.panByPixels(dx);    // drag right → data moves right
+      this._yAxis.panByPixels( dy);   // drag down → data moves down (inverted y range makes +dy correct)
+      this._updateScales();
+      this._dirty = true;
+      this.emit('panChanged', { dx, dy });
+    } else {
+      // F5: follow pan — just track position; RAF velocity tick does the work
+      this._panCurrentPos = { x: pos.x, y: pos.y };
+    }
   }
 
   _onMouseUp(e) {
-    if (this._isPanning) {
-      this._isPanning = false;
-      this._panStart  = null;
+    // F6: clear right-click drag zoom state
+    if (e.button === 2 && this._isRightDragging) {
+      this._isRightDragging = false;
+      this._rightDragStart  = null;
     }
+    if (this._isPanning) {
+      this._isPanning     = false;
+      this._panStart      = null;
+      this._panCurrentPos = null;  // F5: stop velocity pan
+    }
+  }
+
+  // F6: right-click mousedown — start drag zoom if inside plot area
+  _handleRightDown(e) {
+    const pos = this._viewport.getCanvasPosition(e, this._webglCanvas);
+    if (!this._viewport.isInPlotArea(pos.x, pos.y)) return;
+    this._isRightDragging = true;
+    this._rightDragStart  = {
+      x: pos.x, y: pos.y,
+      xDomain: this._xAxis.getDomain(),
+      yDomain: this._yAxis.getDomain(),
+    };
+  }
+
+  // F6: right-click drag — zoom centred on the right-click origin
+  _handleRightMove(e) {
+    if (!this._rightDragStart) return;
+    const pos     = this._viewport.getCanvasPosition(e, this._webglCanvas);
+    const totalDy = pos.y - this._rightDragStart.y;
+    // drag up (totalDy<0) → factor<1 → zoom in
+    const factor = Math.pow(0.992, -totalDy);
+    // Restore initial domains to avoid float drift
+    this._xAxis.setDomain(this._rightDragStart.xDomain);
+    this._yAxis.setDomain(this._rightDragStart.yDomain);
+    this._updateScales();
+    // Focal point in data space at the right-click origin
+    const focalDataX = this._viewport.screenXToData(this._rightDragStart.x);
+    const focalDataY = this._viewport.screenYToData(this._rightDragStart.y);
+    this._xAxis.zoomAround(factor, focalDataX);
+    this._yAxis.zoomAround(factor, focalDataY);
+    this._updateScales();
+    this._dirty = true;
+    this.emit('zoomChanged', { factor, focalDataX, focalDataY });
   }
 
   _onResize() {

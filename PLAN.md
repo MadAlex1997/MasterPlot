@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 1.7
+**Plan Version:** 2.1
 **Last Updated:** 2026-02-21
-**Status:** All items COMPLETED — no pending work
+**Status:** All items COMPLETED
 
 ---
 
@@ -26,6 +26,279 @@ This document tracks the multi-step implementation of MasterPlot. Each step has 
 3. **When Completing**: Mark step as `[COMPLETED]` and verify dependencies
 4. **If Something Breaks**: Mark the affected step as `[REGRESSED]` and document the issue
 5. **On Handoff**: Clearly mark next step for the following agent
+
+---
+
+## ✅ ALL ITEMS COMPLETED
+
+---
+
+## B7 [COMPLETED] Fix: Y-axis pan direction inverted in follow and drag modes (F4/F5)
+
+**Files:** `src/plot/PlotController.js`, `prompt.md`
+
+**Root cause:**
+
+The d3 y scale is set with an inverted range `[pa.y + pa.height, pa.y]` (e.g. `[620, 20]`) so that data-y=0 maps to the screen bottom. This makes `pxSpan` for y **negative** inside `panByPixels`, causing a double-negation that reverses the effective direction:
+
+```
+dataDelta = -(pixelDelta / pxSpan) * domainSpan
+x: pxSpan > 0  →  panByPixels(+n) → domain decreases (viewport shifts left/up)
+y: pxSpan < 0  →  panByPixels(+n) → domain increases (inverted vs. x!)
+```
+
+The F4/F5 code was written assuming a non-inverted y range, so both pan modes move the viewport in the wrong direction for y.
+
+**Fix 1 — Follow velocity tick in `_scheduleRender` (F5):**
+
+```js
+// BEFORE (wrong — data moves WITH drag in follow mode):
+this._yAxis.panByPixels( dy * FOLLOW_PAN_SPEED);
+
+// AFTER (correct — data scrolls OPPOSITE to drag, matching x-axis scroll direction):
+this._yAxis.panByPixels(-dy * FOLLOW_PAN_SPEED);
+```
+
+**Fix 2 — Drag mode in `_onMouseMove` (F4):**
+
+```js
+// BEFORE (wrong — data moves opposite to cursor):
+this._yAxis.panByPixels(-dy);   // inverted: drag down  → data moves down
+
+// AFTER (correct — data follows cursor, matching x-axis drag behavior):
+this._yAxis.panByPixels( dy);   // drag down → data moves down
+```
+
+**Why the signs feel counterintuitive:** for x, drag and drag-pan signs are opposite (`-dx` for follow, `+dx` for drag). For y they end up both positive-`dy` (follow → `-dy`, drag → `+dy`) because the inverted range already flips the direction once — any additional negation cancels it.
+
+**`prompt.md` note to add** (in or near the Zoom & Pan section):
+
+```
+### Y-axis Coordinate Convention
+
+deck.gl `OrthographicView` is explicitly `flipY: false` in MasterPlot — y is NOT
+flipped at the GPU/projection level.
+
+However, the d3 y scale uses an **inverted range** `[plotBottom_px, plotTop_px]`
+so that data-y=0 appears at the visual bottom and data-y=max at the top (standard
+scientific convention). This means `pxSpan` inside `panByPixels` is **negative** for y.
+
+Consequence for interaction code:
+- `panByPixels(+n)` on y → domain **increases** (you see higher values)
+- `panByPixels(-n)` on y → domain **decreases** (you see lower values)
+  (exactly opposite to x, where `panByPixels(+n)` → domain decreases)
+
+Rule for new pan/interaction code: negate `dy` relative to what you would use
+for `dx` to get the same directional behavior on both axes.
+```
+
+**After fix:** Build with `npx webpack --mode development`, 0 errors. Verify:
+- Follow mode: drag UP → plot scrolls up (see higher y values; data points move downward like standard scroll)
+- Drag mode: drag DOWN → data point under cursor moves down with your hand (Google Maps style)
+
+---
+
+## F6 [COMPLETED] Feature: Right-click context-menu suppression + drag zoom
+
+**Files:** `src/plot/PlotController.js`
+
+**Behaviour:**
+- Suppress the browser context menu on the WebGL canvas via a `contextmenu` event listener calling `e.preventDefault()`.
+- Right-click + drag **vertically** zooms in/out centred on the right-click starting position:
+  - Drag **UP** → zoom in (axis domain shrinks, data appears larger)
+  - Drag **DOWN** → zoom out (axis domain expands, more data visible)
+- Uses restore-and-reapply pattern (store initial domains on mousedown, restore + reapply each mousemove frame) to prevent float drift.
+- ROI controller guards `if (e.button !== 0) return` — right-click is completely transparent to ROI logic.
+
+**New state (constructor, after pan state):**
+```js
+this._isRightDragging = false;
+this._rightDragStart  = null;   // { x, y, xDomain, yDomain }
+this._onContextMenu   = e => e.preventDefault();
+```
+
+**`init()`** — add alongside existing canvas listeners:
+```js
+webglCanvas.addEventListener('contextmenu', this._onContextMenu);
+```
+
+**`destroy()`** — add:
+```js
+this._webglCanvas?.removeEventListener('contextmenu', this._onContextMenu);
+```
+
+**`_onMouseDown`** — route button 2 before the existing `if (e.button !== 0) return` check:
+```js
+if (e.button === 2) { this._handleRightDown(e); return; }
+```
+
+**`_handleRightDown(e)` (new private method):**
+```js
+_handleRightDown(e) {
+  const pos = this._viewport.getCanvasPosition(e, this._webglCanvas);
+  if (!this._viewport.isInPlotArea(pos.x, pos.y)) return;
+  this._isRightDragging = true;
+  this._rightDragStart  = {
+    x: pos.x, y: pos.y,
+    xDomain: this._xAxis.getDomain(),
+    yDomain: this._yAxis.getDomain(),
+  };
+}
+```
+
+**`_handleRightMove(e)` (new private method):**
+```js
+_handleRightMove(e) {
+  if (!this._rightDragStart) return;
+  const pos     = this._viewport.getCanvasPosition(e, this._webglCanvas);
+  const totalDy = pos.y - this._rightDragStart.y;
+  // drag up (totalDy<0) → factor<1 → zoom in  ✓
+  const factor = Math.pow(0.992, -totalDy);   // tune: sensitivity
+  // Restore initial domains to avoid float drift
+  this._xAxis.setDomain(this._rightDragStart.xDomain);
+  this._yAxis.setDomain(this._rightDragStart.yDomain);
+  this._updateScales();
+  // Focal point in data space at the right-click origin
+  const focalDataX = this._viewport.screenXToData(this._rightDragStart.x);
+  const focalDataY = this._viewport.screenYToData(this._rightDragStart.y);
+  this._xAxis.zoomAround(factor, focalDataX);
+  this._yAxis.zoomAround(factor, focalDataY);
+  this._updateScales();
+  this._dirty = true;
+  this.emit('zoomChanged', { factor, focalDataX, focalDataY });
+}
+```
+
+**`_onMouseMove`** — call `_handleRightMove` at the top (before left-click pan guard):
+```js
+if (this._isRightDragging) { this._handleRightMove(e); }
+```
+
+**`_onMouseUp`** — add button-2 branch alongside existing button-0 branch:
+```js
+if (e.button === 2 && this._isRightDragging) {
+  this._isRightDragging = false;
+  this._rightDragStart  = null;
+}
+```
+
+---
+
+## F5 [COMPLETED] Feature: Follow pan — continuous velocity mode
+
+**Files:** `src/plot/PlotController.js`
+
+**Behaviour:** In "follow pan" mode (`_panMode === 'follow'`), rather than snapping the domain on each mousemove event, the RAF loop continuously applies a pan proportional to the displacement between the current mouse position and the mousedown position.
+
+- Mouse at mousedown position → no movement (dead zone ≤ 5 px)
+- Mouse displaced N px → pan at `N × FOLLOW_PAN_SPEED` of domain-width per frame
+- `FOLLOW_PAN_SPEED = 0.02` (tune as needed — corresponds to ~1.2 domain-widths/sec per 100 px at 60 fps)
+- `_onMouseMove` in follow mode only updates `_panCurrentPos` — it does NOT modify domains directly
+
+**New state (constructor, after existing pan state):**
+```js
+this._panCurrentPos = null;   // { x, y } — updated each mousemove in follow mode
+```
+
+**`_onMouseDown`** — after setting `_isPanning = true`, also set:
+```js
+this._panCurrentPos = { x: pos.x, y: pos.y };
+```
+
+**`_onMouseMove`** — replace the existing pan block with a mode branch:
+```js
+if (this._panMode === 'drag') {
+  // drag pan: handled in F4
+} else {
+  // follow pan: just track current cursor position; RAF loop does the work
+  this._panCurrentPos = { x: pos.x, y: pos.y };
+}
+```
+(No domain mutation here in follow mode.)
+
+**`_onMouseUp`** — clear `_panCurrentPos`:
+```js
+this._panCurrentPos = null;
+```
+
+**`_scheduleRender`** — insert velocity tick before the `_dirty` render check:
+```js
+if (this._isPanning && this._panMode === 'follow' && this._panCurrentPos && this._panStart) {
+  const dx   = this._panCurrentPos.x - this._panStart.screenX;
+  const dy   = this._panCurrentPos.y - this._panStart.screenY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const DEAD_ZONE        = 5;
+  const FOLLOW_PAN_SPEED = 0.02;
+  if (dist > DEAD_ZONE) {
+    this._xAxis.panByPixels(-dx * FOLLOW_PAN_SPEED);
+    this._yAxis.panByPixels( dy * FOLLOW_PAN_SPEED);
+    this._updateScales();
+    this._dirty = true;
+    this.emit('panChanged', {
+      dx: Math.round(-dx * FOLLOW_PAN_SPEED),
+      dy: Math.round( dy * FOLLOW_PAN_SPEED),
+    });
+  }
+}
+```
+
+---
+
+## F4 [COMPLETED] Feature: Pan mode toggle (follow pan / drag pan)
+
+**Files:** `src/plot/PlotController.js`, `examples/ExampleApp.jsx`
+
+**Behaviour:**
+- Two pan modes selectable at runtime:
+  - `'follow'` (default): current behavior — viewport tracks the drag direction; the axis scrolls in the direction you drag. **After F5 this becomes a continuous velocity/joystick mode.**
+  - `'drag'`: grab-and-drag — data moves with the cursor (inverted signs vs follow pan). Uses restore-and-reapply to prevent float drift. Like Google Maps / Photoshop pan.
+- A "Drag pan" checkbox is added to the example app header.
+- ROI interactions are completely unaffected.
+
+**PlotController constructor** — add after existing pan state:
+```js
+this._panMode = opts.panMode || 'follow';
+```
+
+**New public method** (add after `setAutoExpand`):
+```js
+/** @param {'follow'|'drag'} mode */
+setPanMode(mode) {
+  this._panMode = (mode === 'drag') ? 'drag' : 'follow';
+}
+```
+
+**`_onMouseMove`** — drag pan branch (inverted signs):
+```js
+if (this._panMode === 'drag') {
+  const dx = pos.x - this._panStart.screenX;
+  const dy = pos.y - this._panStart.screenY;
+  this._xAxis.setDomain(this._panStart.xDomain);
+  this._yAxis.setDomain(this._panStart.yDomain);
+  this._xAxis.panByPixels(dx);    // inverted: drag right → data moves right
+  this._yAxis.panByPixels(-dy);   // inverted: drag down  → data moves down
+  this._updateScales();
+  this._dirty = true;
+  this.emit('panChanged', { dx, dy });
+}
+```
+
+**`ExampleApp.jsx`** — add state + handler + checkbox:
+```jsx
+const [dragPan, setDragPan] = useState(false);
+
+const handleDragPanChange = (e) => {
+  const checked = e.target.checked;
+  plotRef.current?.getController()?.setPanMode(checked ? 'drag' : 'follow');
+  setDragPan(checked);
+};
+
+// in header JSX, after Auto-expand label:
+<label style={checkboxLabelStyle}>
+  <input type="checkbox" checked={dragPan} onChange={handleDragPanChange} />
+  Drag pan
+</label>
+```
 
 ---
 
@@ -502,3 +775,6 @@ All phases 1–10 MVP steps were COMPLETED in the initial session. The steps abo
 - **2026-02-21 [Claude]**: B5 — static analysis confirmed handle positions and dy sign are correct. Remaining issue was the crossover-snap UX artifact: when TOP/BOTTOM handles were dragged past the opposite edge, the normalization swap + per-frame bounds-restore caused the rect to "teleport," which felt like inversion at the boundary. Fix: added per-case clamping inside `applyDelta` for HANDLES.TOP and HANDLES.BOTTOM so handles stop at zero height instead of crossing. Global normalization retained for corner handles. F3 — added `roiUpdated` (debounced 150 ms, logs after drag settles), `zoomChanged` (immediate), and `panChanged` (threshold > 5 px displacement) to ExampleApp `handleEvent`. `panChanged` was already emitted by PlotController and forwarded by PlotCanvas. Build: `webpack compiled successfully` 0 errors.
 - **2026-02-21 [Claude]**: User reports entire y-scale is visually inverted (data rendered upside-down relative to axis tick labels). Root cause identified: `_buildViewState` computes `ty` assuming `OrthographicView` has `flipY: true`, but the installed version may default to `flipY: false`. Added B6 with two fix options: Option A (add `flipY: true` to `OrthographicView`), Option B (negate y at the deck.gl layer boundary in `ScatterLayer.js` and `ROILayer.js` and rederive `ty`). No code changed — next agent to implement.
 - **2026-02-21 [Claude]**: B6 — Investigation confirmed deck.gl 8.9.36 defaults to `flipY: true` in `OrthographicViewport`. Tracing the full projection pipeline revealed the `ty` formula (`deckYMin + (H/2 − marginBottom) × ySpan / pa.height`) is derived for `flipY: false` (i.e., `screenY = H/2 − scaleY × (worldY − ty)`). With the default `flipY: true` the equation inverts to `screenY = H/2 + scaleY × (worldY − ty)`, placing y=0 near the top. Fix: add `flipY: false` explicitly to `OrthographicView` in `PlotController.init()`. One-line change; no layer files needed. Build: `webpack compiled successfully` 0 errors.
+- **2026-02-21 [Claude]**: User requested three new features: pan mode toggle (follow/drag), follow pan continuous velocity joystick mode, right-click context menu suppression + drag zoom. Added F4, F5, F6. Updated prompt.md with git branch rule (rule #6). Branch `feature/F4-F5-F6` created for implementation.
+- **2026-02-21 [Claude]**: F4, F5, F6 all implemented. F4: added `_panMode` state and `setPanMode()` public method; drag-pan branch in `_onMouseMove` uses restore-and-reapply with inverted signs. F5: `_panCurrentPos` added; `_scheduleRender` RAF loop applies velocity tick for follow mode (dead zone 5 px, speed 0.02). F6: `contextmenu` event suppressed; `_handleRightDown`/`_handleRightMove` private methods handle right-click drag zoom centred on click origin, restore-and-reapply pattern prevents float drift. ExampleApp: "Drag pan" checkbox added to header wired to `setPanMode`. Build: `webpack compiled successfully` 0 errors.
+- **2026-02-21 [Claude]**: B7 — Fixed y-axis pan direction bugs in F4 and F5. Root cause: the d3 y scale uses an inverted range `[plotBottom, plotTop]`, making `pxSpan` negative inside `panByPixels`, which reverses its effective direction vs x. Follow velocity (F5): changed `+dy * speed` → `-dy * speed`. Drag mode (F4): changed `panByPixels(-dy)` → `panByPixels(dy)`. Both fixes make y-axis pan direction consistent with x-axis behavior. Also added Y-axis Coordinate Convention section to `prompt.md` documenting this gotcha. Build: `webpack compiled successfully` 0 errors.

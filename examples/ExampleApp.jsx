@@ -35,6 +35,7 @@ export default function ExampleApp() {
   const [roiCount, setRoiCount] = useState(0);
   const [liveAppend, setLiveAppend] = useState(true);
   const [autoExpand, setAutoExpand] = useState(true);
+  const [dragPan, setDragPan] = useState(false);
 
   const addLog = (msg) => {
     setLog(prev => [msg, ...prev].slice(0, 20));
@@ -132,6 +133,12 @@ export default function ExampleApp() {
     setAutoExpand(checked);
   };
 
+  const handleDragPanChange = (e) => {
+    const checked = e.target.checked;
+    plotRef.current?.getController()?.setPanMode(checked ? 'drag' : 'follow');
+    setDragPan(checked);
+  };
+
   const containerStyle = {
     display:       'flex',
     flexDirection: 'column',
@@ -211,6 +218,10 @@ export default function ExampleApp() {
         <label style={checkboxLabelStyle}>
           <input type="checkbox" checked={autoExpand} onChange={handleAutoExpandChange} />
           Auto-expand
+        </label>
+        <label style={checkboxLabelStyle}>
+          <input type="checkbox" checked={dragPan} onChange={handleDragPanChange} />
+          Drag pan
         </label>
         <span style={{ marginLeft: 'auto', color: '#666' }}>ROIs: {roiCount}</span>
       </div>
