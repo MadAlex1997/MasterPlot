@@ -14,6 +14,7 @@ module.exports = (env, argv) => {
     output: {
       path: path.resolve(__dirname, 'dist'),
       filename: isDev ? '[name].js' : '[name].[contenthash].js',
+      publicPath: isDev ? '/' : '/MasterPlot/',
       clean: true,
     },
     resolve: {
