@@ -4,23 +4,26 @@
  *
  * Pipeline (CPU, runs when props change):
  *   1. STFT via fft.js (Hann window, radix-2 FFT per frame)
- *   2. Magnitude → dB, then global min/max normalisation → [0, 1]
- *   3. Viridis colour-map (16-stop hardcoded LUT, interpolated)
+ *   2. Magnitude → dB, then global min/max normalisation
+ *   3. Colour via LUT (from lutController if provided, else Viridis fallback)
  *   4. ImageData written into an OffscreenCanvas (or regular canvas)
  *   5. BitmapLayer renders the canvas with bounds in data space
  *
  * Props:
- *   samples    {Float32Array}  — raw time-domain samples
- *   sampleRate {number}        — samples per second (e.g. 44100)
- *   windowSize {number}        — FFT window size, must be power of 2 (default 1024)
- *   hopSize    {number}        — hop between windows (default windowSize/2)
+ *   samples       {Float32Array}              — raw time-domain samples
+ *   sampleRate    {number}                    — samples per second (e.g. 44100)
+ *   windowSize    {number}                    — FFT window size, power of 2 (default 1024)
+ *   hopSize       {number}                    — hop between windows (default windowSize/2)
+ *   dataTrigger   {number}                    — increment to force STFT recompute + re-upload
+ *   lutController {HistogramLUTController}    — optional; if provided, uses its levels + LUT
+ *   colorTrigger  {number}                    — increment to force image rebuild without STFT
  */
 
 import { CompositeLayer } from '@deck.gl/core';
 import { BitmapLayer }    from '@deck.gl/layers';
 import FFT                from 'fft.js';
 
-// ── Viridis LUT (16 evenly-spaced stops) ────────────────────────────────────
+// ── Viridis LUT (16 evenly-spaced stops) — used as standalone fallback ───────
 
 const VIRIDIS = [
   [68,  1,  84],
@@ -103,8 +106,18 @@ function computeSTFT(samples, windowSize, hopSize) {
 
 // ── Image builder ─────────────────────────────────────────────────────────────
 
-function buildImage(power, numFrames, numBins, globalMin, globalMax) {
-  const range = (globalMax - globalMin) || 1;
+/**
+ * Build a BitmapLayer-compatible image from STFT power data.
+ *
+ * @param {Float32Array} power     — flat array [numFrames × numBins] of dB values
+ * @param {number}       numFrames
+ * @param {number}       numBins
+ * @param {number}       levelMin  — dB value that maps to LUT index 0
+ * @param {number}       levelMax  — dB value that maps to LUT index 255
+ * @param {Uint8Array|null} lut    — RGBA LUT (256*4 bytes); null → Viridis fallback
+ */
+function buildImage(power, numFrames, numBins, levelMin, levelMax, lut = null) {
+  const range = (levelMax - levelMin) || 1;
 
   // Use OffscreenCanvas if available (no DOM needed), fall back to regular canvas
   let canvas;
@@ -123,16 +136,24 @@ function buildImage(power, numFrames, numBins, globalMin, globalMax) {
   for (let frame = 0; frame < numFrames; frame++) {
     for (let bin = 0; bin < numBins; bin++) {
       const db = power[frame * numBins + bin];
-      const t  = Math.max(0, Math.min(1, (db - globalMin) / range));
-      const c  = viridisColor(t);
+      const t  = Math.max(0, Math.min(1, (db - levelMin) / range));
 
-      // No manual flip — BitmapLayer / luma.gl uploads via UNPACK_FLIP_Y_WEBGL which
-      // flips once.  bin 0 (DC/0 Hz) in row 0 → after GPU flip → visual bottom ✓
-      const row = bin;
+      let r, g, b;
+      if (lut) {
+        const li = Math.min(255, Math.floor(t * 255)) * 4;
+        r = lut[li]; g = lut[li + 1]; b = lut[li + 2];
+      } else {
+        [r, g, b] = viridisColor(t);  // standalone fallback
+      }
+
+      // Manual flip: bin 0 (0 Hz) → last row of ImageData.
+      // luma.gl uploads with UNPACK_FLIP_Y_WEBGL: last row → texture v=0 → worldY=0
+      // → visual bottom. Nyquist (bin numBins-1) → row 0 → v=1 → visual top. ✓
+      const row = numBins - 1 - bin;
       const idx = (row * numFrames + frame) * 4;
-      d[idx]     = c[0];
-      d[idx + 1] = c[1];
-      d[idx + 2] = c[2];
+      d[idx]     = r;
+      d[idx + 1] = g;
+      d[idx + 2] = b;
       d[idx + 3] = 255;
     }
   }
@@ -149,30 +170,58 @@ function buildImage(power, numFrames, numBins, globalMin, globalMax) {
 // ── SpectrogramLayer ──────────────────────────────────────────────────────────
 
 export class SpectrogramLayer extends CompositeLayer {
+  initializeState() {
+    this.setState({ stftResult: null, image: null });
+  }
+
+  updateState({ props, oldProps }) {
+    const dataChanged  = props.dataTrigger  !== oldProps.dataTrigger;
+    const colorChanged = props.colorTrigger !== oldProps.colorTrigger;
+
+    let stftResult = this.state.stftResult;
+
+    // Recompute STFT only when data changes (or first render when stftResult is null)
+    if (dataChanged || !stftResult) {
+      const { samples, windowSize, hopSize } = props;
+      if (samples && samples.length >= windowSize) {
+        stftResult = computeSTFT(samples, windowSize, hopSize || windowSize / 2);
+        this.setState({ stftResult });
+        if (props.lutController && stftResult) {
+          // Synchronous: sets controller levels/histogram before buildImage below
+          props.lutController.setSpectrogramData(
+            stftResult.power, stftResult.globalMin, stftResult.globalMax
+          );
+        }
+      }
+    }
+
+    // Rebuild image when data OR color changes
+    if ((dataChanged || colorChanged || !this.state.image) && stftResult) {
+      const lc       = props.lutController;
+      const levelMin = lc ? lc.state.level_min : stftResult.globalMin;
+      const levelMax = lc ? lc.state.level_max : stftResult.globalMax;
+      const lut      = lc ? lc.getLUTArray()   : null;  // null → Viridis fallback
+
+      const image = buildImage(
+        stftResult.power, stftResult.numFrames, stftResult.numBins,
+        levelMin, levelMax, lut
+      );
+      this.setState({ image });
+    }
+  }
+
   renderLayers() {
-    const {
-      samples,
-      sampleRate,
-      windowSize = 1024,
-      hopSize    = windowSize / 2,
-    } = this.props;
-
-    if (!samples || samples.length < windowSize) return [];
-
-    const result = computeSTFT(samples, windowSize, hopSize);
-    if (!result) return [];
-
-    const { power, numFrames, numBins, globalMin, globalMax } = result;
-    const image       = buildImage(power, numFrames, numBins, globalMin, globalMax);
-    const durationSecs = samples.length / sampleRate;
+    const { samples, sampleRate, dataTrigger, colorTrigger } = this.props;
+    const { image } = this.state;
+    if (!image || !samples) return [];
 
     return [
       new BitmapLayer(this.getSubLayerProps({
-        id:     'bitmap',
+        id:    'bitmap',
         image,
         // bounds: [left, bottom, right, top] in world / data space
-        bounds: [0, 0, durationSecs, sampleRate / 2],
-        updateTriggers: { image: this.props.dataTrigger },
+        bounds: [0, 0, samples.length / sampleRate, sampleRate / 2],
+        updateTriggers: { image: [dataTrigger, colorTrigger] },
       })),
     ];
   }
@@ -181,11 +230,13 @@ export class SpectrogramLayer extends CompositeLayer {
 SpectrogramLayer.layerName = 'SpectrogramLayer';
 
 SpectrogramLayer.defaultProps = {
-  samples:     { type: 'object',  value: null  },
-  sampleRate:  { type: 'number',  value: 44100 },
-  windowSize:  { type: 'number',  value: 1024  },
-  hopSize:     { type: 'number',  value: 512   },
-  dataTrigger: { type: 'number',  value: 0     },  // increment to force re-STFT + re-upload
+  samples:       { type: 'object',  value: null  },
+  sampleRate:    { type: 'number',  value: 44100 },
+  windowSize:    { type: 'number',  value: 1024  },
+  hopSize:       { type: 'number',  value: 512   },
+  dataTrigger:   { type: 'number',  value: 0     },  // increment to force re-STFT + re-upload
+  lutController: { type: 'object',  value: null  },
+  colorTrigger:  { type: 'number',  value: 0     },  // increment to force image rebuild only
 };
 
 export default SpectrogramLayer;

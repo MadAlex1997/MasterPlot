@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 2.2
+**Plan Version:** 2.4
 **Last Updated:** 2026-02-21
-**Status:** F10 PENDING
+**Status:** F12, F13 PENDING
 
 ---
 
@@ -29,7 +29,7 @@ This document tracks the multi-step implementation of MasterPlot. Each step has 
 
 ---
 
-## F10 [PENDING] Feature: Audio file loading in SpectrogramExample
+## F10 [COMPLETED] Feature: Audio file loading in SpectrogramExample
 
 **File:** `examples/SpectrogramExample.jsx` (only file changed — no webpack changes needed)
 
@@ -146,6 +146,1237 @@ sampleRate:  loadedSampleRateRef.current,
 - Live append checkbox is unchecked; no new data added.
 - Log shows `Loaded: 07069030.wav · <sr> Hz · <dur>s`.
 - Re-loading the same file or a different file works correctly.
+
+---
+
+## F11 [COMPLETED] Feature: HistogramLUTItem — interactive amplitude remapping for spectrogram
+
+**Branch:** `feature/F11` (create before starting)
+
+**Goal:** Add a pyqtgraph-style HistogramLUTItem as an independent, optional panel that can be attached to the spectrogram. It shows the dB amplitude histogram, provides draggable level_min/level_max handles for contrast windowing, and supports swappable LUT colormaps. `SpectrogramLayer` must still work standalone (no lutController).
+
+---
+
+### Files to create / modify
+
+| File | Action |
+|------|--------|
+| `src/plot/layers/HistogramLUTController.js` | **Create new** |
+| `src/components/HistogramLUTPanel.jsx` | **Create new** |
+| `src/plot/layers/SpectrogramLayer.js` | **Modify** — add caching + lutController integration |
+| `examples/SpectrogramExample.jsx` | **Modify** — wire panel + colorTrigger |
+
+---
+
+### A. Create `src/plot/layers/HistogramLUTController.js`
+
+Pure JS EventEmitter (import EventEmitter from `'events'` — already used elsewhere in the project). No React.
+
+```javascript
+import EventEmitter from 'events';
+
+// LUT preset control points: [t, r, g, b] each, t in [0,1]
+const LUT_PRESETS = {
+  viridis:  [[0,68,1,84],[1/15,72,25,107],[2/15,64,47,124],[3/15,55,68,134],
+             [4/15,45,88,140],[5/15,38,107,143],[6/15,33,126,145],[7/15,30,145,146],
+             [8/15,32,163,144],[9/15,47,181,138],[10/15,73,198,128],[11/15,106,214,114],
+             [12/15,145,228,97],[13/15,185,240,74],[14/15,223,249,47],[1,253,231,37]],
+  grayscale:[[0,0,0,0],[1,255,255,255]],
+  plasma:   [[0,13,8,135],[0.25,126,3,168],[0.5,204,71,120],[0.75,248,150,64],[1,240,249,33]],
+  inferno:  [[0,0,0,4],[0.25,87,16,110],[0.5,188,55,84],[0.75,249,142,9],[1,252,255,164]],
+  magma:    [[0,0,0,4],[0.25,79,18,123],[0.5,183,55,121],[0.75,251,136,97],[1,252,253,191]],
+  hot:      [[0,0,0,0],[0.33,255,0,0],[0.67,255,255,0],[1,255,255,255]],
+};
+
+function buildLUT(stops) {
+  // Interpolates control points into Uint8Array[256 * 4] (RGBA)
+  const lut = new Uint8Array(256 * 4);
+  for (let i = 0; i < 256; i++) {
+    const t = i / 255;
+    // find adjacent stops
+    let s0 = stops[0], s1 = stops[1];
+    for (let j = 0; j < stops.length - 1; j++) {
+      if (t >= stops[j][0] && t <= stops[j+1][0]) { s0 = stops[j]; s1 = stops[j+1]; break; }
+    }
+    const f = s1[0] === s0[0] ? 0 : (t - s0[0]) / (s1[0] - s0[0]);
+    lut[i*4]   = Math.round(s0[1] + f*(s1[1]-s0[1]));
+    lut[i*4+1] = Math.round(s0[2] + f*(s1[2]-s0[2]));
+    lut[i*4+2] = Math.round(s0[3] + f*(s1[3]-s0[3]));
+    lut[i*4+3] = 255;
+  }
+  return lut;
+}
+
+export class HistogramLUTController extends EventEmitter {
+  constructor(binCount = 256) {
+    super();
+    this._binCount    = binCount;
+    this._power       = null;   // Float32Array of dB values (flat, frames×bins)
+    this._isFirstData = true;
+    this.state = {
+      level_min:      -100,
+      level_max:      0,
+      lut:            buildLUT(LUT_PRESETS.viridis),
+      lutName:        'viridis',
+      histogramBins:  null,    // Float32Array[binCount] raw counts
+      histogramEdges: null,    // Float32Array[binCount+1] bin boundaries
+      globalMin:      -100,
+      globalMax:      0,
+    };
+  }
+
+  /** Called by SpectrogramLayer.updateState() after each STFT. Synchronous. */
+  setSpectrogramData(power, globalMin, globalMax) {
+    this._power = power;
+    this.state.globalMin = globalMin;
+    this.state.globalMax = globalMax;
+    this._computeHistogram();
+    this.emit('histogramReady', {
+      bins:      this.state.histogramBins,
+      edges:     this.state.histogramEdges,
+      globalMin, globalMax,
+    });
+    if (this._isFirstData) {
+      this._isFirstData = false;
+      // autoLevel emits levelsChanged — that's OK on first data
+      this.autoLevel();
+    }
+  }
+
+  _computeHistogram() {
+    const { globalMin, globalMax } = this.state;
+    const power    = this._power;
+    const n        = this._binCount;
+    const range    = (globalMax - globalMin) || 1;
+    const bins     = new Float32Array(n);
+    const edges    = new Float32Array(n + 1);
+    for (let i = 0; i <= n; i++) edges[i] = globalMin + (i / n) * range;
+    for (let i = 0; i < power.length; i++) {
+      const idx = Math.min(n - 1, Math.floor((power[i] - globalMin) / range * n));
+      if (idx >= 0) bins[idx]++;
+    }
+    this.state.histogramBins  = bins;
+    this.state.histogramEdges = edges;
+  }
+
+  setLevels(min, max) {
+    this.state.level_min = min;
+    this.state.level_max = max;
+    this.emit('levelsChanged', min, max);
+  }
+
+  setLUT(presetName) {
+    const stops = LUT_PRESETS[presetName];
+    if (!stops) return;
+    this.state.lut     = buildLUT(stops);
+    this.state.lutName = presetName;
+    this.emit('lutChanged', presetName);
+  }
+
+  autoLevel(loPct = 5, hiPct = 99.5) {
+    const { histogramBins, histogramEdges } = this.state;
+    if (!histogramBins) return;
+    const total    = histogramBins.reduce((a, b) => a + b, 0);
+    if (total === 0) return;
+    const loTarget = total * loPct / 100;
+    const hiTarget = total * hiPct / 100;
+    let cumsum = 0, level_min = histogramEdges[0], level_max = histogramEdges[histogramEdges.length - 1];
+    let minSet = false;
+    for (let i = 0; i < histogramBins.length; i++) {
+      cumsum += histogramBins[i];
+      if (!minSet && cumsum >= loTarget) { level_min = histogramEdges[i]; minSet = true; }
+      if (cumsum >= hiTarget)            { level_max = histogramEdges[i + 1]; break; }
+    }
+    this.setLevels(level_min, level_max);
+  }
+
+  getLUTArray() { return this.state.lut; }
+
+  reset() { this._isFirstData = true; this._power = null; }
+
+  static get presetNames() { return Object.keys(LUT_PRESETS); }
+}
+```
+
+---
+
+### B. Modify `src/plot/layers/SpectrogramLayer.js`
+
+**New defaultProps to add:**
+```javascript
+lutController: { type: 'object', value: null },
+colorTrigger:  { type: 'number', value: 0    },
+```
+
+**Add deck.gl lifecycle methods for STFT caching:**
+
+```javascript
+initializeState() {
+  this.setState({ stftResult: null, image: null });
+}
+
+updateState({ props, oldProps }) {
+  const dataChanged  = props.dataTrigger  !== oldProps.dataTrigger;
+  const colorChanged = props.colorTrigger !== oldProps.colorTrigger;
+
+  let stftResult = this.state.stftResult;
+
+  // Recompute STFT only when data changes (or first render)
+  if (dataChanged || !stftResult) {
+    const { samples, windowSize, hopSize } = props;
+    if (samples && samples.length >= windowSize) {
+      stftResult = computeSTFT(samples, windowSize, hopSize || windowSize / 2);
+      this.setState({ stftResult });
+      if (props.lutController && stftResult) {
+        // Synchronous: sets controller levels/histogram before buildImage below
+        props.lutController.setSpectrogramData(
+          stftResult.power, stftResult.globalMin, stftResult.globalMax
+        );
+      }
+    }
+  }
+
+  // Rebuild image when data OR color changes
+  if ((dataChanged || colorChanged) && stftResult) {
+    const lc       = props.lutController;
+    const levelMin = lc ? lc.state.level_min : stftResult.globalMin;
+    const levelMax = lc ? lc.state.level_max : stftResult.globalMax;
+    const lut      = lc ? lc.getLUTArray()   : null;  // null → viridis fallback
+
+    const image = buildImage(
+      stftResult.power, stftResult.numFrames, stftResult.numBins,
+      levelMin, levelMax, lut
+    );
+    this.setState({ image });
+  }
+}
+```
+
+**Modify `buildImage` signature and body:**
+
+Old: `function buildImage(power, numFrames, numBins, globalMin, globalMax)`
+New: `function buildImage(power, numFrames, numBins, levelMin, levelMax, lut = null)`
+
+Inside the pixel loop replace:
+```javascript
+// OLD:
+const t = Math.max(0, Math.min(1, (db - globalMin) / range));
+const c = viridisColor(t);
+// ... d[idx] = c[0]; d[idx+1] = c[1]; d[idx+2] = c[2];
+
+// NEW:
+const range = (levelMax - levelMin) || 1;
+const t = Math.max(0, Math.min(1, (db - levelMin) / range));
+let r, g, b;
+if (lut) {
+  const li = Math.min(255, Math.floor(t * 255)) * 4;
+  r = lut[li]; g = lut[li+1]; b = lut[li+2];
+} else {
+  [r, g, b] = viridisColor(t);  // standalone fallback
+}
+// ... d[idx] = r; d[idx+1] = g; d[idx+2] = b;
+```
+
+Note: move `const range = ...` inside the loop or before it (currently it's computed outside; keep consistent).
+
+**Simplify `renderLayers()`** — reads from state only, no computation:
+```javascript
+renderLayers() {
+  const { samples, sampleRate, windowSize, dataTrigger, colorTrigger } = this.props;
+  const { image } = this.state;
+  if (!image || !samples) return [];
+  return [
+    new BitmapLayer(this.getSubLayerProps({
+      id:    'bitmap',
+      image,
+      bounds: [0, 0, samples.length / sampleRate, sampleRate / 2],
+      updateTriggers: { image: [dataTrigger, colorTrigger] },
+    })),
+  ];
+}
+```
+
+Keep `VIRIDIS` array and `viridisColor()` — used as standalone fallback.
+
+---
+
+### C. Create `src/components/HistogramLUTPanel.jsx`
+
+React component. `import React, { useRef, useEffect, useState } from 'react';`
+
+**Props:** `{ controller, width = 140 }` — height is CSS 100% (fills parent flex container).
+
+**Internal React state (UI display only):**
+```javascript
+const [levels,    setLevels]    = useState({ min: -100, max: 0 });
+const [preset,    setPreset]    = useState('viridis');
+const [histState, setHistState] = useState(null); // { bins, edges, globalMin, globalMax }
+```
+
+**Wire controller events in `useEffect`:**
+```javascript
+useEffect(() => {
+  const onLevels = (min, max) => setLevels({ min, max });
+  const onLUT    = (name)     => setPreset(name);
+  const onHist   = (data)     => setHistState(data);
+  controller.on('levelsChanged',  onLevels);
+  controller.on('lutChanged',     onLUT);
+  controller.on('histogramReady', onHist);
+  return () => {
+    controller.off('levelsChanged',  onLevels);
+    controller.off('lutChanged',     onLUT);
+    controller.off('histogramReady', onHist);
+  };
+}, [controller]);
+```
+
+**Canvas redraw `useEffect`** (depends on `[levels, histState, preset, controller]`):
+```javascript
+useEffect(() => {
+  const canvas = canvasRef.current;
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const GRAD_W = 18;  // rightmost px for gradient strip
+  const HIST_W = W - GRAD_W - 4;
+
+  // 1. Draw histogram bars
+  if (histState) {
+    const { bins, globalMin, globalMax } = histState;
+    const maxCount = Math.max(...bins, 1);
+    const binH = H / bins.length;
+    ctx.fillStyle = 'rgba(80,150,200,0.55)';
+    for (let i = 0; i < bins.length; i++) {
+      const barW = (bins[i] / maxCount) * HIST_W;
+      // bin 0 = globalMin (bottom), bin N = globalMax (top) → invert Y
+      const y = H - (i + 1) / bins.length * H;
+      ctx.fillRect(0, y, barW, binH + 0.5);
+    }
+  }
+
+  // 2. Draw LUT gradient strip (right column)
+  const lut = controller.getLUTArray();
+  for (let py = 0; py < H; py++) {
+    const t  = 1 - py / H;  // t=1 at top, t=0 at bottom
+    const li = Math.min(255, Math.floor(t * 255)) * 4;
+    ctx.fillStyle = `rgb(${lut[li]},${lut[li+1]},${lut[li+2]})`;
+    ctx.fillRect(W - GRAD_W, py, GRAD_W, 1);
+  }
+
+  // 3. Draw level lines
+  if (histState) {
+    const { globalMin, globalMax } = histState;
+    const range = (globalMax - globalMin) || 1;
+    const minY = H - ((levels.min - globalMin) / range) * H;
+    const maxY = H - ((levels.max - globalMin) / range) * H;
+    // level_min line (cyan)
+    ctx.strokeStyle = '#0ff'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(0, minY); ctx.lineTo(W - GRAD_W, minY); ctx.stroke();
+    // level_max line (yellow)
+    ctx.strokeStyle = '#ff0'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(0, maxY); ctx.lineTo(W - GRAD_W, maxY); ctx.stroke();
+  }
+}, [levels, histState, preset, controller]);
+```
+
+**Resize canvas to match DOM in `useEffect` (runs once after mount):**
+```javascript
+useEffect(() => {
+  const canvas = canvasRef.current;
+  if (!canvas) return;
+  const ro = new ResizeObserver(() => {
+    canvas.width  = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+    // trigger redraw by nudging state
+    setLevels(l => ({ ...l }));
+  });
+  ro.observe(canvas);
+  return () => ro.disconnect();
+}, []);
+```
+
+**Drag interaction — attach to canvas element:**
+```javascript
+const dragRef = useRef(null);  // 'min' | 'max' | null
+
+const onMouseDown = (e) => {
+  if (!histState) return;
+  const { globalMin, globalMax } = histState;
+  const canvas = canvasRef.current;
+  const H = canvas.offsetHeight;
+  const range = (globalMax - globalMin) || 1;
+  const minY = H - ((levels.min - globalMin) / range) * H;
+  const maxY = H - ((levels.max - globalMin) / range) * H;
+  const y = e.nativeEvent.offsetY;
+  if (Math.abs(y - minY) < 8) dragRef.current = 'min';
+  else if (Math.abs(y - maxY) < 8) dragRef.current = 'max';
+};
+
+const onMouseMove = (e) => {
+  if (!dragRef.current || !histState) return;
+  const { globalMin, globalMax } = histState;
+  const H = canvasRef.current.offsetHeight;
+  const amp = globalMin + (1 - e.nativeEvent.offsetY / H) * ((globalMax - globalMin) || 1);
+  if (dragRef.current === 'min') {
+    controller.setLevels(Math.min(amp, levels.max - 0.5), levels.max);
+  } else {
+    controller.setLevels(levels.min, Math.max(amp, levels.min + 0.5));
+  }
+};
+
+const onMouseUp = () => { dragRef.current = null; };
+```
+
+**JSX return:**
+```jsx
+return (
+  <div style={{
+    width, display: 'flex', flexDirection: 'column',
+    background: '#0a0a0a', borderLeft: '1px solid #333',
+    fontFamily: 'monospace', fontSize: 11, color: '#888', flexShrink: 0,
+  }}>
+    <canvas
+      ref={canvasRef}
+      style={{ flex: 1, width: '100%', cursor: 'ns-resize' }}
+      onMouseDown={onMouseDown}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      onMouseLeave={onMouseUp}
+    />
+    <div style={{ padding: '4px 6px', borderTop: '1px solid #222' }}>
+      <select
+        value={preset}
+        onChange={e => controller.setLUT(e.target.value)}
+        style={{ width: '100%', background: '#1a1a1a', border: '1px solid #444',
+                 color: '#aaa', padding: '2px 4px', fontSize: 11 }}
+      >
+        {HistogramLUTController.presetNames.map(n => (
+          <option key={n} value={n}>{n}</option>
+        ))}
+      </select>
+      <button
+        onClick={() => controller.autoLevel()}
+        style={{ marginTop: 4, width: '100%', background: '#1a1a1a',
+                 border: '1px solid #444', color: '#adf', padding: '3px',
+                 fontSize: 11, cursor: 'pointer', fontFamily: 'monospace' }}
+      >
+        Auto Level
+      </button>
+      <div style={{ marginTop: 4, color: '#555', fontSize: 10 }}>
+        min: {levels.min.toFixed(1)}<br/>
+        max: {levels.max.toFixed(1)}
+      </div>
+    </div>
+  </div>
+);
+```
+
+Import `HistogramLUTController` at the top of this file for `presetNames` access.
+
+---
+
+### D. Modify `examples/SpectrogramExample.jsx`
+
+**Imports to add (top of file):**
+```javascript
+import { HistogramLUTController } from '../src/plot/layers/HistogramLUTController.js';
+import HistogramLUTPanel from '../src/components/HistogramLUTPanel.jsx';
+```
+
+**New refs/state (alongside existing `const [log, ...`  declarations):**
+```javascript
+const lutControllerRef  = useRef(null);
+const colorTriggerRef   = useRef(0);
+const [colorTrigger, setColorTrigger] = useState(0);
+// Initialize controller once
+if (!lutControllerRef.current) {
+  lutControllerRef.current = new HistogramLUTController();
+}
+```
+
+**Wire controller events — add inside the existing big `useEffect` (before the final `scheduleRender()` call):**
+```javascript
+const lc = lutControllerRef.current;
+lc.on('levelsChanged', () => setColorTrigger(prev => prev + 1));
+lc.on('lutChanged',    () => setColorTrigger(prev => prev + 1));
+```
+
+**Sync colorTrigger ref** — add a separate tiny `useEffect`:
+```javascript
+useEffect(() => {
+  colorTriggerRef.current = colorTrigger;
+  dirtyRef.current = true;
+}, [colorTrigger]);
+```
+
+**Update `renderFrame`** — pass new props:
+```javascript
+new SpectrogramLayer({
+  id:           'spectrogram',
+  samples:      samplesRef.current,
+  sampleRate:   loadedSampleRateRef.current,
+  windowSize:   windowSizeRef.current,
+  hopSize:      windowSizeRef.current / 2,
+  dataTrigger:  dataTriggerRef.current,
+  lutController: lutControllerRef.current,   // ← add
+  colorTrigger:  colorTriggerRef.current,    // ← add (read from ref, not state)
+})
+```
+
+**Reset controller on file load** — add inside `handleFileLoad` after clearing sample data:
+```javascript
+lutControllerRef.current.reset();
+```
+
+**Layout JSX change** — wrap spectrogram panel in a row flex div with LUT panel beside it:
+
+Old:
+```jsx
+<div style={plotWrapStyle}>
+  {/* Spectrogram panel — 65% */}
+  <div style={{ ...panelStyle, flex: 3 }}>
+    <canvas ref={webglRef} style={canvasStyle} />
+    <canvas ref={axisRef}  style={{ ...canvasStyle, pointerEvents: 'none' }} />
+  </div>
+
+  <div style={dividerStyle} />
+
+  {/* Waveform panel — 35% */}
+  <div style={{ ...panelStyle, flex: 1.5 }}>
+    ...
+  </div>
+</div>
+```
+
+New:
+```jsx
+<div style={plotWrapStyle}>
+  {/* Spectrogram row: canvas + LUT panel side-by-side */}
+  <div style={{ flex: 3, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
+    <div style={{ ...panelStyle, flex: 1 }}>
+      <canvas ref={webglRef} style={canvasStyle} />
+      <canvas ref={axisRef}  style={{ ...canvasStyle, pointerEvents: 'none' }} />
+    </div>
+    <HistogramLUTPanel controller={lutControllerRef.current} width={140} />
+  </div>
+
+  <div style={dividerStyle} />
+
+  {/* Waveform panel — unchanged */}
+  <div style={{ ...panelStyle, flex: 1.5 }}>
+    <canvas ref={waveWebglRef} style={canvasStyle} />
+    <canvas ref={waveAxisRef}  style={{ ...canvasStyle, pointerEvents: 'none' }} />
+  </div>
+</div>
+```
+
+---
+
+### Verification
+
+1. `npx webpack --mode development` → 0 errors
+2. Open `dist/spectrogram.html`
+3. Chirp loads → spectrogram renders → LUT panel visible at right with histogram bars
+4. Drag level handles → spectrogram recolors immediately (no STFT lag)
+5. Change LUT preset dropdown → spectrogram recolors
+6. Click Auto Level → handles snap to 5%–99.5% percentile positions
+7. Open audio file → histogram refreshes, controller resets, spectrogram redraws
+8. Temporarily remove `lutController` + `colorTrigger` props from `renderFrame` → spectrogram still renders with default Viridis (standalone mode)
+
+### Edge cases to watch
+
+- **First render**: `updateState` gets `oldProps.dataTrigger === 0` same as `props.dataTrigger === 0` → `dataChanged = false`. The `!stftResult` guard handles first call.
+- **`colorTrigger` in RAF closure**: `renderFrame` reads from `colorTriggerRef.current` (not the closed-over React state value) to avoid stale closure values.
+- **`setSpectrogramData` + autoLevel double-build**: On first data, `autoLevel` emits `levelsChanged` → React increments `colorTrigger` → second `updateState` → second `buildImage` with same values. Acceptable; can suppress by checking if levels actually changed.
+- **Canvas width shrinks 140px**: Deck reads `wc.offsetWidth` at mount so it adapts automatically.
+
+---
+
+## F12 [PENDING] Feature: Audio Playback + Synchronized Playhead Lines
+
+**Branch:** `feature/F12` (create before starting)
+
+**Goal:** Enable playback of loaded audio (or the live-append chirp) via Web Audio API with a dashed vertical playhead line that moves in real-time at 60 fps across both the spectrogram and the waveform panel. Ctrl+click on either panel seeks to that time. Play/Pause/Stop controls appear in the header.
+
+---
+
+### Files to create / modify
+
+| File | Action |
+|------|--------|
+| `src/audio/PlaybackController.js` | **Create new** |
+| `examples/SpectrogramExample.jsx` | **Modify** — add controller, RAF changes, controls, Ctrl+seek |
+
+---
+
+### A. Create `src/audio/PlaybackController.js`
+
+Pure JS EventEmitter. Manages a single `AudioBufferSourceNode` lifecycle (play/pause/stop/seek). `AudioBufferSourceNode` is one-shot and cannot be paused, so pause is implemented by recording position, stopping the node, and creating a new node on resume.
+
+```javascript
+import EventEmitter from 'events';
+
+export class PlaybackController extends EventEmitter {
+  constructor() {
+    super();
+    this._audioContext     = null;
+    this._audioBuffer      = null;
+    this._source           = null;
+    this._isPlaying        = false;
+    this._pauseOffset      = 0;   // seconds into buffer where we paused/stopped
+    this._startContextTime = 0;   // audioContext.currentTime at last play() call
+    this._startOffset      = 0;   // buffer offset at last play() call
+  }
+
+  get isPlaying() { return this._isPlaying; }
+  get duration()  { return this._audioBuffer?.duration ?? 0; }
+
+  /** Returns the current playback position in seconds. */
+  get currentTime() {
+    if (this._isPlaying && this._audioContext) {
+      const elapsed = this._audioContext.currentTime - this._startContextTime;
+      return Math.min(this._startOffset + elapsed, this.duration);
+    }
+    return this._pauseOffset;
+  }
+
+  /**
+   * Decode samples into an AudioBuffer. Called after file load.
+   * Creates or reuses the AudioContext; resumes it (autoplay policy).
+   */
+  async loadBuffer(samples, sampleRate) {
+    this._stopSource();
+    this._isPlaying   = false;
+    this._pauseOffset = 0;
+    if (!this._audioContext || this._audioContext.state === 'closed') {
+      this._audioContext = new AudioContext({ sampleRate });
+    }
+    await this._audioContext.resume();
+    const buf = this._audioContext.createBuffer(1, samples.length, sampleRate);
+    buf.getChannelData(0).set(samples);
+    this._audioBuffer = buf;
+    this.emit('stateChanged', { state: 'loaded', duration: buf.duration });
+  }
+
+  /** Start or resume playback. Optional offset (seconds) overrides saved position. */
+  async play(offset = null) {
+    if (!this._audioBuffer || !this._audioContext) return;
+    await this._audioContext.resume();   // browser autoplay guard
+    this._stopSource();
+    const startAt = (offset !== null) ? Math.max(0, offset) : this._pauseOffset;
+    if (startAt >= this.duration) return;
+
+    const source = this._audioContext.createBufferSource();
+    source.buffer = this._audioBuffer;
+    source.connect(this._audioContext.destination);
+    source._userStopped = false;  // distinguish natural end from manual stop
+    source.onended = () => {
+      if (!source._userStopped) {
+        this._isPlaying   = false;
+        this._pauseOffset = 0;
+        this.emit('stateChanged', { state: 'stopped' });
+      }
+    };
+    source.start(0, startAt);
+    this._source           = source;
+    this._startContextTime = this._audioContext.currentTime;
+    this._startOffset      = startAt;
+    this._isPlaying        = true;
+    this.emit('stateChanged', { state: 'playing' });
+  }
+
+  pause() {
+    if (!this._isPlaying) return;
+    this._pauseOffset = this.currentTime;
+    this._stopSource();
+    this._isPlaying = false;
+    this.emit('stateChanged', { state: 'paused' });
+  }
+
+  stop() {
+    this._stopSource();
+    this._isPlaying   = false;
+    this._pauseOffset = 0;
+    this.emit('stateChanged', { state: 'stopped' });
+  }
+
+  /** Jump to a time; resumes playback if it was playing. */
+  seek(time) {
+    const clipped    = Math.max(0, Math.min(time, this.duration));
+    const wasPlaying = this._isPlaying;
+    if (wasPlaying) { this._stopSource(); this._isPlaying = false; }
+    this._pauseOffset = clipped;
+    if (wasPlaying) this.play(clipped);
+    else this.emit('stateChanged', { state: 'paused' });
+  }
+
+  destroy() {
+    this._stopSource();
+    this._audioContext?.close();
+    this._audioContext = null;
+  }
+
+  _stopSource() {
+    if (this._source) {
+      this._source._userStopped = true;
+      try { this._source.stop(); } catch (_) {}
+      this._source.disconnect();
+      this._source = null;
+    }
+  }
+}
+```
+
+---
+
+### B. Playhead drawing helpers (add near top of SpectrogramExample.jsx)
+
+These two free functions are used in the RAF loop immediately after `axisRend.render()` so the playhead is drawn on top of axis grid lines and labels.
+
+```javascript
+/**
+ * Draw a vertical playhead line on a 2D axis canvas overlay.
+ * No-ops silently if time is outside the current x-domain.
+ */
+function drawPlayhead(canvas, time, xAxis, viewport) {
+  const [xMin, xMax] = xAxis.getDomain();
+  if (time < xMin || time > xMax) return;
+  const { plotArea: pa } = viewport;
+  const px  = pa.x + (time - xMin) / Math.max(xMax - xMin, 1e-10) * pa.width;
+  const ctx = canvas.getContext('2d');
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255, 220, 40, 0.85)';
+  ctx.lineWidth   = 1.5;
+  ctx.setLineDash([5, 4]);
+  ctx.beginPath();
+  ctx.moveTo(px, pa.y);
+  ctx.lineTo(px, pa.y + pa.height);
+  ctx.stroke();
+  // Time label at top of line, flips side when near right edge
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(255, 220, 40, 0.9)';
+  ctx.font      = '10px monospace';
+  const rightHalf = px > pa.x + pa.width * 0.6;
+  ctx.textAlign = rightHalf ? 'right' : 'left';
+  ctx.fillText(formatPlayTime(time), px + (rightHalf ? -4 : 4), pa.y + 12);
+  ctx.restore();
+}
+
+/** Format seconds as m:ss.d  e.g. 1:23.4 */
+function formatPlayTime(secs) {
+  const m  = Math.floor(secs / 60);
+  const s  = Math.floor(secs % 60);
+  const ds = Math.floor((secs % 1) * 10);
+  return `${m}:${String(s).padStart(2, '0')}.${ds}`;
+}
+```
+
+---
+
+### C. Modifications to `examples/SpectrogramExample.jsx`
+
+**New import:**
+```javascript
+import { PlaybackController } from '../src/audio/PlaybackController.js';
+```
+
+**New refs / state (alongside existing declarations):**
+```javascript
+const playbackRef = useRef(null);
+if (!playbackRef.current) {
+  playbackRef.current = new PlaybackController();
+}
+const [playState, setPlayState] = useState('stopped'); // 'playing'|'paused'|'stopped'
+```
+
+**Wire `stateChanged` event** — add inside the existing mount `useEffect`, after the LUT controller wiring, before `scheduleRender()`:
+```javascript
+const pb = playbackRef.current;
+pb.on('stateChanged', ({ state }) => setPlayState(state));
+```
+
+**Add to `useEffect` cleanup (return block):**
+```javascript
+playbackRef.current?.destroy();
+```
+
+**Load buffer on file load** — add at the end of the `try` block in `handleFileLoad`, after the existing `addLog(...)` call:
+```javascript
+// Load into playback controller (non-blocking — await is fine here since we're already async)
+await playbackRef.current.loadBuffer(samplesRef.current, loadedSampleRateRef.current);
+```
+
+**Modify `scheduleRender`** — this is the most important change: force dirty every frame during playback so the playhead updates smoothly, and call `drawPlayhead` after each panel render:
+```javascript
+const scheduleRender = () => {
+  rafRef.current = requestAnimationFrame(() => {
+    const pb = playbackRef.current;
+    // Force redraw every frame during playback so the playhead moves in real time
+    if (pb?.isPlaying) {
+      dirtyRef.current     = true;
+      waveDirtyRef.current = true;
+    }
+
+    if (dirtyRef.current) {
+      renderFrame();
+      dirtyRef.current = false;
+      // Draw playhead on top of axis overlay (after AxisRenderer clears & redraws)
+      if (pb && axisRef.current && xAxisRef.current && viewportRef.current) {
+        drawPlayhead(axisRef.current, pb.currentTime, xAxisRef.current, viewportRef.current);
+      }
+    }
+    if (waveDirtyRef.current) {
+      waveRenderFrame();
+      waveDirtyRef.current = false;
+      if (pb && waveAxisRef.current && waveXAxisRef.current && waveViewportRef.current) {
+        drawPlayhead(waveAxisRef.current, pb.currentTime, waveXAxisRef.current, waveViewportRef.current);
+      }
+    }
+
+    scheduleRender();
+  });
+};
+```
+
+**Add Ctrl+click seek** — extend `onMouseDown` (spectrogram):
+```javascript
+const onMouseDown = (e) => {
+  if (e.button !== 0) return;
+  const viewport = viewportRef.current;
+  if (!viewport) return;
+  const pos = viewport.getCanvasPosition(e, webglRef.current);
+  if (!viewport.isInPlotArea(pos.x, pos.y)) return;
+  // Ctrl+click → seek
+  if (e.ctrlKey && playbackRef.current?.duration > 0) {
+    playbackRef.current.seek(viewport.screenXToData(pos.x));
+    return;
+  }
+  panRef.current = { ... };  // existing logic unchanged
+};
+```
+Add the same `Ctrl+click` block to `onWaveMouseDown` (using `waveViewportRef.current` and `waveWebglRef.current`).
+
+**Playback controls in header JSX** (add after the "Open audio file" button):
+```jsx
+{/* Playback controls */}
+<button
+  onClick={() => {
+    const pb = playbackRef.current;
+    if (!pb?.duration) return;
+    if (playState === 'playing') pb.pause();
+    else pb.play();
+  }}
+  disabled={!playbackRef.current?.duration}
+  style={{
+    background: '#222', border: '1px solid #555', borderRadius: 3,
+    color: playbackRef.current?.duration ? '#adf' : '#555',
+    padding: '2px 10px', fontSize: 13, cursor: 'pointer', fontFamily: 'monospace',
+  }}
+>
+  {playState === 'playing' ? '⏸' : '▶'}
+</button>
+<button
+  onClick={() => playbackRef.current?.stop()}
+  disabled={playState === 'stopped'}
+  style={{
+    background: '#222', border: '1px solid #555', borderRadius: 3,
+    color: playState !== 'stopped' ? '#faa' : '#555',
+    padding: '2px 8px', fontSize: 13, cursor: 'pointer', fontFamily: 'monospace',
+  }}
+>
+  ⏹
+</button>
+```
+
+---
+
+### Verification
+
+1. `npx webpack --mode development` → 0 errors
+2. Load audio file → Play/Pause buttons activate; log shows playback loaded
+3. Press **▶** → yellow dashed vertical line appears on both spectrogram and waveform at t=0 and moves rightward smoothly at audio speed
+4. Line stays at the correct relative position when zoomed/panned (it uses the live x-domain)
+5. **⏸** → playhead freezes; audio stops; resume resumes from same position
+6. **⏹** → playhead jumps to t=0
+7. Ctrl+click on spectrogram or waveform → playhead jumps to clicked time; if playing, continues from new position
+8. Playhead line disappears from view when time is outside the current x-domain (zoomed in elsewhere)
+9. Audio ends naturally → `playState` resets to `'stopped'`
+10. Load a second file → old playback stops; new buffer loaded
+
+### Edge cases
+
+- **Autoplay policy**: `await audioContext.resume()` is called inside `play()` before `source.start()`; user interaction (file open, button click) already grants permission.
+- **Chirp-only (no file loaded)**: Play buttons are disabled (`duration === 0`). A future enhancement could call `loadBuffer` after `appendSamples` on mount.
+- **Live append during playback**: Live-appended samples extend `samplesRef` but the `AudioBuffer` already loaded in `PlaybackController` is a snapshot. Playback plays only the originally loaded portion; the spectrogram continues to extend. This is consistent and intentional.
+- **Very long files**: `AudioContext.createBuffer(1, N, sr)` allocates `4N` bytes. 30 min at 44100 Hz = ~318 MB float32. Browser may throw `EncodingError`; catch and log.
+- **`source.stop()` on already-stopped node**: Guarded by the `try/catch` in `_stopSource()`.
+
+---
+
+## F13 [PENDING] Feature: Frequency Filters — offline DSP + frequency response preview
+
+**Branch:** `feature/F13` (create before starting; may be implemented after F12)
+
+**Goal:** Apply a Web Audio biquad filter (low-pass, high-pass, band-pass, notch, allpass) to the loaded PCM samples offline via `OfflineAudioContext`, then force a spectrogram STFT recompute so the filtered frequency content is visible. A `FilterPanel` component shows a live frequency response curve and the cutoff/Q controls. Original samples are preserved in memory so "Clear Filter" restores them without requiring a file reload.
+
+---
+
+### Files to create / modify
+
+| File | Action |
+|------|--------|
+| `src/audio/FilterController.js` | **Create new** |
+| `src/components/FilterPanel.jsx` | **Create new** |
+| `examples/SpectrogramExample.jsx` | **Modify** — add controller, panel, apply/clear, layout |
+
+---
+
+### A. Create `src/audio/FilterController.js`
+
+```javascript
+import EventEmitter from 'events';
+
+export class FilterController extends EventEmitter {
+  constructor() {
+    super();
+    this.state = {
+      type:      'none',   // 'none'|'lowpass'|'highpass'|'bandpass'|'notch'|'allpass'
+      frequency: 1000,     // Hz — cutoff / centre frequency
+      Q:         1.0,      // resonance / bandwidth
+    };
+  }
+
+  setType(type)      { this.state.type = type;       this.emit('changed', { ...this.state }); }
+  setFrequency(freq) { this.state.frequency = freq;  this.emit('changed', { ...this.state }); }
+  setQ(q)            { this.state.Q = q;             this.emit('changed', { ...this.state }); }
+
+  /**
+   * Process samples through the biquad filter using OfflineAudioContext.
+   * Returns a new Float32Array — original is not mutated.
+   * If type === 'none', returns the same reference unchanged.
+   */
+  async applyToSamples(samples, sampleRate) {
+    if (this.state.type === 'none') return samples;
+    const offlineCtx = new OfflineAudioContext(1, samples.length, sampleRate);
+    const buf        = offlineCtx.createBuffer(1, samples.length, sampleRate);
+    buf.getChannelData(0).set(samples);
+    const source = offlineCtx.createBufferSource();
+    source.buffer = buf;
+    const filter = offlineCtx.createBiquadFilter();
+    filter.type            = this.state.type;
+    filter.frequency.value = Math.min(this.state.frequency, sampleRate / 2 - 1);
+    filter.Q.value         = this.state.Q;
+    source.connect(filter);
+    filter.connect(offlineCtx.destination);
+    source.start(0);
+    const rendered = await offlineCtx.startRendering();
+    return rendered.getChannelData(0).slice();  // copy — ChannelData view becomes invalid after GC
+  }
+
+  /**
+   * Compute frequency response for the current filter settings.
+   * Returns { freqs: Float32Array, db: Float32Array } for nPoints log-spaced
+   * frequencies from 20 Hz to nyquist.  Returns null if type === 'none'.
+   *
+   * Note: creates and immediately closes a temporary AudioContext; call only
+   * when the user interacts with controls (not on every RAF frame).
+   */
+  getFrequencyResponse(nPoints = 256, sampleRate = 44100) {
+    if (this.state.type === 'none') return null;
+    const nyquist = sampleRate / 2;
+    const freqs   = new Float32Array(nPoints);
+    for (let i = 0; i < nPoints; i++) {
+      freqs[i] = 20 * Math.pow(nyquist / 20, i / (nPoints - 1));
+    }
+    const magRes   = new Float32Array(nPoints);
+    const phaseRes = new Float32Array(nPoints);
+    const tmpCtx   = new AudioContext({ sampleRate });
+    const tmpNode  = tmpCtx.createBiquadFilter();
+    tmpNode.type            = this.state.type;
+    tmpNode.frequency.value = Math.min(this.state.frequency, nyquist - 1);
+    tmpNode.Q.value         = this.state.Q;
+    tmpNode.getFrequencyResponse(freqs, magRes, phaseRes);
+    tmpCtx.close();  // release resources; fire-and-forget async close is fine
+    const db = new Float32Array(nPoints);
+    for (let i = 0; i < nPoints; i++) {
+      db[i] = 20 * Math.log10(Math.max(magRes[i], 1e-10));
+    }
+    return { freqs, db };
+  }
+
+  static get filterTypes() {
+    return ['none', 'lowpass', 'highpass', 'bandpass', 'notch', 'allpass'];
+  }
+}
+```
+
+---
+
+### B. Create `src/components/FilterPanel.jsx`
+
+Props: `{ controller, sampleRate, onApply, applying }`.
+
+- `controller` — `FilterController` instance
+- `sampleRate` — current audio sample rate (needed for Nyquist in sliders and response curve)
+- `onApply()` — called when "Apply" button is clicked (parent handles the async work)
+- `applying` — boolean; while true the button shows "Applying…" and is disabled
+
+```jsx
+import React, { useRef, useEffect, useState } from 'react';
+import { FilterController } from '../audio/FilterController.js';
+
+export default function FilterPanel({ controller, sampleRate = 44100, onApply, applying = false }) {
+  const canvasRef = useRef(null);
+  const [state, setState] = useState({ ...controller.state });
+
+  // Wire controller events
+  useEffect(() => {
+    const onChange = s => setState({ ...s });
+    controller.on('changed', onChange);
+    return () => controller.off('changed', onChange);
+  }, [controller]);
+
+  // Draw frequency response every time filter state changes
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, W, H);
+
+    // 0 dB reference line (dB range: −60 to +6; 0 dB sits at 90.9% from bottom)
+    const DB_MIN = -60, DB_MAX = 6;
+    const dbToY = db => H - ((db - DB_MIN) / (DB_MAX - DB_MIN)) * H;
+    const zeroY = dbToY(0);
+    ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, zeroY); ctx.lineTo(W, zeroY); ctx.stroke();
+
+    if (state.type === 'none') {
+      // Flat 0 dB line
+      ctx.strokeStyle = '#444'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(0, zeroY); ctx.lineTo(W, zeroY); ctx.stroke();
+      return;
+    }
+
+    const resp = controller.getFrequencyResponse(W, sampleRate);
+    if (!resp) return;
+
+    // Response curve
+    ctx.strokeStyle = '#4af'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < W; i++) {
+      const y = Math.max(0, Math.min(H, dbToY(resp.db[i])));
+      if (i === 0) ctx.moveTo(i, y); else ctx.lineTo(i, y);
+    }
+    ctx.stroke();
+
+    // Cutoff frequency marker (orange vertical dashed line)
+    const nyquist = sampleRate / 2;
+    const fx = Math.log(state.frequency / 20) / Math.log(nyquist / 20) * W;
+    ctx.strokeStyle = '#f80'; ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(fx, 0); ctx.lineTo(fx, H); ctx.stroke();
+    ctx.setLineDash([]);
+  }, [state, sampleRate, controller]);
+
+  const nyquist = sampleRate / 2;
+  const sliderStyle = { width: '100%', marginTop: 2 };
+
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column',
+      background: '#0a0a0a', borderTop: '1px solid #2a2a2a',
+      fontFamily: 'monospace', fontSize: 11, color: '#888',
+      padding: '6px 8px', boxSizing: 'border-box', gap: 5, flexShrink: 0,
+    }}>
+      <div style={{ color: '#555', fontSize: 10, letterSpacing: 1 }}>FILTER</div>
+
+      <select
+        value={state.type}
+        onChange={e => controller.setType(e.target.value)}
+        style={{ background: '#1a1a1a', border: '1px solid #444', color: '#aaa', padding: '2px', fontSize: 11 }}
+      >
+        {FilterController.filterTypes.map(t => <option key={t} value={t}>{t}</option>)}
+      </select>
+
+      {state.type !== 'none' && (
+        <>
+          <label>
+            <span style={{ color: '#555' }}>Cutoff </span>
+            <span style={{ color: '#aaa' }}>
+              {state.frequency < 1000
+                ? `${state.frequency.toFixed(0)} Hz`
+                : `${(state.frequency / 1000).toFixed(2)} kHz`}
+            </span>
+            {/* Log-scale slider: range [0,1] mapped to [20 Hz, Nyquist] via exponential */}
+            <input type="range" min="0" max="1" step="0.001"
+              value={Math.log(state.frequency / 20) / Math.log(nyquist / 20)}
+              onChange={e => {
+                const t = parseFloat(e.target.value);
+                controller.setFrequency(Math.round(20 * Math.pow(nyquist / 20, t)));
+              }}
+              style={sliderStyle}
+            />
+          </label>
+          <label>
+            <span style={{ color: '#555' }}>Q </span>
+            <span style={{ color: '#aaa' }}>{state.Q.toFixed(2)}</span>
+            <input type="range" min="0.1" max="30" step="0.1"
+              value={state.Q}
+              onChange={e => controller.setQ(parseFloat(e.target.value))}
+              style={sliderStyle}
+            />
+          </label>
+        </>
+      )}
+
+      {/* Frequency response canvas: x = 20 Hz→Nyquist (log), y = −60→+6 dB */}
+      <canvas ref={canvasRef} width={118} height={55}
+        style={{ width: '100%', height: 55, borderRadius: 2, border: '1px solid #1a1a1a' }}
+      />
+
+      <button
+        onClick={onApply}
+        disabled={applying || state.type === 'none'}
+        style={{
+          background: '#1a1a1a', border: '1px solid #444',
+          color: (applying || state.type === 'none') ? '#444' : '#fda',
+          padding: '3px', fontSize: 11, cursor: 'pointer', fontFamily: 'monospace',
+        }}
+      >
+        {applying ? 'Applying…' : 'Apply to spectrogram'}
+      </button>
+    </div>
+  );
+}
+```
+
+---
+
+### C. Modifications to `examples/SpectrogramExample.jsx`
+
+**New imports:**
+```javascript
+import { FilterController } from '../src/audio/FilterController.js';
+import FilterPanel           from '../src/components/FilterPanel.jsx';
+```
+
+**New refs / state:**
+```javascript
+const filterControllerRef  = useRef(null);
+const originalSamplesRef   = useRef(null);  // snapshot of pre-filter PCM for "Clear Filter"
+if (!filterControllerRef.current) {
+  filterControllerRef.current = new FilterController();
+}
+const [applying,         setApplying]         = useState(false);
+const [filterSampleRate, setFilterSampleRate] = useState(SAMPLE_RATE);
+```
+
+**Store original samples on file load** — add inside `handleFileLoad` try block, immediately after loading PCM into `samplesRef.current`:
+```javascript
+originalSamplesRef.current = samplesRef.current.slice();  // snapshot of raw PCM
+setFilterSampleRate(sr);
+```
+
+**Apply filter handler:**
+```javascript
+const handleApplyFilter = async () => {
+  if (!samplesRef.current.length) return;
+  setApplying(true);
+  try {
+    const fc       = filterControllerRef.current;
+    const filtered = await fc.applyToSamples(samplesRef.current, loadedSampleRateRef.current);
+    samplesRef.current = filtered;
+    dataTriggerRef.current += 1;
+    dirtyRef.current = true;
+    // If playback is loaded, reload with filtered audio
+    if (playbackRef.current?.duration > 0) {
+      await playbackRef.current.loadBuffer(filtered, loadedSampleRateRef.current);
+    }
+    addLog(`Filter: ${fc.state.type}  cutoff=${fc.state.frequency.toFixed(0)} Hz  Q=${fc.state.Q.toFixed(2)}`);
+  } catch (err) {
+    addLog(`Filter error: ${err.message}`);
+  }
+  setApplying(false);
+};
+```
+
+Note: `playbackRef` is part of F12. If F13 is implemented before F12, omit the `playbackRef` block.
+
+**Clear filter handler** (restores original pre-filter samples):
+```javascript
+const handleClearFilter = async () => {
+  if (!originalSamplesRef.current) return;
+  samplesRef.current = originalSamplesRef.current.slice();
+  dataTriggerRef.current += 1;
+  dirtyRef.current = true;
+  if (playbackRef.current?.duration > 0) {
+    await playbackRef.current.loadBuffer(samplesRef.current, loadedSampleRateRef.current);
+  }
+  addLog('Filter cleared — original audio restored');
+};
+```
+
+**"Clear Filter" button in header** (add beside "Open audio file"):
+```jsx
+<button
+  onClick={handleClearFilter}
+  disabled={!originalSamplesRef.current}
+  style={{
+    background: '#222', border: '1px solid #555', borderRadius: 3,
+    color: originalSamplesRef.current ? '#fa8' : '#555',
+    padding: '2px 8px', fontSize: 12, cursor: 'pointer', fontFamily: 'monospace',
+  }}
+>
+  Clear Filter
+</button>
+```
+
+**Layout** — stack `FilterPanel` below `HistogramLUTPanel` inside the right sidebar div:
+```jsx
+{/* Right sidebar: LUT panel + Filter panel, vertically stacked */}
+<div style={{ width: 140, display: 'flex', flexDirection: 'column', borderLeft: '1px solid #333', flexShrink: 0 }}>
+  <div style={{ flex: 1, overflow: 'hidden' }}>
+    <HistogramLUTPanel controller={lutControllerRef.current} />
+  </div>
+  <FilterPanel
+    controller={filterControllerRef.current}
+    sampleRate={filterSampleRate}
+    onApply={handleApplyFilter}
+    applying={applying}
+  />
+</div>
+```
+
+Remove the `width={140}` prop from `HistogramLUTPanel` (width is now supplied by the parent `div`). Ensure `HistogramLUTPanel` fills its parent by keeping `width: '100%'` in its outer div — it already does via the existing `boxSizing: 'border-box'` style.
+
+---
+
+### Verification
+
+1. `npx webpack --mode development` → 0 errors
+2. Open an audio file → `FilterPanel` appears in the right sidebar below `HistogramLUTPanel`; response canvas shows a flat line (type=none)
+3. Select "lowpass", drag cutoff slider → response curve updates live; orange marker moves; no spectrogram change yet
+4. Click "Apply to spectrogram" → button shows "Applying…"; STFT recomputes; high frequencies attenuated (dark in spectrogram above cutoff)
+5. Raise cutoff → reapply → wider pass band visible
+6. Select "highpass" → apply → low frequencies attenuated (dark below cutoff)
+7. Select "bandpass", reduce Q → apply → narrow bright horizontal band in spectrogram
+8. "Clear Filter" → original unfiltered spectrogram restored; log confirms
+9. With F12 implemented: apply low-pass then press Play → audio is audibly dull (highs removed)
+10. "Clear Filter" → Play → full bandwidth audio restored
+
+### Edge cases
+
+- **`OfflineAudioContext` limits**: Very long files (> ~30 min mono at 44100 Hz = ~310 MB) may fail with `NotSupportedError`. Catch and log.
+- **Filter frequency clamped to Nyquist**: `Math.min(frequency, sampleRate/2 - 1)` prevents invalid `BiquadFilterNode` state.
+- **Compound filtering**: Applying a second filter without clearing first compounds with the first (applies to already-filtered samples). This is intentional — the log message shows the current filter params. Users "Clear Filter" to reset to original, then apply a fresh filter.
+- **`getFrequencyResponse` cost**: Creates and closes a temporary `AudioContext` on every control change. If latency is noticeable, debounce `onChange` by 100 ms.
+- **Live append mode**: "Apply to spectrogram" is not meaningful when live-append is active (data keeps changing). Consider disabling the "Apply" button when `liveAppend` is true, or at least logging a warning.
+- **FilterPanel height in sidebar**: `HistogramLUTPanel` uses `flex: 1` to fill the sidebar; `FilterPanel` has `flexShrink: 0` and a fixed content height. Ensure the sidebar div has `overflow: hidden` so the LUT panel doesn't overflow when the sidebar is short.
 
 ---
 
@@ -1075,4 +2306,7 @@ const row = bin;
 - **2026-02-21 [Claude]**: B7 — Fixed y-axis pan direction bugs in F4 and F5. Root cause: the d3 y scale uses an inverted range `[plotBottom, plotTop]`, making `pxSpan` negative inside `panByPixels`, which reverses its effective direction vs x. Follow velocity (F5): changed `+dy * speed` → `-dy * speed`. Drag mode (F4): changed `panByPixels(-dy)` → `panByPixels(dy)`. Both fixes make y-axis pan direction consistent with x-axis behavior. Also added Y-axis Coordinate Convention section to `prompt.md` documenting this gotcha. Build: `webpack compiled successfully` 0 errors.
 - **2026-02-21 [Claude]**: F7 — `FOLLOW_PAN_SPEED` hardcoded constant removed from `_scheduleRender`; all 4 usages replaced with `this._followPanSpeed`. Pan speed slider (`<input type="range">` 0.005–0.1, step 0.001) added to ExampleApp header, wired to `setFollowPanSpeed()`. F8 — `LinePlotController.js` created (signal registry, mutable path arrays with `updateTriggers`, drag-pan, wheel-zoom, RAF loop, auto domain expand). `LineExample.jsx` demonstrates 3 random-walk signals (cyan/orange/lime) with live 500-sample/s append and Reset. `src/line.js` entry point + `public/line.html` template added. F9 — `fft.js` installed (npm). `SpectrogramLayer.js` (CompositeLayer): STFT with Hann window via fft.js → dB normalization → 16-stop Viridis LUT → OffscreenCanvas `ImageData` → `BitmapLayer` with bounds `[0,0,durationSecs,sampleRate/2]`. `SpectrogramExample.jsx` demonstrates chirp (440→4400 Hz) + pink noise at 44100 Hz with live 0.25 s/tick append and windowSize selector. `src/spectrogram.js` + `public/spectrogram.html` added. `webpack.config.js` converted to multi-entry (`main`/`line`/`spectrogram`) with separate `HtmlWebpackPlugin` instances per page. Build: `webpack compiled successfully` 0 errors, 3 HTML outputs.
 - **2026-02-21 [Claude]**: F10 added (PENDING) — Audio file loading for SpectrogramExample. Uses browser `<input type="file">` + `AudioContext.decodeAudioData`; no webpack changes needed. Clears existing data on load, uses file's actual sampleRate for both spectrogram and waveform panels. Next agent implements F10 then rebuilds.
+- **2026-02-21 [Claude]**: F10 — Audio file loading implemented. Added `fileInputRef`, `loadedSampleRateRef`, and `loading` state. `handleFileLoad` async function: stops live append, decodes via `AudioContext.decodeAudioData`, clears all existing sample/waveform data, loads full PCM into `samplesRef`, downsamples for waveform at `WAVEFORM_STEP`, updates both x-axis domains to `[0, durationSecs]` and spectrogram y-axis to `[0, sr/2]`, triggers dirty flags. `renderFrame` now uses `loadedSampleRateRef.current` instead of hardcoded `SAMPLE_RATE`. "Open audio file" button added to header after "Live append" (shows "Loading…" + disabled while decoding; re-opens same file via `e.target.value = ''`). Branch: `feature/F10`. Build: `webpack compiled successfully` 0 errors.
 - **2026-02-21 [Claude]**: B8 — Four fixes applied to resolve blank spectrogram. (A) `dataTrigger` numeric prop added to `SpectrogramLayer.defaultProps`; `SpectrogramExample` increments `dataTriggerRef` on every `appendSamples()` and `windowSize` change, passes it to the layer — guarantees deck.gl re-invokes `renderLayers()`. (B) `updateTriggers: { image: this.props.dataTrigger }` added to BitmapLayer inside `renderLayers()` — forces luma.gl texture re-upload. (C) `buildImage()` now calls `canvas.transferToImageBitmap()` if available before returning — luma.gl 8.5.x silently fails with raw `OffscreenCanvas`. (D) Manual row-flip removed (`row = bin` instead of `row = numBins - 1 - bin`): BitmapLayer/luma.gl already applies `UNPACK_FLIP_Y_WEBGL`; the previous double-flip put 0 Hz at the top. Build: `webpack compiled successfully` 0 errors.
+- **2026-02-21 [Claude]**: F12, F13 added as PENDING. F12: `PlaybackController` (play/pause/stop/seek via `AudioBufferSourceNode`; `onended` uses `_userStopped` flag to distinguish natural end from manual stop), `drawPlayhead`/`formatPlayTime` helpers, RAF loop extended to force dirty-every-frame during playback and draw playhead on both axis canvases, Ctrl+click seek, Play/Pause/Stop header buttons. F13: `FilterController` (offline biquad via `OfflineAudioContext.startRendering()`, `getFrequencyResponse()` via temporary AudioContext, `originalSamplesRef` snapshot for Clear Filter), `FilterPanel` (type dropdown, log-scale cutoff slider, Q slider, live response canvas, Apply button), right sidebar refactored to stack LUT + Filter panels vertically. Both features depend on F10 (file loading) being complete.
+- **2026-02-21 [Claude]**: F11 — HistogramLUTController and HistogramLUTPanel implemented. `HistogramLUTController.js`: pure EventEmitter; 6 LUT presets (viridis/grayscale/plasma/inferno/magma/hot) built as Uint8Array[256×4]; `setSpectrogramData()` computes histogram + auto-levels on first data; `setLevels()`/`setLUT()`/`autoLevel()` emit events. `HistogramLUTPanel.jsx`: canvas-based React component; ResizeObserver syncs backing store; histogram bars + gradient strip + draggable level lines drawn in one `useEffect`; LUT dropdown + Auto Level button. `SpectrogramLayer.js`: refactored to use `initializeState`/`updateState` lifecycle — STFT cached in layer state, recomputed only on `dataTrigger` change; `buildImage` now accepts `levelMin/levelMax/lut` params (Viridis fallback when no lutController); `renderLayers` reads from state only. `SpectrogramExample.jsx`: imports wired; `HistogramLUTController` created once at render init; levelsChanged/lutChanged → `setColorTrigger`; `colorTrigger` synced to ref for stale-closure safety; `renderFrame` passes `lutController`/`colorTrigger`; `handleFileLoad` calls `lutController.reset()`; spectrogram panel wrapped in row flex div with `<HistogramLUTPanel width={140} />`. Build: `webpack compiled successfully` 0 errors.

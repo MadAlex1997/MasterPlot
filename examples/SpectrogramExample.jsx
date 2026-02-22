@@ -23,11 +23,13 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Deck }             from '@deck.gl/core';
 import { OrthographicView } from '@deck.gl/core';
-import { ViewportController } from '../src/plot/ViewportController.js';
-import { AxisController }     from '../src/plot/axes/AxisController.js';
-import { AxisRenderer }       from '../src/plot/axes/AxisRenderer.js';
-import { SpectrogramLayer }   from '../src/plot/layers/SpectrogramLayer.js';
-import { buildLineLayer }     from '../src/plot/layers/LineLayer.js';
+import { ViewportController }    from '../src/plot/ViewportController.js';
+import { AxisController }        from '../src/plot/axes/AxisController.js';
+import { AxisRenderer }          from '../src/plot/axes/AxisRenderer.js';
+import { SpectrogramLayer }      from '../src/plot/layers/SpectrogramLayer.js';
+import { buildLineLayer }        from '../src/plot/layers/LineLayer.js';
+import { HistogramLUTController } from '../src/plot/layers/HistogramLUTController.js';
+import HistogramLUTPanel         from '../src/components/HistogramLUTPanel.jsx';
 
 // ── Audio generation ──────────────────────────────────────────────────────────
 
@@ -124,9 +126,21 @@ export default function SpectrogramExample() {
   const waveDirtyRef      = useRef(true);
   const wavePanRef        = useRef(null);
 
-  const [log,        setLog]        = useState([]);
-  const [liveAppend, setLiveAppend] = useState(true);
-  const [windowSize, setWindowSize] = useState(1024);
+  const fileInputRef        = useRef(null);
+  const loadedSampleRateRef = useRef(SAMPLE_RATE);  // actual sr of loaded audio
+
+  // ── HistogramLUT refs ──────────────────────────────────────────────────────
+  const lutControllerRef  = useRef(null);
+  const colorTriggerRef   = useRef(0);
+  if (!lutControllerRef.current) {
+    lutControllerRef.current = new HistogramLUTController();
+  }
+
+  const [log,          setLog]          = useState([]);
+  const [liveAppend,   setLiveAppend]   = useState(true);
+  const [windowSize,   setWindowSize]   = useState(1024);
+  const [loading,      setLoading]      = useState(false);
+  const [colorTrigger, setColorTrigger] = useState(0);
 
   const addLog = (msg) => setLog(prev => [msg, ...prev].slice(0, 20));
 
@@ -186,12 +200,14 @@ export default function SpectrogramExample() {
 
     const layers = [
       new SpectrogramLayer({
-        id:          'spectrogram',
-        samples:     samplesRef.current,
-        sampleRate:  SAMPLE_RATE,
-        windowSize:  windowSizeRef.current,
-        hopSize:     windowSizeRef.current / 2,
-        dataTrigger: dataTriggerRef.current,
+        id:            'spectrogram',
+        samples:       samplesRef.current,
+        sampleRate:    loadedSampleRateRef.current,
+        windowSize:    windowSizeRef.current,
+        hopSize:       windowSizeRef.current / 2,
+        dataTrigger:   dataTriggerRef.current,
+        lutController: lutControllerRef.current,
+        colorTrigger:  colorTriggerRef.current,  // read from ref, not stale state
       }),
     ];
 
@@ -332,6 +348,11 @@ export default function SpectrogramExample() {
       waveXAxis.setDomain([0, 5]);
       dirtyRef.current     = true;
       waveDirtyRef.current = true;
+
+      // ── Wire LUT controller → colorTrigger ─────────────────────────────────
+      const lc = lutControllerRef.current;
+      lc.on('levelsChanged', () => setColorTrigger(prev => prev + 1));
+      lc.on('lutChanged',    () => setColorTrigger(prev => prev + 1));
 
       // ── Start RAF loop and live-append interval ─────────────────────────────
       scheduleRender();
@@ -499,6 +520,12 @@ export default function SpectrogramExample() {
     };
   }, []); // mount once
 
+  // ── Sync colorTrigger state → ref (RAF closure reads ref to avoid stale values) ──
+  useEffect(() => {
+    colorTriggerRef.current = colorTrigger;
+    dirtyRef.current = true;
+  }, [colorTrigger]);
+
   // ── UI handlers ───────────────────────────────────────────────────────────
 
   const handleLiveAppendChange = (e) => {
@@ -519,6 +546,55 @@ export default function SpectrogramExample() {
     dataTriggerRef.current += 1;
     setWindowSize(v);
     dirtyRef.current = true;
+  };
+
+  const handleFileLoad = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setLoading(true);
+    clearInterval(intervalRef.current);
+    setLiveAppend(false);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const audioCtx    = new AudioContext();
+      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      audioCtx.close();
+      const pcm = audioBuffer.getChannelData(0);
+      const sr  = audioBuffer.sampleRate;
+      loadedSampleRateRef.current = sr;
+      // Clear all existing data
+      lutControllerRef.current.reset();
+      samplesRef.current   = new Float32Array(0);
+      sampleCntRef.current = 0;
+      waveXRef.current     = new Float32Array(0);
+      waveYRef.current     = new Float32Array(0);
+      // Load PCM
+      samplesRef.current   = pcm;
+      sampleCntRef.current = pcm.length;
+      dataTriggerRef.current += 1;
+      // Downsample for waveform
+      const numWavePts = Math.floor(pcm.length / WAVEFORM_STEP);
+      const newWX = new Float32Array(numWavePts);
+      const newWY = new Float32Array(numWavePts);
+      for (let i = 0; i < numWavePts; i++) {
+        newWX[i] = (i * WAVEFORM_STEP) / sr;
+        newWY[i] = pcm[i * WAVEFORM_STEP];
+      }
+      waveXRef.current = newWX;
+      waveYRef.current = newWY;
+      waveDataTrigger.current += 1;
+      const durationSecs = pcm.length / sr;
+      xAxisRef.current?.setDomain([0, durationSecs]);
+      waveXAxisRef.current?.setDomain([0, durationSecs]);
+      yAxisRef.current?.setDomain([0, sr / 2]);   // Nyquist for this file
+      dirtyRef.current     = true;
+      waveDirtyRef.current = true;
+      addLog(`Loaded: ${file.name}  ·  ${sr} Hz  ·  ${durationSecs.toFixed(2)}s`);
+    } catch (err) {
+      addLog(`Error loading file: ${err.message}`);
+    }
+    setLoading(false);
+    e.target.value = '';  // allow re-loading same file
   };
 
   // ── Styles ────────────────────────────────────────────────────────────────
@@ -574,21 +650,45 @@ export default function SpectrogramExample() {
           Live append
         </label>
 
+        <label style={checkboxLabelStyle}>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={loading}
+            style={{
+              background: '#222', border: '1px solid #555', borderRadius: 3,
+              color: loading ? '#555' : '#adf', padding: '2px 8px',
+              fontSize: 12, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'monospace',
+            }}
+          >
+            {loading ? 'Loading…' : 'Open audio file'}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="audio/*"
+            style={{ display: 'none' }}
+            onChange={handleFileLoad}
+          />
+        </label>
+
         <span style={{ marginLeft: 'auto', color: '#666' }}>
           scroll=zoom · drag=pan
         </span>
       </div>
 
       <div style={plotWrapStyle}>
-        {/* Spectrogram panel — 65% */}
-        <div style={{ ...panelStyle, flex: 3 }}>
-          <canvas ref={webglRef} style={canvasStyle} />
-          <canvas ref={axisRef}  style={{ ...canvasStyle, pointerEvents: 'none' }} />
+        {/* Spectrogram row: plot canvas + LUT panel side-by-side */}
+        <div style={{ flex: 3, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
+          <div style={{ ...panelStyle, flex: 1 }}>
+            <canvas ref={webglRef} style={canvasStyle} />
+            <canvas ref={axisRef}  style={{ ...canvasStyle, pointerEvents: 'none' }} />
+          </div>
+          <HistogramLUTPanel controller={lutControllerRef.current} width={140} />
         </div>
 
         <div style={dividerStyle} />
 
-        {/* Waveform panel — 35% */}
+        {/* Waveform panel — unchanged */}
         <div style={{ ...panelStyle, flex: 1.5 }}>
           <canvas ref={waveWebglRef} style={canvasStyle} />
           <canvas ref={waveAxisRef}  style={{ ...canvasStyle, pointerEvents: 'none' }} />
