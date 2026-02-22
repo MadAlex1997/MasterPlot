@@ -1017,7 +1017,10 @@ Add the same `Ctrl+click` block to `onWaveMouseDown` (using `waveViewportRef.cur
 
 ---
 
-## F13 [PENDING] Feature: Frequency Filters — offline DSP + frequency response preview
+## F13 [IN_PROGRESS] Feature: Frequency Filters — offline DSP + frequency response preview
+
+**Branch:** `feature/F12` (continuing on feature/F12 branch)
+<!-- Started: 2026-02-22 -->
 
 **Branch:** `feature/F13` (create before starting; may be implemented after F12)
 
