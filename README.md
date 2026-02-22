@@ -14,7 +14,7 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 
 ---
 
-## Current Capabilities (F1–F18 → F14–F17 complete)
+## Current Capabilities (F1–F18 complete)
 
 ### Core Plotting Engine
 - **WebGL rendering** via deck.gl `OrthographicView` — no maps, no geospatial assumptions
@@ -26,6 +26,7 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 - **Rolling ring buffer** — optional fixed-capacity circular buffer with count-based and age-based expiration; axis domain recalculates automatically after eviction
 - **PlotDataView** — lazily-evaluated, dirty-flag-cached derived view over a `DataStore` or another `PlotDataView`; supports domain filtering, ROI filtering, histogram derivation, and deep snapshot; dirty propagates through arbitrarily deep view chains
 - **Shared DataStore / DataView (F17)** — multiple `PlotController` instances can share a single `DataStore` and/or `PlotDataView`; ownership tracking ensures `destroy()` only releases resources the controller allocated
+- **External integration adapter contracts (F18)** — `ExternalDataAdapter` and `ExternalROIAdapter` base classes define the boundary between the MasterPlot engine and external data sources; `MockDataAdapter` and `MockROIAdapter` are reference implementations
 - **Event log panel** — on-screen log of `dataAppended`, `domainChanged`, `zoomChanged`, `panChanged`, `roiCreated`, `roiUpdated`, `roiDeleted`, `roiFinalized`
 
 ### ROI System (pyqtgraph-style)
@@ -71,6 +72,12 @@ PlotController (EventEmitter)
 └── deck.gl Deck          — WebGL render target (OrthographicView)
 
 AxisRenderer              — Canvas 2D overlay (ticks, labels, grid)
+
+Integration layer (optional, no engine changes needed):
+├── ExternalDataAdapter   — interface contract for data sources (HTTP, WS, etc.)
+├── ExternalROIAdapter    — interface contract for ROI persistence and sync
+├── MockDataAdapter       — random batch generator (extends ExternalDataAdapter)
+└── MockROIAdapter        — localStorage-backed ROI store (extends ExternalROIAdapter)
 
 Audio subsystem (spectrogram example only):
 ├── SpectrogramLayer      — custom deck.gl layer; STFT → ImageBitmap → WebGL texture
@@ -375,6 +382,12 @@ examples/
   LineExample.jsx         — line plot demo
   SpectrogramExample.jsx  — full audio analysis demo
   SharedDataExample.jsx   — two-plot shared DataStore + filtered DataView demo (F17)
+src/
+  integration/
+    ExternalDataAdapter.js — interface contract for external data sources (F18)
+    ExternalROIAdapter.js  — interface contract for ROI persistence/sync (F18)
+    MockDataAdapter.js     — random data generator mock (F18)
+    MockROIAdapter.js      — localStorage-backed ROI persistence mock (F18)
 public/
   index.html
 ```
@@ -447,14 +460,128 @@ The shared-data demo is in [`examples/SharedDataExample.jsx`](examples/SharedDat
 
 ---
 
+## External Integration (F18)
+
+MasterPlot never implements HTTP, WebSocket, or authentication logic. The engine boundary sits at `DataStore.appendData()` and `ROIController.updateFromExternal()`. External integration packages implement two adapter interfaces.
+
+### Architecture boundary
+
+```
+External Source
+      │
+      ▼
+ Adapter (your code)
+ ├── ExternalDataAdapter ─► DataStore ─► PlotDataView ─► PlotController ─► deck.gl
+ └── ExternalROIAdapter  ─► ROIController ─► roiExternalUpdate ─► PlotDataView dirty
+```
+
+### bufferStruct type
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `x` | `Float32Array` | ✅ | x coordinates |
+| `y` | `Float32Array` | ✅ | y coordinates |
+| `size` | `Float32Array` | optional | per-point pixel size (default 4.0) |
+| `color` | `Uint8Array` | optional | RGBA per point — 4 bytes each (default opaque white) |
+
+### ExternalDataAdapter contract
+
+```js
+import { ExternalDataAdapter } from './src/integration/ExternalDataAdapter.js';
+
+class MyWSAdapter extends ExternalDataAdapter {
+  constructor(dataStore, wsUrl) {
+    super(dataStore);
+    this._ws = new WebSocket(wsUrl);
+    this._ws.onmessage = (evt) => {
+      const buf = JSON.parse(evt.data);
+      this.appendData({ x: new Float32Array(buf.x), y: new Float32Array(buf.y) });
+    };
+  }
+
+  // Replace entire dataset with an incoming snapshot
+  replaceData(bufferStruct) {
+    this._dataStore.clear();
+    this._dataStore.appendData(bufferStruct);
+  }
+
+  // Append incremental points
+  appendData(bufferStruct) {
+    this._dataStore.appendData(bufferStruct);
+  }
+}
+```
+
+### ExternalROIAdapter contract
+
+```js
+import { ExternalROIAdapter } from './src/integration/ExternalROIAdapter.js';
+
+class MyServerROIAdapter extends ExternalROIAdapter {
+  async load()            { /* fetch and return SerializedROI[] */ }
+  async save(roi)         { /* PUT roi to server */ }
+  subscribe(callback)     { /* register callback; return unsubscribe fn */ }
+}
+
+// Convenience: load → deserializeAll → start save/subscribe lifecycle
+await adapter.attach();
+
+// Cleanup
+adapter.detach();
+```
+
+#### ROI sync flow
+
+```
+roiFinalized → adapter.save(roi) → storage
+                                 → (other clients)
+                                       → adapter.subscribe callback
+                                             → roiController.updateFromExternal(roi)
+                                                   → roiExternalUpdate
+                                                         → PlotDataView dirty
+```
+
+#### Version conflict rules
+
+| Condition | Result |
+|---|---|
+| `incoming.version > existing.version` | ✅ Accepted; bounds updated, `roiExternalUpdate` emitted |
+| `incoming.version === existing.version` | ❌ Rejected (silent) |
+| `incoming.version < existing.version` | ❌ Rejected (silent) |
+| ROI id not found | ✅ Created as new ROI |
+
+`updateFromExternal` does **not** call `bumpVersion()` — the incoming version is authoritative.
+
+### Mock adapters (testing / demos)
+
+```js
+import { DataStore }       from './src/plot/DataStore.js';
+import { MockDataAdapter } from './src/integration/MockDataAdapter.js';
+import { MockROIAdapter }  from './src/integration/MockROIAdapter.js';
+
+// MockDataAdapter: random batches on a timer
+const store   = new DataStore();
+const dataAdp = new MockDataAdapter(store, { intervalMs: 500, batchSize: 100 });
+dataAdp.start();   // begins appending 100 random points every 500 ms
+dataAdp.stop();    // stops the interval
+
+// Full dataset replacement (store.clear() + appendData())
+dataAdp.replaceData({ x: new Float32Array([1,2,3]), y: new Float32Array([4,5,6]) });
+
+// MockROIAdapter: localStorage-backed persistence
+const roiAdp = new MockROIAdapter(roiController, { storageKey: 'my_rois' });
+await roiAdp.attach();   // restores ROIs from localStorage; starts save/subscribe
+roiAdp.detach();         // removes all listeners
+```
+
+---
+
 ## Roadmap
 
 See [PLAN.md](PLAN.md) for the full implementation plan and step status.
 
-In progress / planned (Phase 2):
-- **F18** External integration adapter contracts (no HTTP/WebSocket in engine)
-
 Later (unscheduled):
+
 - Full multi-level RectROI nesting
 - High-resolution PNG export (`plotController.exportPNG(options)`)
 - Snapping constraints for ROIs

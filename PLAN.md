@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 3.4
+**Plan Version:** 3.5
 **Last Updated:** 2026-02-22
-**Status:** F17 last completed — F18 PENDING
+**Status:** F18 last completed — all Phase 2 features done
 
 ---
 
@@ -68,7 +68,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | F15 | Lazy DataView System | ✅ COMPLETED | feature/dataview-lazy | 2026-02-22 |
 | F14 | ROI Domain Model + Versioning | ✅ COMPLETED | feature/roi-domain-versioning | 2026-02-22 |
 | F17 | Shared Data Infrastructure | ✅ COMPLETED | feature/shared-data | 2026-02-22 |
-| F18 | External Integration Contracts | ⏳ PENDING | feature/integration-contract | — |
+| F18 | External Integration Contracts | ✅ COMPLETED | feature/integration-contract | 2026-02-22 |
 
 ---
 
@@ -219,85 +219,10 @@ Full spec: [docs/plan-archive.md#f17](docs/plan-archive.md#f17)
 
 ---
 
-## F18 [PENDING] Feature: External Integration Interface Contracts
-
-**Branch:** `feature/integration-contract` (create before starting)
-
-**Depends on:** F14 (ROI schema + `updateFromExternal`), F15 (PlotDataView API stable), F16 (DataStore API stable), F17 (shared-data pattern demonstrated)
-
-**Goal:** Define strict contracts for external integration packages. MasterPlot itself implements no HTTP, WebSocket, or authentication logic. This feature is primarily interface definitions + documentation, validated by mock implementations.
-
----
-
-### Files to create / modify
-
-| File | Action |
-|------|--------|
-| `src/integration/ExternalDataAdapter.js` | **Create new** — interface definition with JSDoc |
-| `src/integration/ExternalROIAdapter.js` | **Create new** — interface definition with JSDoc |
-| `src/integration/MockDataAdapter.js` | **Create new** — mock implementation (random data on timer) |
-| `src/integration/MockROIAdapter.js` | **Create new** — localStorage-backed mock |
-| `README.md` | **Modify** — add "External Integration" section |
-| `examples/HubPage.jsx` | **Modify** — link integration guide or demo |
-
----
-
-### Implementation steps
-
-1. **`src/integration/ExternalDataAdapter.js`** — base class with throw-on-call methods:
-   - `replaceData(bufferStruct)` — full snapshot replacement; `bufferStruct = { x: Float32Array, y: Float32Array, size?: Float32Array, color?: Uint8Array }`
-   - `appendData(bufferStruct)` — incremental append; same struct
-
-2. **`src/integration/ExternalROIAdapter.js`** — base class with throw-on-call methods:
-   - `async load()` → `Promise<SerializedROI[]>` — load persisted ROIs on init
-   - `async save(serializedROI)` → `Promise<void>` — persist after `roiFinalized`
-   - `subscribe(callback)` → `Function` (unsubscribe) — receive external ROI updates; engine calls `roiController.updateFromExternal(roi)` on each callback
-
-3. **`src/integration/MockDataAdapter.js`** — extends `ExternalDataAdapter`:
-   - Constructor: `{ dataStore, intervalMs = 500, batchSize = 100 }`
-   - `start()` — `setInterval` generating random float batches → calls `appendData`
-   - `stop()` — `clearInterval`
-   - `replaceData` / `appendData` — delegate to `this._dataStore`
-
-4. **`src/integration/MockROIAdapter.js`** — extends `ExternalROIAdapter`:
-   - `load()` — reads from `localStorage[storageKey]`; returns parsed array or `[]`
-   - `save(roi)` — upserts into localStorage array by `roi.id`
-   - `subscribe(callback)` — wires `roiController.on('roiFinalized', ...)` → save + broadcast; returns unsubscribe
-   - `attach()` — convenience: `load()` → `roiController.deserializeAll(rois)` + starts subscription
-
-5. **`README.md` integration section** covering:
-   - Architecture boundary: engine core vs. integration layer
-   - `ExternalDataAdapter` contract with `bufferStruct` type table
-   - `ExternalROIAdapter` contract with event lifecycle and version conflict rules
-   - Mock adapter example code snippet
-   - ASCII data flow diagram: `External Source → Adapter → DataStore → DataView → PlotController → deck.gl`
-   - ROI sync flow: `roiFinalized → adapter.save() → storage → (other clients) → adapter.subscribe callback → updateFromExternal() → roiExternalUpdate → DataView dirty`
-
-6. **Update `examples/HubPage.jsx`** — add link to integration guide section in README (or link SharedDataExample if it demonstrates adapters).
-
----
-
-### Validation checklist
-
-- [ ] Import and subclass both adapters; calling unimplemented base methods throws descriptive `Error`
-- [ ] `MockDataAdapter.start()` → DataStore receives `appendData` batches at configured interval
-- [ ] `MockDataAdapter.replaceData({ x, y })` → DataStore cleared; `getPointCount() === x.length`
-- [ ] `MockROIAdapter.attach()` → localStorage ROIs restored via `deserializeAll()`
-- [ ] Create ROI → `roiFinalized` → `MockROIAdapter.save()` → ROI found in localStorage JSON
-- [ ] Reload (call `attach()` again) → ROI restored at correct version
-- [ ] `subscribe()` returns unsubscribe function; after calling it, callback no longer fires
-- [ ] External update with stale version → `updateFromExternal` rejects; localStorage unchanged
-- [ ] README integration section renders correctly in GitHub markdown
-
----
-
-### Notes
-
-- `src/integration/` is a new directory. No webpack changes needed.
-- JavaScript does not have abstract classes; throw-on-call is the idiomatic interface contract pattern here.
-- `MockROIAdapter.subscribe` multi-subscriber broadcast is a simplification — a real server would broadcast to all connected clients. The mock validates the contract shape only.
-- F18 adds no new engine events. All events it relies on (`roiFinalized`, `roiExternalUpdate`, `dataExpired`) are defined in F14/F16.
-- After completing: README integration section IS the primary deliverable. Update `examples/HubPage.jsx`.
+### F18 [COMPLETED] Feature: External Integration Interface Contracts
+**Completed:** 2026-02-22 | **Branch:** feature/integration-contract
+Created `ExternalDataAdapter`/`ExternalROIAdapter` base classes (throw-on-call contracts); `MockDataAdapter` (random batch timer) and `MockROIAdapter` (localStorage-backed); README "External Integration" section with architecture diagram, bufferStruct table, contract docs, and mock snippets; HubPage integration guide card added.
+Full spec: [docs/plan-archive.md#f18](docs/plan-archive.md#f18)
 
 
 - **2026-02-22 [Claude]**: F16, F15, F14, F17, F18 added as PENDING (from Features.md). Mandatory implementation order: F16 → F15 → F14 → F17 → F18. Plan version 3.0.
@@ -305,3 +230,4 @@ Full spec: [docs/plan-archive.md#f17](docs/plan-archive.md#f17)
 - **2026-02-22 [Claude]**: F15 completed (v3.2) — `PlotDataView` created; `roiFinalized` stub added to ROIController; `opts.dataStore`/`opts.dataView` prep added to PlotController. Next: F14.
 - **2026-02-22 [Claude]**: F14 completed (v3.3) — ROI versioning + serialization implemented. `ROIBase` gains `version`/`updatedAt`/`domain`/`bumpVersion()`; `LinearRegion` overrides `bumpVersion()` to omit `y`; `ROIController` gains `serializeAll()`/`deserializeAll()`/`updateFromExternal()`; `PlotController` forwards `roiExternalUpdate`. Next: F17.
 - **2026-02-22 [Claude]**: F17 completed (v3.4) — Shared Data Infrastructure. `PlotController` gains ownership flags, `setDataView()`, and DataView event wiring; `_render()` uses DataView when present; `PlotCanvas` gains `dataStore`/`onInit` props; `SharedDataExample.jsx` created; webpack entry + HTML added. Next: F18.
+- **2026-02-22 [Claude]**: F18 completed (v3.5) — External Integration Contracts. `src/integration/` directory created with `ExternalDataAdapter`, `ExternalROIAdapter`, `MockDataAdapter`, `MockROIAdapter`. README "External Integration" section added with architecture diagram, bufferStruct table, contract docs, ROI sync flow, and mock snippets. HubPage integration guide card added. All Phase 2 features (F14–F18) now complete.

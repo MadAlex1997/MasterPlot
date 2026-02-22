@@ -5,6 +5,49 @@ All active/pending work is in [PLAN.md](../PLAN.md).
 
 ---
 
+## F18 [COMPLETED] Feature: External Integration Interface Contracts
+
+**Branch:** `feature/integration-contract`
+**Completed:** 2026-02-22
+
+### Goal
+
+Define strict contracts for external integration packages. MasterPlot itself implements no HTTP, WebSocket, or authentication logic. This feature is primarily interface definitions + documentation, validated by mock implementations.
+
+### Files created / modified
+
+| File | Action |
+|------|--------|
+| `src/integration/ExternalDataAdapter.js` | Created — base class with throw-on-call methods + JSDoc |
+| `src/integration/ExternalROIAdapter.js` | Created — base class with throw-on-call methods + `attach()`/`detach()` helpers |
+| `src/integration/MockDataAdapter.js` | Created — random batch generator (setInterval); extends ExternalDataAdapter |
+| `src/integration/MockROIAdapter.js` | Created — localStorage-backed ROI persistence; extends ExternalROIAdapter |
+| `README.md` | Modified — added "External Integration (F18)" section with architecture diagram, contract docs, and mock snippets |
+| `examples/HubPage.jsx` | Modified — added Integration Guide card linking to README section |
+
+### Implementation summary
+
+1. **ExternalDataAdapter** — base class requiring `replaceData(bufferStruct)` and `appendData(bufferStruct)`. Both throw descriptive errors if not overridden. `bufferStruct = { x: Float32Array, y: Float32Array, size?: Float32Array, color?: Uint8Array }`.
+
+2. **ExternalROIAdapter** — base class requiring `load()`, `save(roi)`, `subscribe(callback)`. Provides a concrete `attach()` and `detach()` that wire `roiFinalized` → `save()` and `subscribe` → `updateFromExternal()`.
+
+3. **MockDataAdapter** — generates random `(x, y)` batches at a configurable `intervalMs`/`batchSize`. `start()` / `stop()` control the interval. `replaceData` = `clear()` + `appendData()`.
+
+4. **MockROIAdapter** — `load()` reads `localStorage[storageKey]`; `save()` upserts by `roi.id` and broadcasts to in-process `_subscribers`; `subscribe()` pushes callback into `_subscribers` and returns splice-based unsubscribe.
+
+### Validation checklist
+
+- [x] Import and subclass both adapters; calling unimplemented base methods throws descriptive `Error`
+- [x] `MockDataAdapter.start()` → DataStore receives `appendData` batches at configured interval
+- [x] `MockDataAdapter.replaceData({ x, y })` → DataStore cleared; `getPointCount() === x.length`
+- [x] `MockROIAdapter.attach()` → localStorage ROIs restored via `deserializeAll()`
+- [x] Create ROI → `roiFinalized` → `MockROIAdapter.save()` → ROI found in localStorage JSON
+- [x] `subscribe()` returns unsubscribe function; after calling it, callback no longer fires
+- [x] External update with stale version → `updateFromExternal` rejects; localStorage unchanged
+- [x] README integration section renders correctly in GitHub markdown
+
+---
+
 ## F17 [COMPLETED] Feature: Shared Data Infrastructure
 
 **Branch:** `feature/shared-data`

@@ -25,6 +25,11 @@ export default function HubPage() {
       title: 'Shared Data (F17)',
       desc: 'Two PlotControllers sharing a single DataStore. Plot A shows all points; Plot B shows only points inside a LinearRegion drawn on Plot A — lazy PlotDataView recomputes on roiFinalized, not on drag.',
     },
+    {
+      href: 'https://github.com/MadAlex1997/MasterPlot#external-integration-f18',
+      title: 'Integration Guide (F18)',
+      desc: 'ExternalDataAdapter + ExternalROIAdapter contracts. MockDataAdapter (random batches on timer) and MockROIAdapter (localStorage-backed ROI persistence). README → External Integration section.',
+    },
   ];
 
   const styles = {
