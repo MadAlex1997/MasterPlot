@@ -31,6 +31,8 @@ import { buildLineLayer }        from '../src/plot/layers/LineLayer.js';
 import { HistogramLUTController } from '../src/plot/layers/HistogramLUTController.js';
 import HistogramLUTPanel         from '../src/components/HistogramLUTPanel.jsx';
 import { PlaybackController }    from '../src/audio/PlaybackController.js';
+import { FilterController }      from '../src/audio/FilterController.js';
+import FilterPanel               from '../src/components/FilterPanel.jsx';
 
 // ── Playhead drawing helpers ───────────────────────────────────────────────────
 
@@ -181,12 +183,21 @@ export default function SpectrogramExample() {
     playbackRef.current = new PlaybackController();
   }
 
-  const [log,          setLog]          = useState([]);
-  const [liveAppend,   setLiveAppend]   = useState(true);
-  const [windowSize,   setWindowSize]   = useState(1024);
-  const [loading,      setLoading]      = useState(false);
-  const [colorTrigger, setColorTrigger] = useState(0);
-  const [playState,    setPlayState]    = useState('stopped'); // 'playing'|'paused'|'stopped'
+  // ── Filter refs ────────────────────────────────────────────────────────────
+  const filterControllerRef = useRef(null);
+  const originalSamplesRef  = useRef(null);  // snapshot of pre-filter PCM for "Clear Filter"
+  if (!filterControllerRef.current) {
+    filterControllerRef.current = new FilterController();
+  }
+
+  const [log,              setLog]              = useState([]);
+  const [liveAppend,       setLiveAppend]       = useState(true);
+  const [windowSize,       setWindowSize]       = useState(1024);
+  const [loading,          setLoading]          = useState(false);
+  const [colorTrigger,     setColorTrigger]     = useState(0);
+  const [playState,        setPlayState]        = useState('stopped'); // 'playing'|'paused'|'stopped'
+  const [applying,         setApplying]         = useState(false);
+  const [filterSampleRate, setFilterSampleRate] = useState(SAMPLE_RATE);
 
   const addLog = (msg) => setLog(prev => [msg, ...prev].slice(0, 20));
 
@@ -651,6 +662,8 @@ export default function SpectrogramExample() {
       // Load PCM
       samplesRef.current   = pcm;
       sampleCntRef.current = pcm.length;
+      originalSamplesRef.current = samplesRef.current.slice();  // snapshot for "Clear Filter"
+      setFilterSampleRate(sr);
       dataTriggerRef.current += 1;
       // Downsample for waveform
       const numWavePts = Math.floor(pcm.length / WAVEFORM_STEP);
@@ -677,6 +690,39 @@ export default function SpectrogramExample() {
     }
     setLoading(false);
     e.target.value = '';  // allow re-loading same file
+  };
+
+  // ── Filter handlers ───────────────────────────────────────────────────────
+
+  const handleApplyFilter = async () => {
+    if (!samplesRef.current.length) return;
+    setApplying(true);
+    try {
+      const fc       = filterControllerRef.current;
+      const filtered = await fc.applyToSamples(samplesRef.current, loadedSampleRateRef.current);
+      samplesRef.current = filtered;
+      dataTriggerRef.current += 1;
+      dirtyRef.current = true;
+      // If playback is loaded, reload with filtered audio
+      if (playbackRef.current?.duration > 0) {
+        await playbackRef.current.loadBuffer(filtered, loadedSampleRateRef.current);
+      }
+      addLog(`Filter: ${fc.state.type}  cutoff=${fc.state.frequency.toFixed(0)} Hz  Q=${fc.state.Q.toFixed(2)}`);
+    } catch (err) {
+      addLog(`Filter error: ${err.message}`);
+    }
+    setApplying(false);
+  };
+
+  const handleClearFilter = async () => {
+    if (!originalSamplesRef.current) return;
+    samplesRef.current = originalSamplesRef.current.slice();
+    dataTriggerRef.current += 1;
+    dirtyRef.current = true;
+    if (playbackRef.current?.duration > 0) {
+      await playbackRef.current.loadBuffer(samplesRef.current, loadedSampleRateRef.current);
+    }
+    addLog('Filter cleared — original audio restored');
   };
 
   // ── Styles ────────────────────────────────────────────────────────────────
@@ -753,6 +799,19 @@ export default function SpectrogramExample() {
           />
         </label>
 
+        {/* Clear Filter button */}
+        <button
+          onClick={handleClearFilter}
+          disabled={!originalSamplesRef.current}
+          style={{
+            background: '#222', border: '1px solid #555', borderRadius: 3,
+            color: originalSamplesRef.current ? '#fa8' : '#555',
+            padding: '2px 8px', fontSize: 12, cursor: 'pointer', fontFamily: 'monospace',
+          }}
+        >
+          Clear Filter
+        </button>
+
         {/* Playback controls */}
         <button
           onClick={() => {
@@ -788,13 +847,24 @@ export default function SpectrogramExample() {
       </div>
 
       <div style={plotWrapStyle}>
-        {/* Spectrogram row: plot canvas + LUT panel side-by-side */}
+        {/* Spectrogram row: plot canvas + right sidebar (LUT + Filter) side-by-side */}
         <div style={{ flex: 3, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
           <div style={{ ...panelStyle, flex: 1 }}>
             <canvas ref={webglRef} style={canvasStyle} />
             <canvas ref={axisRef}  style={{ ...canvasStyle, pointerEvents: 'none' }} />
           </div>
-          <HistogramLUTPanel controller={lutControllerRef.current} width={140} />
+          {/* Right sidebar: LUT panel + Filter panel, vertically stacked */}
+          <div style={{ width: 140, display: 'flex', flexDirection: 'column', borderLeft: '1px solid #333', flexShrink: 0 }}>
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              <HistogramLUTPanel controller={lutControllerRef.current} />
+            </div>
+            <FilterPanel
+              controller={filterControllerRef.current}
+              sampleRate={filterSampleRate}
+              onApply={handleApplyFilter}
+              applying={applying}
+            />
+          </div>
         </div>
 
         <div style={dividerStyle} />

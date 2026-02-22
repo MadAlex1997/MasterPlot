@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 2.4
-**Last Updated:** 2026-02-21
-**Status:** F12, F13 PENDING
+**Plan Version:** 2.5
+**Last Updated:** 2026-02-22
+**Status:** F12, F13 COMPLETED — no pending steps
 
 ---
 
@@ -1017,10 +1017,11 @@ Add the same `Ctrl+click` block to `onWaveMouseDown` (using `waveViewportRef.cur
 
 ---
 
-## F13 [IN_PROGRESS] Feature: Frequency Filters — offline DSP + frequency response preview
+## F13 [COMPLETED] Feature: Frequency Filters — offline DSP + frequency response preview
 
-**Branch:** `feature/F12` (continuing on feature/F12 branch)
-<!-- Started: 2026-02-22 -->
+**Branch:** `feature/F12` (implemented on feature/F12 branch)
+<!-- Started: 2026-02-22 · Completed: 2026-02-22 -->
+<!-- Created src/audio/FilterController.js and src/components/FilterPanel.jsx; modified SpectrogramExample.jsx: added imports, filterControllerRef, originalSamplesRef, applying/filterSampleRate state, PCM snapshot on file load, handleApplyFilter, handleClearFilter, "Clear Filter" header button, right sidebar layout with HistogramLUTPanel + FilterPanel stacked. Build: 0 errors. -->
 
 **Branch:** `feature/F13` (create before starting; may be implemented after F12)
 
