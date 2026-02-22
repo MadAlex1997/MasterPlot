@@ -14,7 +14,7 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 
 ---
 
-## Current Capabilities (F1–F16, F15)
+## Current Capabilities (F1–F16, F15, F14)
 
 ### Core Plotting Engine
 - **WebGL rendering** via deck.gl `OrthographicView` — no maps, no geospatial assumptions
@@ -35,6 +35,7 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
   - Children are clamped to parent bounds (not discarded)
   - Recursive enforcement for multi-level nesting
 - **Deletion** with `D` key; cancel creation with `Esc`
+- **ROI versioning (F14)** — every ROI carries a monotonic `version` counter, `updatedAt` timestamp, and a JSON-safe `domain` snapshot; `bumpVersion()` is called automatically on mouseup; `LinearRegion.domain` omits `y` (spans ±Infinity)
 
 ### Spectrogram / Audio Analysis Example
 A full-featured spectrogram viewer is available at the demo (Spectrogram tab):
@@ -117,8 +118,9 @@ All events are emitted on `PlotController` (or `ROIController` before being re-e
 | `panChanged` | `{ dx, dy }` | Pan delta in screen pixels |
 | `roiCreated` | `{ roi, type }` | ROI was created |
 | `roiUpdated` | `{ roi, bounds }` | ROI was moved or resized (drag; fires many times) |
-| `roiFinalized` | `{ roi, bounds }` | ROI drag committed on mouseup (fires once per release) |
+| `roiFinalized` | `{ roi, bounds, version, updatedAt, domain }` | ROI drag committed on mouseup; `version` already incremented |
 | `roiDeleted` | `{ id }` | ROI was deleted |
+| `roiExternalUpdate` | `{ roi, version }` | External update accepted via `updateFromExternal()` |
 
 Usage:
 ```js
@@ -244,6 +246,50 @@ Child views automatically cascade dirty when their parent emits `'dirty'`. Chain
 
 ---
 
+## ROI Versioning & Serialization (F14)
+
+Every ROI instance carries:
+- **`version`** — monotonic integer starting at 1; incremented on each user mouseup commit
+- **`updatedAt`** — `Date.now()` timestamp of the last `bumpVersion()` call
+- **`domain`** — JSON-safe snapshot: `{ x: [x1, x2], y?: [y1, y2] }` (`LinearRegion` omits `y`)
+
+### ROIController Serialization API
+
+```js
+const roiController = plotController.roiController;
+
+// Serialize all ROIs to plain objects (JSON-safe)
+const snapshot = roiController.serializeAll();
+// → [{ id, type, version, updatedAt, domain, metadata }, ...]
+
+// Restore from a snapshot (clears existing ROIs, emits roisChanged)
+roiController.deserializeAll(snapshot);
+
+// Apply an external update — version-gated (rejects if incoming.version <= current)
+const accepted = roiController.updateFromExternal({
+  id: 'roi_1',
+  type: 'linearRegion',
+  version: 5,
+  updatedAt: Date.now(),
+  domain: { x: [10, 50] },
+  metadata: {},
+});
+// Returns true if accepted, false if rejected
+```
+
+### Version conflict rules
+
+| Condition | Result |
+|---|---|
+| `incoming.version > existing.version` | Accepted → bounds updated, `roiExternalUpdate` emitted |
+| `incoming.version === existing.version` | **Rejected** (silent) |
+| `incoming.version < existing.version` | **Rejected** (silent) |
+| ROI not found in `_rois` | Created as a new ROI |
+
+`updateFromExternal` does **not** call `bumpVersion()` — the incoming version is authoritative and is applied directly.
+
+---
+
 ## ROI Constraint System
 
 `ConstraintEngine.enforceConstraints(parent, delta)`:
@@ -338,7 +384,6 @@ public/
 See [PLAN.md](PLAN.md) for the full implementation plan and step status.
 
 In progress / planned (Phase 2):
-- **F14** ROI domain model + mandatory versioning (`version`, `serializeAll`, `updateFromExternal`)
 - **F17** Shared DataStore/DataView across multiple PlotControllers
 - **F18** External integration adapter contracts (no HTTP/WebSocket in engine)
 

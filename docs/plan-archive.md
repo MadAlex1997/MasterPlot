@@ -2425,3 +2425,77 @@ const row = bin;
 - [x] `snapshot()` returns deep copy — mutating it does not affect cache
 - [x] `destroy()` removes all listeners
 
+---
+
+## F14
+
+### F14 [COMPLETED] Feature: ROI Domain Model + Mandatory Versioning
+
+**Completed:** 2026-02-22 | **Branch:** feature/roi-domain-versioning
+
+**Depends on:** F15 (PlotDataView must exist with `roiFinalized` stub wired)
+
+**Goal:** Add mandatory, monotonic versioning to every ROI. The serialized ROI schema gains `version`, `updatedAt`, and `domain: { x?, y? }` fields. `ROIController` gains `serializeAll()`, `deserializeAll()`, and `updateFromExternal()`. External updates are rejected if `incoming.version <= current.version`. Two new events: `roiFinalized` (mouseup / commit, enriched payload) and `roiExternalUpdate` (accepted external update).
+
+---
+
+### Files modified
+
+| File | Action |
+|------|--------|
+| `src/plot/ROI/ROIBase.js` | Added `version`, `updatedAt`, `domain` fields to constructor; added `bumpVersion()` method |
+| `src/plot/ROI/LinearRegion.js` | Added `bumpVersion()` override (domain omits `y`); overrides base domain in constructor |
+| `src/plot/ROI/ROIController.js` | Replaced `roiFinalized` stub in `_onMouseUp`; added `serializeAll()`, `deserializeAll()`, `updateFromExternal()`, `_roiFromSerialized()` |
+| `src/plot/PlotController.js` | Added `roiExternalUpdate` forwarding in `_wireEvents()` |
+| `README.md` | Added ROI Versioning & Serialization section; updated events table |
+| `examples/HubPage.jsx` | Updated Scatter/ROI card description |
+
+---
+
+### Implementation notes
+
+- `ROIBase` constructor adds after `this.metadata`:
+  ```js
+  this.version   = opts.version   || 1;
+  this.updatedAt = opts.updatedAt || Date.now();
+  this.domain    = opts.domain    || { x: [this.x1, this.x2], y: [this.y1, this.y2] };
+  ```
+
+- `ROIBase.bumpVersion()`:
+  ```js
+  bumpVersion() {
+    this.version  += 1;
+    this.updatedAt = Date.now();
+    this.domain    = { x: [this.x1, this.x2], y: [this.y1, this.y2] };
+  }
+  ```
+
+- `LinearRegion` overrides `bumpVersion()` to set `domain = { x: [this.x1, this.x2] }` only (omits `y` — spans ±Infinity, not JSON-safe). Also overrides `domain` in constructor when `opts.domain` is absent.
+
+- `ROIController._onMouseUp` now calls `roi.bumpVersion()` then emits `roiFinalized` with enriched payload `{ roi, bounds, version, updatedAt, domain }` and re-emits `roisChanged`.
+
+- `updateFromExternal` does NOT call `bumpVersion()` — the incoming version is authoritative and applied directly.
+
+- Version conflict rules:
+  - `incoming.version > existing.version` → accepted
+  - `incoming.version === existing.version` → rejected (silent)
+  - `incoming.version < existing.version` → rejected (silent)
+  - ROI not found → created as new ROI
+
+---
+
+### Validation checklist
+
+- [x] Create ROI → `roi.version === 1`, `roi.updatedAt` is a recent timestamp
+- [x] Drag ROI → `roiUpdated` fires during drag; version unchanged mid-drag
+- [x] Mouseup → `roiFinalized` fires; `roi.version === 2`
+- [x] `serializeAll()` → array with correct `{ id, type, version, updatedAt, domain, metadata }` per ROI
+- [x] `deserializeAll(arr)` → `getAllROIs().length === arr.length`
+- [x] `updateFromExternal({ version: 5 })` on ROI at v3 → accepted, returns `true`, `roiExternalUpdate` fires
+- [x] `updateFromExternal({ version: 2 })` on ROI at v3 → rejected, returns `false`, no event
+- [x] `updateFromExternal({ version: 3 })` (equal) on ROI at v3 → rejected, returns `false`
+- [x] ConstraintEngine still enforces parent-child bounds (new fields don't collide with `x1/x2/y1/y2` reads)
+- [x] PlotDataView (F15): `roiFinalized` marks dirty; `roiUpdated` does not
+- [x] `roiExternalUpdate` marks PlotDataView dirty
+- [x] No infinite update loops (`updateFromExternal` does not re-emit `roiFinalized`)
+

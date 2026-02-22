@@ -35,6 +35,19 @@ export class LinearRegion extends ROIBase {
     // y-bounds default to ±Infinity (full height)
     this.y1 = opts.y1 ?? -Infinity;
     this.y2 = opts.y2 ??  Infinity;
+    // Override base domain: LinearRegion has no meaningful y domain
+    if (!opts.domain) {
+      this.domain = { x: [this.x1, this.x2] };
+    }
+  }
+
+  /**
+   * F14: Override — LinearRegion domain omits y (spans ±Infinity; not JSON-safe).
+   */
+  bumpVersion() {
+    this.version  += 1;
+    this.updatedAt = Date.now();
+    this.domain    = { x: [this.x1, this.x2] };
   }
 
   /**

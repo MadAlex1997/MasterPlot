@@ -66,7 +66,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | B8  | Fix: Spectrogram page blank | ✅ COMPLETED | — | 2026-02-21 |
 | F16 | Rolling Ring Buffer DataStore | ✅ COMPLETED | feature/datastore-rolling | 2026-02-22 |
 | F15 | Lazy DataView System | ✅ COMPLETED | feature/dataview-lazy | 2026-02-22 |
-| F14 | ROI Domain Model + Versioning | ⏳ PENDING | feature/roi-domain-versioning | — |
+| F14 | ROI Domain Model + Versioning | ✅ COMPLETED | feature/roi-domain-versioning | 2026-02-22 |
 | F17 | Shared Data Infrastructure | ⏳ PENDING | feature/shared-data | — |
 | F18 | External Integration Contracts | ⏳ PENDING | feature/integration-contract | — |
 
@@ -205,93 +205,10 @@ Full spec: [docs/plan-archive.md#f15](docs/plan-archive.md#f15)
 
 ---
 
-## F14 [PENDING] Feature: ROI Domain Model + Mandatory Versioning
-
-**Branch:** `feature/roi-domain-versioning` (create before starting)
-
-**Depends on:** F15 (PlotDataView must exist with `roiFinalized` stub wired)
-
-**Goal:** Add mandatory, monotonic versioning to every ROI. The serialized ROI schema gains `version`, `updatedAt`, and `domain: { x?, y? }` fields. `ROIController` gains `serializeAll()`, `deserializeAll()`, and `updateFromExternal()`. External updates are rejected if `incoming.version <= current.version`. Two new events: `roiFinalized` (mouseup / commit) and `roiExternalUpdate` (accepted external update).
-
----
-
-### Files to modify
-
-| File | Action |
-|------|--------|
-| `src/plot/ROI/ROIBase.js` | **Modify** — add `version`, `updatedAt`, `domain` fields; add `bumpVersion()` |
-| `src/plot/ROI/ROIController.js` | **Modify** — replace `roiFinalized` stub; add `serializeAll()`, `deserializeAll()`, `updateFromExternal()`; emit `roiExternalUpdate` |
-| `src/plot/PlotController.js` | **Modify** — forward new events in `_wireEvents()` |
-
----
-
-### Implementation steps
-
-1. **ROIBase constructor additions** (after existing `this.metadata = opts.metadata || {}`):
-   ```js
-   this.version   = opts.version   || 1;
-   this.updatedAt = opts.updatedAt || Date.now();
-   this.domain    = opts.domain    || { x: [this.x1, this.x2], y: [this.y1, this.y2] };
-   ```
-   For `LinearRegion`: set `domain = { x: [x1, x2] }` only (no `y` key — JSON-safe; y spans Infinity).
-
-2. **`bumpVersion()`** on ROIBase:
-   ```js
-   bumpVersion() {
-     this.version  += 1;
-     this.updatedAt = Date.now();
-     this.domain    = { x: [this.x1, this.x2], y: [this.y1, this.y2] };
-   }
-   ```
-
-3. **Replace `_onMouseUp` stub in ROIController** — call `roi.bumpVersion()` then emit full payload:
-   ```js
-   roi.bumpVersion();
-   this.emit('roiFinalized', { roi, bounds: roi.getBounds(), version: roi.version, updatedAt: roi.updatedAt, domain: roi.domain });
-   this.emit('roisChanged', { rois: this.getAllROIs() });
-   ```
-
-4. **`serializeAll()`** — maps all ROIs to `{ id, type, version, updatedAt, domain, metadata }`.
-
-5. **`deserializeAll(array)`** — clears `_rois`, reconstructs each ROI from type + domain fields, restores version/updatedAt/domain/metadata, emits `roisChanged` once.
-
-6. **`updateFromExternal(serializedROI)`** — version-gated external update:
-   - If `existing && incoming.version <= existing.version` → return `false` (silent reject)
-   - Else: apply bounds from `serializedROI.domain`, set fields, emit `roiExternalUpdate`, emit `roisChanged`, return `true`
-   - If ROI not found in `_rois`: create it, add it, emit same events
-
-7. **PlotController `_wireEvents()`** — add forwarding:
-   ```js
-   this._roiController.on('roiFinalized',      e => this.emit('roiFinalized',      e));
-   this._roiController.on('roiExternalUpdate',  e => this.emit('roiExternalUpdate', e));
-   ```
-
----
-
-### Validation checklist
-
-- [ ] Create ROI → `roi.version === 1`, `roi.updatedAt` is a recent timestamp
-- [ ] Drag ROI → `roiUpdated` fires during drag; version unchanged mid-drag
-- [ ] Mouseup → `roiFinalized` fires; `roi.version === 2`
-- [ ] `serializeAll()` → array with correct `{ id, type, version, updatedAt, domain, metadata }` per ROI
-- [ ] `deserializeAll(arr)` → `getAllROIs().length === arr.length`
-- [ ] `updateFromExternal({ version: 5 })` on ROI at v3 → accepted, returns `true`, `roiExternalUpdate` fires
-- [ ] `updateFromExternal({ version: 2 })` on ROI at v3 → rejected, returns `false`, no event
-- [ ] `updateFromExternal({ version: 3 })` (equal) on ROI at v3 → rejected, returns `false`
-- [ ] ConstraintEngine still enforces parent-child bounds (new fields don't collide with `x1/x2/y1/y2` reads)
-- [ ] PlotDataView (F15): `roiFinalized` marks dirty; `roiUpdated` does not
-- [ ] `roiExternalUpdate` marks PlotDataView dirty
-- [ ] No infinite update loops (`updateFromExternal` does not re-emit `roiFinalized`)
-
----
-
-### Notes
-
-- `LinearRegion.bumpVersion()` override sets `domain = { x: [this.x1, this.x2] }` only (omit `y`).
-- `updateFromExternal` does NOT call `bumpVersion()` — the incoming version IS the authoritative version. Do not increment locally.
-- `ConstraintEngine` reads `roi.x1/x2/y1/y2` directly; new fields have no collision risk.
-- After completing: update `README.md`; update `examples/HubPage.jsx`.
-
+### F14 [COMPLETED] Feature: ROI Domain Model + Mandatory Versioning
+**Completed:** 2026-02-22 | **Branch:** feature/roi-domain-versioning
+Added `version`, `updatedAt`, `domain` to `ROIBase`; `bumpVersion()` called on mouseup; `LinearRegion` overrides `bumpVersion()` to omit `y`; `ROIController` gains `serializeAll()`, `deserializeAll()`, `updateFromExternal()` (version-gated, emits `roiExternalUpdate`); `PlotController._wireEvents()` forwards `roiExternalUpdate`.
+Full spec: [docs/plan-archive.md#f14](docs/plan-archive.md#f14)
 
 ---
 
@@ -458,3 +375,4 @@ Full spec: [docs/plan-archive.md#f15](docs/plan-archive.md#f15)
 - **2026-02-22 [Claude]**: F16, F15, F14, F17, F18 added as PENDING (from Features.md). Mandatory implementation order: F16 → F15 → F14 → F17 → F18. Plan version 3.0.
 - **2026-02-22 [Claude]**: Plan reorganized to v3.1 — completed specs archived to `docs/plan-archive.md`; PLAN.md now contains compact summaries + pending specs only. Future agents: follow rule 7 (archive on completion).
 - **2026-02-22 [Claude]**: F15 completed (v3.2) — `PlotDataView` created; `roiFinalized` stub added to ROIController; `opts.dataStore`/`opts.dataView` prep added to PlotController. Next: F14.
+- **2026-02-22 [Claude]**: F14 completed (v3.3) — ROI versioning + serialization implemented. `ROIBase` gains `version`/`updatedAt`/`domain`/`bumpVersion()`; `LinearRegion` overrides `bumpVersion()` to omit `y`; `ROIController` gains `serializeAll()`/`deserializeAll()`/`updateFromExternal()`; `PlotController` forwards `roiExternalUpdate`. Next: F17.

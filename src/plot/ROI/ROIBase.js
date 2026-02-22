@@ -49,9 +49,27 @@ export class ROIBase extends EventEmitter {
 
     this.metadata = opts.metadata || {};
 
+    // F14: versioning + serialization fields
+    this.version   = opts.version   || 1;
+    this.updatedAt = opts.updatedAt || Date.now();
+    this.domain    = opts.domain    || { x: [this.x1, this.x2], y: [this.y1, this.y2] };
+
     // Visual state
     this.selected = false;
     this.hovered  = false;
+  }
+
+  // ─── Versioning ──────────────────────────────────────────────────────────────
+
+  /**
+   * Increment version, refresh updatedAt and domain snapshot.
+   * Called by ROIController on mouseup (user commit). Never called for
+   * external updates — use updateFromExternal() to set version directly.
+   */
+  bumpVersion() {
+    this.version  += 1;
+    this.updatedAt = Date.now();
+    this.domain    = { x: [this.x1, this.x2], y: [this.y1, this.y2] };
   }
 
   // ─── Bounds ──────────────────────────────────────────────────────────────────

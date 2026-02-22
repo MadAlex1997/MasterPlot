@@ -117,6 +117,82 @@ export class ROIController extends EventEmitter {
     this.emit('roisChanged', { rois: this.getAllROIs() });
   }
 
+  // ─── F14: Serialization API ──────────────────────────────────────────────────
+
+  /**
+   * Serialize all ROIs to plain JSON-safe objects.
+   * @returns {{ id, type, version, updatedAt, domain, metadata }[]}
+   */
+  serializeAll() {
+    return this.getAllROIs().map(roi => ({
+      id:        roi.id,
+      type:      roi.type,
+      version:   roi.version,
+      updatedAt: roi.updatedAt,
+      domain:    roi.domain,
+      metadata:  roi.metadata,
+    }));
+  }
+
+  /**
+   * Restore ROIs from a serialized array (initial load only).
+   * Clears all existing ROIs; emits 'roisChanged' once.
+   * @param {{ id, type, version, updatedAt, domain, metadata }[]} array
+   */
+  deserializeAll(array) {
+    this._rois.clear();
+    this._activeROI = null;
+
+    for (const s of array) {
+      const roi = this._roiFromSerialized(s);
+      if (roi) this._rois.set(roi.id, roi);
+    }
+
+    this.emit('roisChanged', { rois: this.getAllROIs() });
+  }
+
+  /**
+   * Apply an externally-sourced ROI update, gated by version.
+   * Rejects silently if incoming.version <= current.version.
+   *
+   * @param {{ id, type, version, updatedAt, domain, metadata }} serializedROI
+   * @returns {boolean} true if accepted, false if rejected
+   */
+  updateFromExternal(serializedROI) {
+    const existing = this._rois.get(serializedROI.id);
+
+    // Reject stale or equal version
+    if (existing && serializedROI.version <= existing.version) {
+      return false;
+    }
+
+    if (existing) {
+      // Apply bounds from domain
+      if (serializedROI.domain.x) {
+        existing.x1 = serializedROI.domain.x[0];
+        existing.x2 = serializedROI.domain.x[1];
+      }
+      if (serializedROI.domain.y) {
+        existing.y1 = serializedROI.domain.y[0];
+        existing.y2 = serializedROI.domain.y[1];
+      }
+      existing.version   = serializedROI.version;
+      existing.updatedAt = serializedROI.updatedAt;
+      existing.domain    = serializedROI.domain;
+      if (serializedROI.metadata) existing.metadata = serializedROI.metadata;
+    } else {
+      // ROI not found — create it
+      const roi = this._roiFromSerialized(serializedROI);
+      if (!roi) return false;
+      this._rois.set(roi.id, roi);
+    }
+
+    const target = this._rois.get(serializedROI.id);
+    this.emit('roiExternalUpdate', { roi: target, version: serializedROI.version });
+    this.emit('roisChanged', { rois: this.getAllROIs() });
+    return true;
+  }
+
   // ─── Creation mode ────────────────────────────────────────────────────────────
 
   enterCreateMode(type) {
@@ -260,9 +336,18 @@ export class ROIController extends EventEmitter {
       this._dragHandle    = null;
       this._dragStartData = null;
 
-      // F15 stub: emit roiFinalized on drag commit so PlotDataView can mark dirty.
-      // F14 will replace this with a versioned bumpVersion() payload.
-      if (roi) this.emit('roiFinalized', { roi, bounds: roi.getBounds() });
+      // F14: bump version on commit, emit full versioned payload
+      if (roi) {
+        roi.bumpVersion();
+        this.emit('roiFinalized', {
+          roi,
+          bounds:    roi.getBounds(),
+          version:   roi.version,
+          updatedAt: roi.updatedAt,
+          domain:    roi.domain,
+        });
+        this.emit('roisChanged', { rois: this.getAllROIs() });
+      }
     }
   }
 
@@ -328,6 +413,29 @@ export class ROIController extends EventEmitter {
       this.emit('roisChanged', { rois: this.getAllROIs() });
       this.cancelCreateMode();
     }
+  }
+
+  /**
+   * Reconstruct a ROI instance from a serialized object.
+   * @param {{ id, type, version, updatedAt, domain, metadata }} s
+   * @returns {ROIBase|null}
+   */
+  _roiFromSerialized(s) {
+    let roi;
+    if (s.type === 'linearRegion') {
+      const [x1, x2] = s.domain.x;
+      roi = new LinearRegion({ id: s.id, x1, x2, metadata: s.metadata || {} });
+    } else if (s.type === 'rect') {
+      const [x1, x2] = s.domain.x;
+      const [y1, y2] = s.domain.y;
+      roi = new RectROI({ id: s.id, x1, x2, y1, y2, metadata: s.metadata || {} });
+    } else {
+      return null;
+    }
+    roi.version   = s.version;
+    roi.updatedAt = s.updatedAt;
+    roi.domain    = s.domain;
+    return roi;
   }
 
   /**

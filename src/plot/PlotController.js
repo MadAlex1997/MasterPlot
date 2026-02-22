@@ -603,7 +603,8 @@ export class PlotController extends EventEmitter {
     this._roiController.on('roiCreated',   e => this.emit('roiCreated',   e));
     this._roiController.on('roiUpdated',   e => this.emit('roiUpdated',   e));
     this._roiController.on('roiDeleted',   e => this.emit('roiDeleted',   e));
-    this._roiController.on('roiFinalized', e => this.emit('roiFinalized', e)); // F15 stub; F14 enriches payload
+    this._roiController.on('roiFinalized',     e => this.emit('roiFinalized',     e));
+    this._roiController.on('roiExternalUpdate', e => this.emit('roiExternalUpdate', e)); // F14
     this._roiController.on('roisChanged',  () => { this._dirty = true; });
 
     // Axis domain events
