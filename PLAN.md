@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 3.2
+**Plan Version:** 3.4
 **Last Updated:** 2026-02-22
-**Status:** F15 last completed — F14, F17, F18 PENDING (implement in this order)
+**Status:** F17 last completed — F18 PENDING
 
 ---
 
@@ -67,7 +67,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | F16 | Rolling Ring Buffer DataStore | ✅ COMPLETED | feature/datastore-rolling | 2026-02-22 |
 | F15 | Lazy DataView System | ✅ COMPLETED | feature/dataview-lazy | 2026-02-22 |
 | F14 | ROI Domain Model + Versioning | ✅ COMPLETED | feature/roi-domain-versioning | 2026-02-22 |
-| F17 | Shared Data Infrastructure | ⏳ PENDING | feature/shared-data | — |
+| F17 | Shared Data Infrastructure | ✅ COMPLETED | feature/shared-data | 2026-02-22 |
 | F18 | External Integration Contracts | ⏳ PENDING | feature/integration-contract | — |
 
 ---
@@ -212,82 +212,10 @@ Full spec: [docs/plan-archive.md#f14](docs/plan-archive.md#f14)
 
 ---
 
-## F17 [PENDING] Feature: Shared Data Infrastructure
-
-**Branch:** `feature/shared-data` (create before starting)
-
-**Depends on:** F15 (PlotDataView), F16 (DataStore `getLogicalData`)
-
-**Goal:** Allow multiple `PlotController` instances to share a single `DataStore` and/or `PlotDataView`. ROI filtering may affect some views and not others. Base data remains immutable. DataViews are reused across plots without duplicate recompute.
-
----
-
-### Files to create / modify
-
-| File | Action |
-|------|--------|
-| `src/plot/PlotController.js` | **Modify** — complete `opts.dataStore` / `opts.dataView` injection; ownership flags; render path uses DataView when present; safe `destroy()` |
-| `examples/SharedDataExample.jsx` | **Create new** — two-plot demo |
-| `examples/HubPage.jsx` | **Modify** — link SharedDataExample |
-
----
-
-### Implementation steps
-
-1. **PlotController constructor** — finalize injection (replace F15 prep stubs):
-   ```js
-   this._dataStore     = opts.dataStore || new DataStore();
-   this._ownsDataStore = !opts.dataStore;
-   this._dataView      = opts.dataView  || null;
-   this._ownsDataView  = !opts.dataView;
-   ```
-
-2. **Render path** — in `_render()`, if `this._dataView` is set, use `this._dataView.getData()` in place of `this._dataStore.getGPUAttributes()` to get point attributes.
-
-3. **DataView recompute → render trigger** — after setting `this._dataView` in constructor:
-   ```js
-   if (this._dataView) {
-     this._dataView.on('recomputed', () => { this._dataTrigger++; this._dirty = true; });
-   }
-   ```
-
-4. **`destroy()`** — only release owned resources:
-   ```js
-   if (this._ownsDataStore && this._dataStore.destroy) this._dataStore.destroy();
-   if (this._ownsDataView  && this._dataView  && this._dataView.destroy) this._dataView.destroy();
-   ```
-
-5. **Create `examples/SharedDataExample.jsx`**:
-   - Single `DataStore` shared between Plot A and Plot B
-   - Plot A renders base `PlotDataView` (all points)
-   - Plot B renders `baseView.filterByROI(roiId)` (points inside a LinearRegion on Plot A)
-   - "Generate data" button appends random points → both plots update
-   - Drawing + releasing a LinearRegion on Plot A → `roiFinalized` → Plot B filtered view recomputes
-   - Removing ROI → Plot B reverts to all points
-
-6. **Update `examples/HubPage.jsx`** — add link to SharedDataExample.
-
----
-
-### Validation checklist
-
-- [ ] Two PlotControllers sharing one DataStore: `appendData()` reflects in both plots within same frame
-- [ ] `PlotController({ dataStore: external }).destroy()` does NOT call `external.destroy()`
-- [ ] Plot A (base view): all 1000 points visible
-- [ ] Plot B (filtered view): only ROI-interior points visible
-- [ ] Drag ROI → Plot B does NOT recompute (dirty stays false during drag)
-- [ ] Release ROI (mouseup) → Plot B recomputes within one render frame
-- [ ] Append 10k points: both plots update; shared DataView recomputes once (not twice)
-- [ ] Destroying Plot A leaves DataStore and shared DataView intact for Plot B
-
----
-
-### Notes
-
-- Ownership is determined by whether `opts.dataStore` / `opts.dataView` was provided — not by a ref-count. External callers (the example component) are responsible for destroying shared resources when all consumers are gone.
-- `PlotController._render()` must handle the case where `_dataView.getData()` returns a snapshot with different `.length` than stored `_dataTrigger` — just treat the snapshot as the authoritative GPU source.
-- After completing: update `README.md` with shared-data section; update `examples/HubPage.jsx`.
-
+### F17 [COMPLETED] Feature: Shared Data Infrastructure
+**Completed:** 2026-02-22 | **Branch:** feature/shared-data
+`PlotController` gains `_ownsDataStore`/`_ownsDataView` flags, `setDataView()`, and DataView event wiring; `_render()` uses `_dataView.getData()` when set; `PlotCanvas` gains `dataStore`/`onInit` props; `SharedDataExample.jsx` demonstrates two plots sharing one DataStore with per-ROI filtered view on Plot B.
+Full spec: [docs/plan-archive.md#f17](docs/plan-archive.md#f17)
 
 ---
 
@@ -376,3 +304,4 @@ Full spec: [docs/plan-archive.md#f14](docs/plan-archive.md#f14)
 - **2026-02-22 [Claude]**: Plan reorganized to v3.1 — completed specs archived to `docs/plan-archive.md`; PLAN.md now contains compact summaries + pending specs only. Future agents: follow rule 7 (archive on completion).
 - **2026-02-22 [Claude]**: F15 completed (v3.2) — `PlotDataView` created; `roiFinalized` stub added to ROIController; `opts.dataStore`/`opts.dataView` prep added to PlotController. Next: F14.
 - **2026-02-22 [Claude]**: F14 completed (v3.3) — ROI versioning + serialization implemented. `ROIBase` gains `version`/`updatedAt`/`domain`/`bumpVersion()`; `LinearRegion` overrides `bumpVersion()` to omit `y`; `ROIController` gains `serializeAll()`/`deserializeAll()`/`updateFromExternal()`; `PlotController` forwards `roiExternalUpdate`. Next: F17.
+- **2026-02-22 [Claude]**: F17 completed (v3.4) — Shared Data Infrastructure. `PlotController` gains ownership flags, `setDataView()`, and DataView event wiring; `_render()` uses DataView when present; `PlotCanvas` gains `dataStore`/`onInit` props; `SharedDataExample.jsx` created; webpack entry + HTML added. Next: F18.

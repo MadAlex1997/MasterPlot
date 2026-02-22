@@ -29,7 +29,9 @@ const PlotCanvas = forwardRef(function PlotCanvas(props, ref) {
     yDomain     = [0, 100],
     xLabel,
     yLabel,
+    dataStore,  // F17: optional shared DataStore instance
     onEvent,    // optional: (eventName, data) => void
+    onInit,     // optional: (controller) => void — fires once after init
   } = props;
 
   const containerRef  = useRef(null);
@@ -51,6 +53,7 @@ const PlotCanvas = forwardRef(function PlotCanvas(props, ref) {
 
     const controller = new PlotController({
       xScaleType, yScaleType, xDomain, yDomain, xLabel, yLabel,
+      ...(dataStore ? { dataStore } : {}),
     });
 
     controllerRef.current = controller;
@@ -69,6 +72,9 @@ const PlotCanvas = forwardRef(function PlotCanvas(props, ref) {
       ac.height = h;
 
       controller.init(wc, ac);
+
+      // F17: notify parent that controller is ready for post-init setup
+      if (onInit) onInit(controller);
 
       // Wire events to UI state (cheap: only a few events/sec)
       controller.on('dataAppended', ({ total }) => setPointCount(total));

@@ -55,11 +55,17 @@ export class ROIController extends EventEmitter {
     // Canvas reference (set during init)
     this._canvas        = null;
 
+    // Track whether the mouse is currently over this controller's canvas.
+    // Used to gate keybinds so only the hovered plot responds.
+    this._mouseIsOver   = false;
+
     // Bound handlers for cleanup
     this._onMouseDown   = this._onMouseDown.bind(this);
     this._onMouseMove   = this._onMouseMove.bind(this);
     this._onMouseUp     = this._onMouseUp.bind(this);
     this._onKeyDown     = this._onKeyDown.bind(this);
+    this._onMouseEnter  = () => { this._mouseIsOver = true;  };
+    this._onMouseLeave  = () => { this._mouseIsOver = false; };
   }
 
   // ─── Lifecycle ───────────────────────────────────────────────────────────────
@@ -70,17 +76,21 @@ export class ROIController extends EventEmitter {
    */
   init(canvas) {
     this._canvas = canvas;
-    canvas.addEventListener('mousedown', this._onMouseDown);
-    canvas.addEventListener('mousemove', this._onMouseMove);
-    canvas.addEventListener('mouseup',   this._onMouseUp);
-    window.addEventListener('keydown',   this._onKeyDown);
+    canvas.addEventListener('mousedown',  this._onMouseDown);
+    canvas.addEventListener('mousemove',  this._onMouseMove);
+    canvas.addEventListener('mouseup',    this._onMouseUp);
+    canvas.addEventListener('mouseenter', this._onMouseEnter);
+    canvas.addEventListener('mouseleave', this._onMouseLeave);
+    window.addEventListener('keydown',    this._onKeyDown);
   }
 
   destroy() {
     if (this._canvas) {
-      this._canvas.removeEventListener('mousedown', this._onMouseDown);
-      this._canvas.removeEventListener('mousemove', this._onMouseMove);
-      this._canvas.removeEventListener('mouseup',   this._onMouseUp);
+      this._canvas.removeEventListener('mousedown',  this._onMouseDown);
+      this._canvas.removeEventListener('mousemove',  this._onMouseMove);
+      this._canvas.removeEventListener('mouseup',    this._onMouseUp);
+      this._canvas.removeEventListener('mouseenter', this._onMouseEnter);
+      this._canvas.removeEventListener('mouseleave', this._onMouseLeave);
     }
     window.removeEventListener('keydown', this._onKeyDown);
   }
@@ -212,6 +222,10 @@ export class ROIController extends EventEmitter {
   // ─── Event handlers ───────────────────────────────────────────────────────────
 
   _onKeyDown(e) {
+    // Only process keybinds when the mouse is over this plot's canvas,
+    // so multiple plots on the same page don't all activate simultaneously.
+    if (!this._mouseIsOver) return;
+
     switch (e.key.toLowerCase()) {
       case 'l':
         this.enterCreateMode('linear');

@@ -14,7 +14,7 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 
 ---
 
-## Current Capabilities (F1–F16, F15, F14)
+## Current Capabilities (F1–F18 → F14–F17 complete)
 
 ### Core Plotting Engine
 - **WebGL rendering** via deck.gl `OrthographicView` — no maps, no geospatial assumptions
@@ -25,6 +25,7 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 - **Semi-live data append** — `Float32Array` buffers grow by 1.5× when capacity is exhausted; no full reallocation; deck.gl attribute views (`subarray`) update without copying
 - **Rolling ring buffer** — optional fixed-capacity circular buffer with count-based and age-based expiration; axis domain recalculates automatically after eviction
 - **PlotDataView** — lazily-evaluated, dirty-flag-cached derived view over a `DataStore` or another `PlotDataView`; supports domain filtering, ROI filtering, histogram derivation, and deep snapshot; dirty propagates through arbitrarily deep view chains
+- **Shared DataStore / DataView (F17)** — multiple `PlotController` instances can share a single `DataStore` and/or `PlotDataView`; ownership tracking ensures `destroy()` only releases resources the controller allocated
 - **Event log panel** — on-screen log of `dataAppended`, `domainChanged`, `zoomChanged`, `panChanged`, `roiCreated`, `roiUpdated`, `roiDeleted`, `roiFinalized`
 
 ### ROI System (pyqtgraph-style)
@@ -373,9 +374,76 @@ examples/
   ExampleApp.jsx          — scatter/ROI/live-append demo
   LineExample.jsx         — line plot demo
   SpectrogramExample.jsx  — full audio analysis demo
+  SharedDataExample.jsx   — two-plot shared DataStore + filtered DataView demo (F17)
 public/
   index.html
 ```
+
+---
+
+## Shared DataStore / DataView (F17)
+
+Multiple `PlotController` instances can share a single `DataStore` and optionally a single `PlotDataView`. This enables multi-panel dashboards where one write propagates to all plots in the same render frame.
+
+### Quick start
+
+```js
+import { DataStore }    from './src/plot/DataStore.js';
+import { PlotDataView } from './src/plot/PlotDataView.js';
+import { PlotController } from './src/plot/PlotController.js';
+
+const sharedStore = new DataStore();
+
+// Both controllers receive the shared store; neither owns it
+const ctrlA = new PlotController({ dataStore: sharedStore });
+const ctrlB = new PlotController({ dataStore: sharedStore });
+
+// Append once → both plots update
+sharedStore.appendData({ x: new Float32Array([1,2,3]), y: new Float32Array([4,5,6]) });
+
+// destroy() does NOT call sharedStore.destroy() — caller manages lifecycle
+ctrlA.destroy();
+ctrlB.destroy();
+sharedStore.destroy?.(); // optional if DataStore ever gains a destroy()
+```
+
+### Filtered view on one plot
+
+```js
+// Plot A shows all data; Plot B shows only points inside a LinearRegion
+const baseView = new PlotDataView(sharedStore, null, {
+  roiController: ctrlA.roiController,   // watches roiFinalized on Plot A
+});
+
+ctrlA.setDataView(baseView, /* owns */ false);  // Plot A: all points
+ctrlB.setDataView(baseView, /* owns */ false);  // Plot B: initially all points
+
+// When user finishes drawing a LinearRegion on Plot A:
+ctrlA.on('roiCreated', ({ type, roi }) => {
+  if (type !== 'LinearRegion') return;
+  const filteredView = baseView.filterByROI(roi.id);  // child PlotDataView
+  ctrlB.setDataView(filteredView, /* owns */ true);    // Plot B now filtered
+});
+
+// When ROI is deleted:
+ctrlA.on('roiDeleted', () => {
+  ctrlB.setDataView(baseView, /* owns */ false);       // Plot B reverts
+});
+```
+
+### Ownership rules
+
+| Scenario | `owns` flag | `destroy()` behavior |
+|---|---|---|
+| `new PlotController()` (no opts) | `_ownsDataStore = true` | destroys DataStore |
+| `new PlotController({ dataStore })` | `_ownsDataStore = false` | does NOT destroy DataStore |
+| `new PlotController({ dataView })` | `_ownsDataView = false` | does NOT destroy DataView |
+| `setDataView(view, true)` | `_ownsDataView = true` | destroys DataView on swap/destroy |
+| `setDataView(view, false)` | `_ownsDataView = false` | does NOT destroy DataView |
+
+### Key constraint
+
+The shared-data demo is in [`examples/SharedDataExample.jsx`](examples/SharedDataExample.jsx) and linked from the hub page.
 
 ---
 
@@ -384,7 +452,6 @@ public/
 See [PLAN.md](PLAN.md) for the full implementation plan and step status.
 
 In progress / planned (Phase 2):
-- **F17** Shared DataStore/DataView across multiple PlotControllers
 - **F18** External integration adapter contracts (no HTTP/WebSocket in engine)
 
 Later (unscheduled):

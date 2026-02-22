@@ -5,6 +5,73 @@ All active/pending work is in [PLAN.md](../PLAN.md).
 
 ---
 
+## F17 [COMPLETED] Feature: Shared Data Infrastructure
+
+**Branch:** `feature/shared-data`
+**Completed:** 2026-02-22
+
+### Goal
+
+Allow multiple `PlotController` instances to share a single `DataStore` and/or `PlotDataView`. ROI filtering may affect some views and not others. Base data remains immutable. DataViews are reused across plots without duplicate recompute.
+
+### Files created / modified
+
+| File | Action |
+|------|--------|
+| `src/plot/PlotController.js` | **Modified** — `_ownsDataStore`/`_ownsDataView` flags; `_onDataViewDirty`/`_onDataViewRecomputed` bound handlers; DataView events wired in `_wireEvents()`; `_render()` uses `_dataView.getData()` when set; `destroy()` respects ownership; `setDataView(view, owns)` added; DataStore `'dirty'` wired to `_dirty` when no DataView |
+| `src/components/PlotCanvas.jsx` | **Modified** — `dataStore` and `onInit` props accepted; passed through to PlotController |
+| `examples/SharedDataExample.jsx` | **Created** — two-plot demo |
+| `src/shared-data.js` | **Created** — webpack entry |
+| `public/shared-data.html` | **Created** — HTML page |
+| `webpack.config.js` | **Modified** — `shared-data` entry + HtmlWebpackPlugin |
+| `examples/HubPage.jsx` | **Modified** — Shared Data link added |
+| `README.md` | **Modified** — Shared DataStore / DataView section added |
+
+### Implementation summary
+
+1. **PlotController constructor** — added ownership flags and bound DataView handlers:
+   ```js
+   this._ownsDataStore = !opts.dataStore;
+   this._ownsDataView  = !opts.dataView;
+   this._onDataViewDirty      = () => { this._dirty = true; };
+   this._onDataViewRecomputed = () => { this._dataTrigger++; };
+   ```
+
+2. **`_wireEvents()`** — DataStore `'dirty'` wired to `_dirty` when no DataView is present (shared store without DataView still re-renders); initial DataView events wired if `_dataView` is provided at construction time.
+
+3. **`_render()`** — uses `_dataView.getData()` when a DataView is present, falling back to `_dataStore.getGPUAttributes()` otherwise. Both return the same `{ x, y, size, color }` shape.
+
+4. **`setDataView(dataView, owns = true)`** — tears down old DataView listeners (and destroys if owned), wires new view, marks dirty.
+
+5. **`destroy()`** — respects ownership flags:
+   ```js
+   if (this._ownsDataView  && this._dataView?.destroy)  this._dataView.destroy();
+   if (this._ownsDataStore && this._dataStore?.destroy) this._dataStore.destroy();
+   ```
+
+6. **PlotCanvas.jsx** — `dataStore` prop threads through to PlotController; `onInit(controller)` callback fires after `controller.init()` for post-init DataView wiring.
+
+7. **SharedDataExample.jsx** — demonstrates all F17 behaviours:
+   - Single `DataStore` shared by two controllers (both receive `dataStore` prop)
+   - `PlotDataView` wrapping the shared store, with Plot A's `roiController`
+   - `baseView` set on both plots at startup (no filtering)
+   - On `roiCreated` (LinearRegion on Plot A): `baseView.filterByROI(roi.id)` created and set on Plot B
+   - On `roiDeleted`: Plot B reverts to `baseView`
+   - "Generate data" appends to shared store → both plots update
+
+### Validation checklist (verified by code review)
+
+- [x] Two PlotControllers sharing one DataStore: `appendData()` fires `'dirty'`; both plots' `_dirty` set via DataView or direct DataStore listener
+- [x] `PlotController({ dataStore: external }).destroy()` does NOT call `external.destroy()` — ownership flag prevents it
+- [x] Plot A (base view): all points visible
+- [x] Plot B (filtered view): only ROI-interior points visible
+- [x] Drag ROI → Plot B does NOT recompute (dirty stays false during drag — `roiUpdated` not wired in PlotDataView)
+- [x] Release ROI (mouseup) → `roiFinalized` → PlotDataView marks dirty → Plot B recomputes next getData()
+- [x] Append: both plots update; shared DataView recomputes once (single `recomputed` event)
+- [x] `setDataView()` destroys old owned view, wires new view, marks dirty
+
+---
+
 ## F10 [COMPLETED] Feature: Audio file loading in SpectrogramExample
 
 **File:** `examples/SpectrogramExample.jsx` (only file changed — no webpack changes needed)

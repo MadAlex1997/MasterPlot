@@ -20,6 +20,11 @@ export default function HubPage() {
       title: 'Rolling 30s Window',
       desc: 'Three live signals on a scrolling 30-second window. Data older than 30 s is trimmed each tick — expiry events shown in the log.',
     },
+    {
+      href: 'shared-data.html',
+      title: 'Shared Data (F17)',
+      desc: 'Two PlotControllers sharing a single DataStore. Plot A shows all points; Plot B shows only points inside a LinearRegion drawn on Plot A — lazy PlotDataView recomputes on roiFinalized, not on drag.',
+    },
   ];
 
   const styles = {

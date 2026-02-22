@@ -12,6 +12,7 @@ module.exports = (env, argv) => {
       line:           './src/line.js',
       spectrogram:    './src/spectrogram.js',
       'rolling-line': './src/rolling-line.js',
+      'shared-data':  './src/shared-data.js',
     },
     output: {
       path: path.resolve(__dirname, 'dist'),
@@ -62,6 +63,11 @@ module.exports = (env, argv) => {
         template: './public/rolling-line.html',
         filename: 'rolling-line.html',
         chunks:   ['rolling-line'],
+      }),
+      new HtmlWebpackPlugin({
+        template: './public/shared-data.html',
+        filename: 'shared-data.html',
+        chunks:   ['shared-data'],
       }),
     ],
     devServer: {

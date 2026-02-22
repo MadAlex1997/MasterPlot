@@ -48,10 +48,16 @@ export class PlotController extends EventEmitter {
     this._opts = opts;
 
     // ── Subsystems ──────────────────────────────────────────────────────────
-    // F15/F17: accept external DataStore / DataView injection
-    this._dataStore = opts.dataStore || new DataStore();
-    this._dataView  = opts.dataView  || null;
-    this._viewport  = new ViewportController();
+    // F17: accept external DataStore / DataView injection; track ownership
+    this._dataStore     = opts.dataStore || new DataStore();
+    this._ownsDataStore = !opts.dataStore;
+    this._dataView      = opts.dataView  || null;
+    this._ownsDataView  = !opts.dataView;
+    this._viewport      = new ViewportController();
+
+    // Bound handlers for DataView event cleanup
+    this._onDataViewDirty      = () => { this._dirty = true; };
+    this._onDataViewRecomputed = () => { this._dataTrigger++; };
 
     this._xAxis = new AxisController({
       axis:      'x',
@@ -184,6 +190,14 @@ export class PlotController extends EventEmitter {
       this._deck.finalize();
       this._deck = null;
     }
+
+    // F17: only destroy owned resources; external shared resources stay alive
+    if (this._ownsDataView && this._dataView && this._dataView.destroy) {
+      this._dataView.destroy();
+    }
+    if (this._ownsDataStore && this._dataStore && this._dataStore.destroy) {
+      this._dataStore.destroy();
+    }
   }
 
   // ─── Data ──────────────────────────────────────────────────────────────────
@@ -255,6 +269,34 @@ export class PlotController extends EventEmitter {
   get viewport()       { return this._viewport;  }
   get roiController()  { return this._roiController; }
 
+  /**
+   * Swap the active DataView at runtime.
+   * The previous DataView is destroyed if it was owned by this controller.
+   *
+   * @param {import('./PlotDataView').PlotDataView|null} dataView
+   * @param {boolean} [owns=true] — pass false when sharing a view across controllers
+   */
+  setDataView(dataView, owns = true) {
+    // Tear down old view listeners and destroy if owned
+    if (this._dataView) {
+      this._dataView.removeListener('dirty',      this._onDataViewDirty);
+      this._dataView.removeListener('recomputed', this._onDataViewRecomputed);
+      if (this._ownsDataView && this._dataView.destroy) {
+        this._dataView.destroy();
+      }
+    }
+
+    this._dataView     = dataView;
+    this._ownsDataView = owns;
+
+    if (this._dataView) {
+      this._dataView.on('dirty',      this._onDataViewDirty);
+      this._dataView.on('recomputed', this._onDataViewRecomputed);
+    }
+
+    this._dirty = true;
+  }
+
   // ─── Export placeholder (v2) ───────────────────────────────────────────────
 
   /**
@@ -307,8 +349,10 @@ export class PlotController extends EventEmitter {
   _render() {
     if (!this._deck) return;
 
-    // Build layers
-    const gpuAttrs = this._dataStore.getGPUAttributes();
+    // F17: use DataView when present (authoritative GPU source); else fall back to DataStore
+    const gpuAttrs = this._dataView
+      ? this._dataView.getData()
+      : this._dataStore.getGPUAttributes();
     const rois     = this._roiController.getAllROIs();
     const [yMin, yMax] = this._yAxis.getDomain();
     const xIsLog = this._xAxis.scaleType === 'log';
@@ -598,6 +642,16 @@ export class PlotController extends EventEmitter {
   _wireEvents() {
     // DataStore events
     this._dataStore.on('dataExpired', e => this.emit('dataExpired', e));
+    // DataStore dirty without a DataView — still need to re-render (e.g. shared store, no DataView)
+    this._dataStore.on('dirty', () => {
+      if (!this._dataView) { this._dirty = true; }
+    });
+
+    // F17: wire initial DataView if provided at construction time
+    if (this._dataView) {
+      this._dataView.on('dirty',      this._onDataViewDirty);
+      this._dataView.on('recomputed', this._onDataViewRecomputed);
+    }
 
     // ROI events
     this._roiController.on('roiCreated',   e => this.emit('roiCreated',   e));
