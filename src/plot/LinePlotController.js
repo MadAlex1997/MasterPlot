@@ -127,6 +127,49 @@ export class LinePlotController extends EventEmitter {
 
   get xCounter() { return this._xCounter; }
 
+  /**
+   * Remove points from all signals where x < xMin.
+   * Used to maintain a rolling time window.
+   * @param {number} xMin
+   */
+  trimBefore(xMin) {
+    for (const sig of this._signals.values()) {
+      if (sig.path.length === 0) continue;
+      // Binary-search the first index where x >= xMin
+      let lo = 0, hi = sig.path.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (sig.path[mid][0] < xMin) lo = mid + 1;
+        else hi = mid;
+      }
+      if (lo > 0) {
+        sig.path = sig.path.slice(lo);
+        sig.layerData = sig.path.length > 0 ? [{ path: sig.path, color: sig.color }] : null;
+        sig.version++;
+      }
+    }
+    this._dirty = true;
+  }
+
+  /**
+   * Set both axis domains at once.
+   * @param {number[]} xDomain
+   * @param {number[]} yDomain
+   */
+  setDomains(xDomain, yDomain) {
+    this._xAxis.setDomain(xDomain);
+    this._yAxis.setDomain(yDomain);
+    this._updateScales();
+    this._dirty = true;
+  }
+
+  /** Total path points across all registered signals. */
+  getPointCount() {
+    let n = 0;
+    for (const sig of this._signals.values()) n += sig.path.length;
+    return n;
+  }
+
   /** Clear all signal data and reset domains/counter. */
   reset() {
     for (const sig of this._signals.values()) {

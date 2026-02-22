@@ -15,6 +15,11 @@ export default function HubPage() {
       title: 'Spectrogram',
       desc: 'Real-time STFT spectrogram with audio file loading, HistogramLUT, playback, and biquad filters.',
     },
+    {
+      href: 'rolling-line.html',
+      title: 'Rolling 30s Window',
+      desc: 'Three live signals on a scrolling 30-second window. Data older than 30 s is trimmed each tick — expiry events shown in the log.',
+    },
   ];
 
   const styles = {
