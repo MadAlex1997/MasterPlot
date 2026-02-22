@@ -154,6 +154,7 @@ export default function SpectrogramExample() {
   const panRef          = useRef(null);
   const intervalRef     = useRef(null);
   const windowSizeRef   = useRef(1024);
+  const timeWindowRef   = useRef(null);   // null = show all; number = seconds to display
 
   // ── Waveform mutable state ─────────────────────────────────────────────────
   const waveDeckRef       = useRef(null);
@@ -198,6 +199,7 @@ export default function SpectrogramExample() {
   const [playState,        setPlayState]        = useState('stopped'); // 'playing'|'paused'|'stopped'
   const [applying,         setApplying]         = useState(false);
   const [filterSampleRate, setFilterSampleRate] = useState(SAMPLE_RATE);
+  const [timeWindow,       setTimeWindow]       = useState(null);  // null = All
 
   const addLog = (msg) => setLog(prev => [msg, ...prev].slice(0, 20));
 
@@ -237,10 +239,11 @@ export default function SpectrogramExample() {
     }
 
     const durationSecs = sampleCntRef.current / SAMPLE_RATE;
+    const tw   = timeWindowRef.current;
+    const xMin = tw ? Math.max(0, durationSecs - tw) : 0;
 
-    // Expand x-domain on both panels
-    xAxisRef.current?.setDomain([0, durationSecs]);
-    waveXAxisRef.current?.setDomain([0, durationSecs]);
+    xAxisRef.current?.setDomain([xMin, durationSecs]);
+    waveXAxisRef.current?.setDomain([xMin, durationSecs]);
 
     addLog(`dataAppended: +${count} samples  duration=${durationSecs.toFixed(2)}s`);
   };
@@ -617,6 +620,19 @@ export default function SpectrogramExample() {
     dirtyRef.current = true;
   }, [colorTrigger]);
 
+  // ── Apply time window immediately when dropdown changes ──────────────────────
+  useEffect(() => {
+    if (!xAxisRef.current) return;
+    const sr           = loadedSampleRateRef.current;
+    const durationSecs = sampleCntRef.current / sr;
+    if (!durationSecs) return;
+    const xMin = timeWindow ? Math.max(0, durationSecs - timeWindow) : 0;
+    xAxisRef.current?.setDomain([xMin, durationSecs]);
+    waveXAxisRef.current?.setDomain([xMin, durationSecs]);
+    dirtyRef.current     = true;
+    waveDirtyRef.current = true;
+  }, [timeWindow]);
+
   // ── UI handlers ───────────────────────────────────────────────────────────
 
   const handleLiveAppendChange = (e) => {
@@ -629,6 +645,12 @@ export default function SpectrogramExample() {
       clearInterval(intervalRef.current);
     }
     setLiveAppend(checked);
+  };
+
+  const handleTimeWindowChange = (e) => {
+    const v = e.target.value === 'all' ? null : Number(e.target.value);
+    timeWindowRef.current = v;
+    setTimeWindow(v);
   };
 
   const handleWindowSizeChange = (e) => {
@@ -770,6 +792,17 @@ export default function SpectrogramExample() {
             {[256, 512, 1024, 2048].map(v => (
               <option key={v} value={v}>{v}</option>
             ))}
+          </select>
+        </label>
+
+        <label style={checkboxLabelStyle}>
+          Time window
+          <select value={timeWindow ?? 'all'} onChange={handleTimeWindowChange} style={selectStyle}>
+            <option value="all">All</option>
+            <option value="5">5 s</option>
+            <option value="10">10 s</option>
+            <option value="30">30 s</option>
+            <option value="60">60 s</option>
           </select>
         </label>
 
