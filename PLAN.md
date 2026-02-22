@@ -694,9 +694,11 @@ New:
 
 ---
 
-## F12 [PENDING] Feature: Audio Playback + Synchronized Playhead Lines
+## F12 [COMPLETED] Feature: Audio Playback + Synchronized Playhead Lines
 
 **Branch:** `feature/F12` (create before starting)
+<!-- Started: 2026-02-22 · Completed: 2026-02-22 -->
+<!-- Created src/audio/PlaybackController.js; modified SpectrogramExample.jsx: added drawPlayhead helpers, playbackRef, playState, stateChanged wiring, loadBuffer on file load, playhead RAF loop, Ctrl+click seek, Play/Pause/Stop header controls. Build: 0 errors. -->
 
 **Goal:** Enable playback of loaded audio (or the live-append chirp) via Web Audio API with a dashed vertical playhead line that moves in real-time at 60 fps across both the spectrogram and the waveform panel. Ctrl+click on either panel seeks to that time. Play/Pause/Stop controls appear in the header.
 

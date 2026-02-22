@@ -30,6 +30,45 @@ import { SpectrogramLayer }      from '../src/plot/layers/SpectrogramLayer.js';
 import { buildLineLayer }        from '../src/plot/layers/LineLayer.js';
 import { HistogramLUTController } from '../src/plot/layers/HistogramLUTController.js';
 import HistogramLUTPanel         from '../src/components/HistogramLUTPanel.jsx';
+import { PlaybackController }    from '../src/audio/PlaybackController.js';
+
+// ── Playhead drawing helpers ───────────────────────────────────────────────────
+
+/**
+ * Draw a vertical playhead line on a 2D axis canvas overlay.
+ * No-ops silently if time is outside the current x-domain.
+ */
+function drawPlayhead(canvas, time, xAxis, viewport) {
+  const [xMin, xMax] = xAxis.getDomain();
+  if (time < xMin || time > xMax) return;
+  const { plotArea: pa } = viewport;
+  const px  = pa.x + (time - xMin) / Math.max(xMax - xMin, 1e-10) * pa.width;
+  const ctx = canvas.getContext('2d');
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255, 220, 40, 0.85)';
+  ctx.lineWidth   = 1.5;
+  ctx.setLineDash([5, 4]);
+  ctx.beginPath();
+  ctx.moveTo(px, pa.y);
+  ctx.lineTo(px, pa.y + pa.height);
+  ctx.stroke();
+  // Time label at top of line, flips side when near right edge
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(255, 220, 40, 0.9)';
+  ctx.font      = '10px monospace';
+  const rightHalf = px > pa.x + pa.width * 0.6;
+  ctx.textAlign = rightHalf ? 'right' : 'left';
+  ctx.fillText(formatPlayTime(time), px + (rightHalf ? -4 : 4), pa.y + 12);
+  ctx.restore();
+}
+
+/** Format seconds as m:ss.d  e.g. 1:23.4 */
+function formatPlayTime(secs) {
+  const m  = Math.floor(secs / 60);
+  const s  = Math.floor(secs % 60);
+  const ds = Math.floor((secs % 1) * 10);
+  return `${m}:${String(s).padStart(2, '0')}.${ds}`;
+}
 
 // ── Audio generation ──────────────────────────────────────────────────────────
 
@@ -136,11 +175,18 @@ export default function SpectrogramExample() {
     lutControllerRef.current = new HistogramLUTController();
   }
 
+  // ── Playback refs ──────────────────────────────────────────────────────────
+  const playbackRef = useRef(null);
+  if (!playbackRef.current) {
+    playbackRef.current = new PlaybackController();
+  }
+
   const [log,          setLog]          = useState([]);
   const [liveAppend,   setLiveAppend]   = useState(true);
   const [windowSize,   setWindowSize]   = useState(1024);
   const [loading,      setLoading]      = useState(false);
   const [colorTrigger, setColorTrigger] = useState(0);
+  const [playState,    setPlayState]    = useState('stopped'); // 'playing'|'paused'|'stopped'
 
   const addLog = (msg) => setLog(prev => [msg, ...prev].slice(0, 20));
 
@@ -244,14 +290,29 @@ export default function SpectrogramExample() {
 
   const scheduleRender = () => {
     rafRef.current = requestAnimationFrame(() => {
+      const pb = playbackRef.current;
+      // Force redraw every frame during playback so the playhead moves in real time
+      if (pb?.isPlaying) {
+        dirtyRef.current     = true;
+        waveDirtyRef.current = true;
+      }
+
       if (dirtyRef.current) {
         renderFrame();
         dirtyRef.current = false;
+        // Draw playhead on top of axis overlay (after AxisRenderer clears & redraws)
+        if (pb && axisRef.current && xAxisRef.current && viewportRef.current) {
+          drawPlayhead(axisRef.current, pb.currentTime, xAxisRef.current, viewportRef.current);
+        }
       }
       if (waveDirtyRef.current) {
         waveRenderFrame();
         waveDirtyRef.current = false;
+        if (pb && waveAxisRef.current && waveXAxisRef.current && waveViewportRef.current) {
+          drawPlayhead(waveAxisRef.current, pb.currentTime, waveXAxisRef.current, waveViewportRef.current);
+        }
       }
+
       scheduleRender();
     });
   };
@@ -354,6 +415,10 @@ export default function SpectrogramExample() {
       lc.on('levelsChanged', () => setColorTrigger(prev => prev + 1));
       lc.on('lutChanged',    () => setColorTrigger(prev => prev + 1));
 
+      // ── Wire PlaybackController → playState ────────────────────────────────
+      const pb = playbackRef.current;
+      pb.on('stateChanged', ({ state }) => setPlayState(state));
+
       // ── Start RAF loop and live-append interval ─────────────────────────────
       scheduleRender();
       intervalRef.current = setInterval(() => {
@@ -380,6 +445,13 @@ export default function SpectrogramExample() {
       if (!viewport) return;
       const pos = viewport.getCanvasPosition(e, webglRef.current);
       if (!viewport.isInPlotArea(pos.x, pos.y)) return;
+      // Ctrl+click → seek
+      if (e.ctrlKey && playbackRef.current?.duration > 0) {
+        playbackRef.current.seek(viewport.screenXToData(pos.x));
+        dirtyRef.current     = true;
+        waveDirtyRef.current = true;
+        return;
+      }
       panRef.current = {
         screenX: pos.x, screenY: pos.y,
         xDomain: xAxisRef.current?.getDomain(),
@@ -423,6 +495,13 @@ export default function SpectrogramExample() {
       if (!viewport) return;
       const pos = viewport.getCanvasPosition(e, waveWebglRef.current);
       if (!viewport.isInPlotArea(pos.x, pos.y)) return;
+      // Ctrl+click → seek
+      if (e.ctrlKey && playbackRef.current?.duration > 0) {
+        playbackRef.current.seek(viewport.screenXToData(pos.x));
+        dirtyRef.current     = true;
+        waveDirtyRef.current = true;
+        return;
+      }
       wavePanRef.current = {
         screenX: pos.x, screenY: pos.y,
         xDomain: waveXAxisRef.current?.getDomain(),
@@ -517,6 +596,7 @@ export default function SpectrogramExample() {
       window.removeEventListener('resize', onResize);
       deckRef.current?.finalize();
       waveDeckRef.current?.finalize();
+      playbackRef.current?.destroy();
     };
   }, []); // mount once
 
@@ -590,6 +670,8 @@ export default function SpectrogramExample() {
       dirtyRef.current     = true;
       waveDirtyRef.current = true;
       addLog(`Loaded: ${file.name}  ·  ${sr} Hz  ·  ${durationSecs.toFixed(2)}s`);
+      // Load into playback controller (non-blocking — await is fine here since we're already async)
+      await playbackRef.current.loadBuffer(samplesRef.current, loadedSampleRateRef.current);
     } catch (err) {
       addLog(`Error loading file: ${err.message}`);
     }
@@ -671,8 +753,37 @@ export default function SpectrogramExample() {
           />
         </label>
 
+        {/* Playback controls */}
+        <button
+          onClick={() => {
+            const pb = playbackRef.current;
+            if (!pb?.duration) return;
+            if (playState === 'playing') pb.pause();
+            else pb.play();
+          }}
+          disabled={!playbackRef.current?.duration}
+          style={{
+            background: '#222', border: '1px solid #555', borderRadius: 3,
+            color: playbackRef.current?.duration ? '#adf' : '#555',
+            padding: '2px 10px', fontSize: 13, cursor: 'pointer', fontFamily: 'monospace',
+          }}
+        >
+          {playState === 'playing' ? '\u23F8' : '\u25B6'}
+        </button>
+        <button
+          onClick={() => playbackRef.current?.stop()}
+          disabled={playState === 'stopped'}
+          style={{
+            background: '#222', border: '1px solid #555', borderRadius: 3,
+            color: playState !== 'stopped' ? '#faa' : '#555',
+            padding: '2px 8px', fontSize: 13, cursor: 'pointer', fontFamily: 'monospace',
+          }}
+        >
+          {'\u23F9'}
+        </button>
+
         <span style={{ marginLeft: 'auto', color: '#666' }}>
-          scroll=zoom · drag=pan
+          scroll=zoom · drag=pan · ctrl+click=seek
         </span>
       </div>
 
