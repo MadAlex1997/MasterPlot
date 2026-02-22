@@ -210,42 +210,65 @@ export default function SpectrogramExample() {
     const newBuf     = generateSamples(fromSample, count);
     sampleCntRef.current += count;
 
-    // Grow the spectrogram samples Float32Array
+    const tw = timeWindowRef.current;
+    const sr = SAMPLE_RATE;
+
+    // ── PCM buffer ─────────────────────────────────────────────────────────
     const old    = samplesRef.current;
     const merged = new Float32Array(old.length + count);
     merged.set(old);
     merged.set(newBuf, old.length);
-    samplesRef.current = merged;
+    if (tw) {
+      const maxSamples = Math.floor(tw * sr);
+      samplesRef.current = merged.length > maxSamples
+        ? merged.slice(merged.length - maxSamples)
+        : merged;
+    } else {
+      samplesRef.current = merged;
+    }
     dataTriggerRef.current += 1;
     dirtyRef.current = true;
 
-    // Downsample for waveform (x in seconds)
-    const numWavePts = Math.floor(count / WAVEFORM_STEP);
-    if (numWavePts > 0) {
-      const oldWX = waveXRef.current;
+    // ── Waveform buffer ────────────────────────────────────────────────────
+    const numNewWavePts = Math.floor(count / WAVEFORM_STEP);
+    if (numNewWavePts > 0) {
       const oldWY = waveYRef.current;
-      const newWX = new Float32Array(oldWX.length + numWavePts);
-      const newWY = new Float32Array(oldWY.length + numWavePts);
-      newWX.set(oldWX);
-      newWY.set(oldWY);
-      for (let i = 0; i < numWavePts; i++) {
-        newWX[oldWX.length + i] = (fromSample + i * WAVEFORM_STEP) / SAMPLE_RATE;
-        newWY[oldWX.length + i] = newBuf[i * WAVEFORM_STEP];
+      const grownY = new Float32Array(oldWY.length + numNewWavePts);
+      grownY.set(oldWY);
+      for (let i = 0; i < numNewWavePts; i++) {
+        grownY[oldWY.length + i] = newBuf[i * WAVEFORM_STEP];
       }
-      waveXRef.current = newWX;
-      waveYRef.current = newWY;
+
+      if (tw) {
+        // Keep only the last tw seconds of waveform; rebase x to start at 0
+        const maxWavePts = Math.ceil(tw * sr / WAVEFORM_STEP);
+        const keepY = grownY.length > maxWavePts
+          ? grownY.slice(grownY.length - maxWavePts)
+          : grownY;
+        const keepX = new Float32Array(keepY.length);
+        const xStep = WAVEFORM_STEP / sr;
+        for (let i = 0; i < keepY.length; i++) keepX[i] = i * xStep;
+        waveXRef.current = keepX;
+        waveYRef.current = keepY;
+      } else {
+        const oldWX = waveXRef.current;
+        const grownX = new Float32Array(oldWX.length + numNewWavePts);
+        grownX.set(oldWX);
+        for (let i = 0; i < numNewWavePts; i++) {
+          grownX[oldWX.length + i] = (fromSample + i * WAVEFORM_STEP) / sr;
+        }
+        waveXRef.current = grownX;
+        waveYRef.current = grownY;
+      }
       waveDataTrigger.current += 1;
       waveDirtyRef.current = true;
     }
 
-    const durationSecs = sampleCntRef.current / SAMPLE_RATE;
-    const tw   = timeWindowRef.current;
-    const xMin = tw ? Math.max(0, durationSecs - tw) : 0;
+    const bufferSecs = samplesRef.current.length / sr;
+    xAxisRef.current?.setDomain([0, bufferSecs]);
+    waveXAxisRef.current?.setDomain([0, bufferSecs]);
 
-    xAxisRef.current?.setDomain([xMin, durationSecs]);
-    waveXAxisRef.current?.setDomain([xMin, durationSecs]);
-
-    addLog(`dataAppended: +${count} samples  duration=${durationSecs.toFixed(2)}s`);
+    addLog(`dataAppended: +${count} samples  buffer=${bufferSecs.toFixed(2)}s`);
   };
 
   // ── Spectrogram render ─────────────────────────────────────────────────────
@@ -622,13 +645,32 @@ export default function SpectrogramExample() {
 
   // ── Apply time window immediately when dropdown changes ──────────────────────
   useEffect(() => {
-    if (!xAxisRef.current) return;
-    const sr           = loadedSampleRateRef.current;
-    const durationSecs = sampleCntRef.current / sr;
-    if (!durationSecs) return;
-    const xMin = timeWindow ? Math.max(0, durationSecs - timeWindow) : 0;
-    xAxisRef.current?.setDomain([xMin, durationSecs]);
-    waveXAxisRef.current?.setDomain([xMin, durationSecs]);
+    if (!xAxisRef.current || !samplesRef.current.length) return;
+    const sr = loadedSampleRateRef.current;
+
+    if (timeWindow) {
+      // Trim PCM to last timeWindow seconds
+      const maxSamples = Math.floor(timeWindow * sr);
+      if (samplesRef.current.length > maxSamples) {
+        samplesRef.current = samplesRef.current.slice(samplesRef.current.length - maxSamples);
+        dataTriggerRef.current += 1;
+      }
+      // Trim + rebase waveform
+      const maxWavePts = Math.ceil(timeWindow * sr / WAVEFORM_STEP);
+      if (waveYRef.current.length > maxWavePts) {
+        const trimY = waveYRef.current.slice(waveYRef.current.length - maxWavePts);
+        const trimX = new Float32Array(maxWavePts);
+        const xStep = WAVEFORM_STEP / sr;
+        for (let i = 0; i < maxWavePts; i++) trimX[i] = i * xStep;
+        waveXRef.current = trimX;
+        waveYRef.current = trimY;
+        waveDataTrigger.current += 1;
+      }
+    }
+
+    const bufferSecs = samplesRef.current.length / sr;
+    xAxisRef.current?.setDomain([0, bufferSecs]);
+    waveXAxisRef.current?.setDomain([0, bufferSecs]);
     dirtyRef.current     = true;
     waveDirtyRef.current = true;
   }, [timeWindow]);
