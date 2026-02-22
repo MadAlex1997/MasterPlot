@@ -2,7 +2,7 @@
 
 **Plan Version:** 3.1
 **Last Updated:** 2026-02-22
-**Status:** F13 last completed — F16, F15, F14, F17, F18 PENDING (implement in this order)
+**Status:** F16 last completed — F15, F14, F17, F18 PENDING (implement in this order)
 
 ---
 
@@ -64,7 +64,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | B6  | Fix: Y-axis inverted rendering | ✅ COMPLETED | — | 2026-02-21 |
 | B7  | Fix: Y-axis pan direction | ✅ COMPLETED | — | 2026-02-21 |
 | B8  | Fix: Spectrogram page blank | ✅ COMPLETED | — | 2026-02-21 |
-| F16 | Rolling Ring Buffer DataStore | ⏳ PENDING | feature/datastore-rolling | — |
+| F16 | Rolling Ring Buffer DataStore | ✅ COMPLETED | feature/datastore-rolling | 2026-02-22 |
 | F15 | Lazy DataView System | ⏳ PENDING | feature/dataview-lazy | — |
 | F14 | ROI Domain Model + Versioning | ⏳ PENDING | feature/roi-domain-versioning | — |
 | F17 | Shared Data Infrastructure | ⏳ PENDING | feature/shared-data | — |
@@ -190,85 +190,10 @@ Full spec: [docs/plan-archive.md#f13](docs/plan-archive.md#f13)
 
 ---
 
-## F16 [PENDING] Feature: Rolling Ring Buffer DataStore
-
-**Branch:** `feature/datastore-rolling` (create before starting)
-
-**Depends on:** Nothing (foundation feature)
-
-**Goal:** Extend `DataStore` with an optional rolling-window mode supporting count-based and age-based expiration. The internal structure becomes a circular ring buffer — new points write at `headIndex`; expired points are evicted by advancing `tailIndex`. No array splicing. GPU upload handles wrapped buffers via two-slice copies. Axis auto-domain updates on expiration. Existing append-only mode must remain fully unchanged when `enableRolling` is never called.
-
----
-
-### Files to modify
-
-| File | Action |
-|------|--------|
-| `src/plot/DataStore.js` | **Modify** — add ring buffer internals and new public API; extend EventEmitter |
-| `src/plot/PlotController.js` | **Modify** — call `expireIfNeeded()` in append path; wire `dataExpired` event; add `_recalcDomainFromStore()` |
-
----
-
-### Implementation steps
-
-1. **DataStore extends EventEmitter** — add `import { EventEmitter } from 'events'`; change class declaration to `extends EventEmitter`; add `super()` in constructor.
-
-2. **Rename internal size typed array** — rename `this._size` (Float32Array for point sizes) to `this._sizeArr` throughout `DataStore.js` to avoid collision with the semantic "size" (live count) concept in rolling mode.
-
-3. **Add rolling state fields to constructor:**
-   ```js
-   this._rollingEnabled = false;
-   this._maxPoints      = Infinity;
-   this._maxAgeMs       = Infinity;
-   this._headIndex      = 0;
-   this._tailIndex      = 0;
-   this._timestamps     = null;  // Float64Array, allocated in enableRolling()
-   ```
-
-4. **Add `enableRolling({ maxPoints, maxAgeMs })`** — sets flags, allocates fixed-capacity typed arrays (including `_timestamps: Float64Array(capacity)`), resets head/tail/count. Existing `_grow()` method is untouched (used only in non-rolling mode).
-
-5. **Modify `appendData(chunk)`** — branch on `_rollingEnabled`:
-   - Rolling path: write to `_x[headIndex]`, record `_timestamps[headIndex] = Date.now()`, advance `headIndex = (headIndex + 1) % capacity`; if buffer full, advance `tailIndex` too.
-   - Non-rolling path: unchanged.
-   - Both paths: emit `'dirty'` after append (so PlotDataView in F15 can invalidate).
-
-6. **Add `expireIfNeeded()`** — advance `tailIndex` while oldest point exceeds `maxAgeMs` or `_count > maxPoints`; decrement `_count` per eviction; emit `'dataExpired', { expired, remaining }` if any removed.
-
-7. **Add `getLogicalData()`** — returns ordered `{ x, y, size, color }` typed arrays from tailIndex to headIndex. Handles wrap via two-slice copy into fresh typed arrays. Used by DataView (F15) and domain recalc.
-
-8. **Modify `getGPUAttributes()`** — in rolling mode, delegate to `getLogicalData()` (ordered copy); in non-rolling mode, return live subarrays as before (no copy regression).
-
-9. **Modify `PlotController.appendData()`** — after DataStore append, if rolling enabled call `expireIfNeeded()`; if auto-expand on and points expired, call `_recalcDomainFromStore()`.
-
-10. **Add `_recalcDomainFromStore()`** to PlotController — scans `getLogicalData()` for min/max x/y; sets both axes; calls `_updateScales()`.
-
-11. **Wire `dataExpired` in `PlotController._wireEvents()`**:
-    ```js
-    this._dataStore.on('dataExpired', e => this.emit('dataExpired', e));
-    ```
-
----
-
-### Validation checklist
-
-- [ ] `enableRolling({ maxPoints: 1000 })` + append 1500 → `getPointCount()` returns 1000
-- [ ] Wrapped buffer: headIndex wraps past capacity → `getLogicalData()` produces correct tail-to-head ordering
-- [ ] `expireIfNeeded` with `maxAgeMs` removes all points older than threshold
-- [ ] Axis domain updates correctly after expiration (auto-expand mode)
-- [ ] Manual zoom not overridden (auto-domain only runs when `_autoExpand = true`)
-- [ ] Non-rolling mode: all prior tests still pass; `getGPUAttributes()` returns live subarray (no copy)
-- [ ] `DataStore` emits `'dataExpired'` with `{ expired, remaining }`; emits `'dirty'` on every append
-- [ ] Performance: append + expire 100k points < 10 ms
-
----
-
-### Notes
-
-- The field rename from `this._size` (typed array) to `this._sizeArr` is the only breaking internal change. Search all uses in `DataStore.js` and update.
-- `_grow()` is not called in rolling mode (fixed-capacity ring). Do not remove it.
-- F15 depends on `'dirty'` and `'dataExpired'` events being emitted here.
-- After completing: update `README.md` to document rolling API; update `examples/HubPage.jsx`.
-
+### F16 [COMPLETED] Feature: Rolling Ring Buffer DataStore
+**Completed:** 2026-02-22 | **Branch:** feature/datastore-rolling
+`DataStore` extended with `EventEmitter`; `_sizeArr` rename; `enableRolling({ maxPoints, maxAgeMs })`, `expireIfNeeded()`, `getLogicalData()` added; `PlotController` calls expire after append and recalculates domain on eviction.
+Full spec: [docs/plan-archive.md#f16](docs/plan-archive.md#f16)
 
 ---
 

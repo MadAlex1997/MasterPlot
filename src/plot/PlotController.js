@@ -195,7 +195,16 @@ export class PlotController extends EventEmitter {
     this._dataStore.appendData(chunk);
     this._dataTrigger++;
 
-    if (this._autoExpand) {
+    if (this._dataStore._rollingEnabled) {
+      const prevCount = this._dataStore.getPointCount();
+      this._dataStore.expireIfNeeded();
+      // If points were expired and auto-expand is on, recalc domain from surviving data
+      if (this._autoExpand && this._dataStore.getPointCount() < prevCount) {
+        this._recalcDomainFromStore();
+      } else if (this._autoExpand) {
+        this._autoExpandDomain(chunk);
+      }
+    } else if (this._autoExpand) {
       this._autoExpandDomain(chunk);
     }
 
@@ -424,6 +433,34 @@ export class PlotController extends EventEmitter {
     }
   }
 
+  /**
+   * Recalculate axis domains by scanning all surviving logical data.
+   * Used after rolling expiration when some points have been evicted.
+   */
+  _recalcDomainFromStore() {
+    const data = this._dataStore.getLogicalData();
+    const n = data.x.length;
+    if (n === 0) return;
+
+    let xMin = Infinity, xMax = -Infinity;
+    let yMin = Infinity, yMax = -Infinity;
+
+    for (let i = 0; i < n; i++) {
+      if (data.x[i] < xMin) xMin = data.x[i];
+      if (data.x[i] > xMax) xMax = data.x[i];
+      if (data.y[i] < yMin) yMin = data.y[i];
+      if (data.y[i] > yMax) yMax = data.y[i];
+    }
+
+    this._xAxis.setDomain([xMin, xMax]);
+    this._yAxis.setDomain([yMin, yMax]);
+    this._updateScales();
+    this.emit('domainChanged', {
+      xDomain: this._xAxis.getDomain(),
+      yDomain: this._yAxis.getDomain(),
+    });
+  }
+
   // ─── Internal: wheel zoom ─────────────────────────────────────────────────
 
   _onWheel(e) {
@@ -557,6 +594,9 @@ export class PlotController extends EventEmitter {
   // ─── Internal: event wiring ────────────────────────────────────────────────
 
   _wireEvents() {
+    // DataStore events
+    this._dataStore.on('dataExpired', e => this.emit('dataExpired', e));
+
     // ROI events
     this._roiController.on('roiCreated',  e => this.emit('roiCreated',  e));
     this._roiController.on('roiUpdated',  e => this.emit('roiUpdated',  e));

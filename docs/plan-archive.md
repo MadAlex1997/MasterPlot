@@ -2293,3 +2293,61 @@ const row = bin;
 - **2026-02-21 [Claude]**: F12, F13 added as PENDING. F12: `PlaybackController` (play/pause/stop/seek via `AudioBufferSourceNode`; `onended` uses `_userStopped` flag to distinguish natural end from manual stop), `drawPlayhead`/`formatPlayTime` helpers, RAF loop extended to force dirty-every-frame during playback and draw playhead on both axis canvases, Ctrl+click seek, Play/Pause/Stop header buttons. F13: `FilterController` (offline biquad via `OfflineAudioContext.startRendering()`, `getFrequencyResponse()` via temporary AudioContext, `originalSamplesRef` snapshot for Clear Filter), `FilterPanel` (type dropdown, log-scale cutoff slider, Q slider, live response canvas, Apply button), right sidebar refactored to stack LUT + Filter panels vertically. Both features depend on F10 (file loading) being complete.
 - **2026-02-21 [Claude]**: F11 — HistogramLUTController and HistogramLUTPanel implemented. `HistogramLUTController.js`: pure EventEmitter; 6 LUT presets (viridis/grayscale/plasma/inferno/magma/hot) built as Uint8Array[256×4]; `setSpectrogramData()` computes histogram + auto-levels on first data; `setLevels()`/`setLUT()`/`autoLevel()` emit events. `HistogramLUTPanel.jsx`: canvas-based React component; ResizeObserver syncs backing store; histogram bars + gradient strip + draggable level lines drawn in one `useEffect`; LUT dropdown + Auto Level button. `SpectrogramLayer.js`: refactored to use `initializeState`/`updateState` lifecycle — STFT cached in layer state, recomputed only on `dataTrigger` change; `buildImage` now accepts `levelMin/levelMax/lut` params (Viridis fallback when no lutController); `renderLayers` reads from state only. `SpectrogramExample.jsx`: imports wired; `HistogramLUTController` created once at render init; levelsChanged/lutChanged → `setColorTrigger`; `colorTrigger` synced to ref for stale-closure safety; `renderFrame` passes `lutController`/`colorTrigger`; `handleFileLoad` calls `lutController.reset()`; spectrogram panel wrapped in row flex div with `<HistogramLUTPanel width={140} />`. Build: `webpack compiled successfully` 0 errors.
 - **2026-02-22 [Claude]**: F16, F15, F14, F17, F18 added as PENDING (from Features.md). Mandatory implementation order: F16 → F15 → F14 → F17 → F18. Plan version bumped to 3.0.
+- **2026-02-22 [Claude]**: F16 — Rolling ring buffer DataStore implemented. `DataStore` now extends `EventEmitter`; `_size` renamed to `_sizeArr`; `enableRolling({ maxPoints, maxAgeMs })` allocates fixed-capacity ring buffers including `Float64Array _timestamps`; rolling `_appendRolling` writes at `_headIndex`, advances `_tailIndex` when full; `expireIfNeeded()` advances tail evicting stale/excess points, emits `dataExpired`; `getLogicalData()` handles wrap-around via two-slice copy; `getGPUAttributes()` delegates to `getLogicalData()` in rolling mode; `emit('dirty')` on every `appendData`. `PlotController.appendData` calls `expireIfNeeded()` in rolling mode and `_recalcDomainFromStore()` when points were evicted; `_wireEvents()` forwards `dataExpired`. Branch: `feature/datastore-rolling`. Build: verified.
+
+---
+
+## F16 [COMPLETED] Feature: Rolling Ring Buffer DataStore
+
+**Branch:** `feature/datastore-rolling`
+
+**Goal:** Extend `DataStore` with an optional rolling-window mode supporting count-based and age-based expiration.
+
+### Files Modified
+
+| File | Action |
+|------|--------|
+| `src/plot/DataStore.js` | Extended with `EventEmitter`; `_size` renamed to `_sizeArr`; ring buffer internals + new public API added |
+| `src/plot/PlotController.js` | `expireIfNeeded()` called in append path; `_recalcDomainFromStore()` added; `dataExpired` event wired |
+
+### Implementation steps
+
+1. **DataStore extends EventEmitter** — `import { EventEmitter } from 'events'`; class declaration changed; `super()` added in constructor.
+
+2. **Rename internal size typed array** — `this._size` → `this._sizeArr` throughout `DataStore.js`.
+
+3. **Rolling state fields in constructor:**
+   ```js
+   this._rollingEnabled = false;
+   this._maxPoints      = Infinity;
+   this._maxAgeMs       = Infinity;
+   this._headIndex      = 0;
+   this._tailIndex      = 0;
+   this._timestamps     = null;
+   ```
+
+4. **`enableRolling({ maxPoints, maxAgeMs })`** — sets flags, allocates fixed-capacity typed arrays (including `_timestamps: Float64Array(capacity)`), resets head/tail/count.
+
+5. **`appendData(chunk)`** — branches on `_rollingEnabled`; rolling path writes per-point via `_appendRolling` (point-by-point to handle circular indexing); non-rolling path uses batched `_appendLinear` (original logic); both emit `'dirty'`.
+
+6. **`expireIfNeeded()`** — advances `_tailIndex` while oldest point exceeds `maxAgeMs` or `_count > maxPoints`; emits `'dataExpired', { expired, remaining }`.
+
+7. **`getLogicalData()`** — returns ordered `{ x, y, size, color }` typed arrays tail→head via two-slice copy into fresh arrays.
+
+8. **`getGPUAttributes()`** — rolling mode delegates to `getLogicalData()`; non-rolling returns live subarrays (no copy regression).
+
+9. **`PlotController.appendData()`** — calls `expireIfNeeded()` after DataStore append in rolling mode; calls `_recalcDomainFromStore()` when points were evicted and `_autoExpand` is on.
+
+10. **`_recalcDomainFromStore()`** — scans `getLogicalData()` for min/max x/y; updates both axes; calls `_updateScales()`.
+
+11. **`_wireEvents()`** — `this._dataStore.on('dataExpired', e => this.emit('dataExpired', e))`.
+
+### Validation checklist
+
+- [x] `enableRolling({ maxPoints: 1000 })` + append 1500 → `getPointCount()` returns 1000
+- [x] Wrapped buffer: headIndex wraps past capacity → `getLogicalData()` produces correct tail-to-head ordering
+- [x] `expireIfNeeded` with `maxAgeMs` removes all points older than threshold
+- [x] Axis domain updates correctly after expiration (auto-expand mode)
+- [x] Manual zoom not overridden (auto-domain only runs when `_autoExpand = true`)
+- [x] Non-rolling mode: prior behavior unchanged; `getGPUAttributes()` returns live subarray (no copy)
+- [x] `DataStore` emits `'dataExpired'` with `{ expired, remaining }`; emits `'dirty'` on every append

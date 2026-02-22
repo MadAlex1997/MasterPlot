@@ -14,7 +14,7 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 
 ---
 
-## Current Capabilities (F1–F13)
+## Current Capabilities (F1–F16)
 
 ### Core Plotting Engine
 - **WebGL rendering** via deck.gl `OrthographicView` — no maps, no geospatial assumptions
@@ -23,6 +23,7 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 - **Linear and log axes** via d3-scale; canvas 2D overlay for tick labels and grid
 - **Zoom** (mouse wheel, centered on cursor) and **pan** (drag) without touching data buffers
 - **Semi-live data append** — `Float32Array` buffers grow by 1.5× when capacity is exhausted; no full reallocation; deck.gl attribute views (`subarray`) update without copying
+- **Rolling ring buffer** — optional fixed-capacity circular buffer with count-based and age-based expiration; axis domain recalculates automatically after eviction
 - **Event log panel** — on-screen log of `dataAppended`, `domainChanged`, `zoomChanged`, `panChanged`, `roiCreated`, `roiUpdated`, `roiDeleted`
 
 ### ROI System (pyqtgraph-style)
@@ -108,6 +109,7 @@ All events are emitted on `PlotController` (or `ROIController` before being re-e
 | Event | Payload | Description |
 |---|---|---|
 | `dataAppended` | `{ count, total }` | New points added to GPU buffer |
+| `dataExpired` | `{ expired, remaining }` | Points evicted by rolling expiration |
 | `domainChanged` | `{ axis, domain }` | Axis domain changed (zoom/pan/auto-expand) |
 | `zoomChanged` | `{ factor, focalDataX, focalDataY }` | Zoom event |
 | `panChanged` | `{ dx, dy }` | Pan delta in screen pixels |
@@ -134,6 +136,51 @@ plotController.on('dataAppended', ({ count, total }) => {
 4. deck.gl re-reads attributes on next frame via `updateTriggers`
 
 This avoids GC spikes during continuous data append.
+
+---
+
+## Rolling Ring Buffer (F16)
+
+`DataStore` supports an optional fixed-capacity circular ring buffer mode for streaming/real-time scenarios where only the most recent N points or most recent T milliseconds of data should be retained.
+
+### API
+
+```js
+// Activate rolling mode (must be called before any appendData)
+dataStore.enableRolling({ maxPoints: 1000 });          // keep last 1000 points
+dataStore.enableRolling({ maxAgeMs: 5000 });           // keep points < 5s old
+dataStore.enableRolling({ maxPoints: 500, maxAgeMs: 2000 }); // both constraints
+
+// Evict expired points (PlotController calls this automatically after each appendData)
+dataStore.expireIfNeeded();
+
+// Get ordered logical data (tail→head, handles wrap-around)
+const { x, y, size, color } = dataStore.getLogicalData();
+```
+
+### Events
+
+```js
+dataStore.on('dirty', () => { /* emitted on every appendData */ });
+dataStore.on('dataExpired', ({ expired, remaining }) => { /* points were evicted */ });
+
+// PlotController re-emits dataExpired:
+plotController.on('dataExpired', ({ expired, remaining }) => {
+  console.log(`Evicted ${expired} pts, ${remaining} remaining`);
+});
+```
+
+### Behavior
+
+| Property | Non-rolling | Rolling |
+|---|---|---|
+| Buffer allocation | Grows dynamically (1.5× factor) | Fixed at `maxPoints` capacity |
+| Expiration | None | Count and/or age based |
+| `getGPUAttributes()` | Returns live subarray views (no copy) | Returns ordered copy (handles wrap) |
+| `getLogicalData()` | Returns live subarray views | Returns ordered copy tail→head |
+| `_grow()` | Used for resize | Never called (fixed capacity) |
+
+Rolling mode is transparent to `PlotController` — `appendData()`, auto-expand domain, and `dataExpired` events all work as expected.
 
 ---
 
