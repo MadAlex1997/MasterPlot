@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(/Projects/projects/MasterPlot/PLAN.md:*)",
+      "Bash(__NEW_LINE_81d5b1066926e6d8__ cat)",
+      "Bash(/Projects/projects/MasterPlot/docs/plan-archive.md:*)",
+      "Bash(__NEW_LINE_81d5b1066926e6d8__ sed -n '33,2320p' /Projects/projects/MasterPlot/PLAN.md)",
+      "Bash(__NEW_LINE_81d5b1066926e6d8__ sed -n '2321,9999p' /Projects/projects/MasterPlot/PLAN.md)"
     ]
   }
 }

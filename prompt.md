@@ -49,6 +49,12 @@ All implementation work follows the plan in `PLAN.md`. **Read that file first be
    - GitHub Actions deploys from `main` automatically — merging to `main` updates https://madalex1997.github.io/MasterPlot/
    - A feature is **not complete** until README and HubPage reflect it
 
+8. **Archive completed specs in PLAN.md:**
+   - When marking a feature `[COMPLETED]`, replace its full spec block in `PLAN.md` with the compact 4-line summary format
+   - Move the full spec to `docs/plan-archive.md` (append-only historical record)
+   - This keeps `PLAN.md` stable at ~600–700 lines regardless of project history
+   - See the compact summary template in `PLAN.md` → "Protocol for Agents" → rule 7
+
 ---
 
 You are building a **production-grade scientific plotting engine** in:
@@ -59,24 +65,30 @@ You are building a **production-grade scientific plotting engine** in:
 
 This is NOT a simple chart component.
 
-## MVP Priority (for rapid prototype)
+## MVP — IMPLEMENTED ✅
 
-Must support:
-- 100k → 10M+ points
-- WebGL rendering via deck.gl
-- Linear / log / datetime axes
-- Zoom (wheel) / pan (drag)
-- Scientific tick formatting
-- **Semi-live data append** (streaming updates every N ms)
-- **pyqtgraph-style ROIs** (LinearRegion with nested RectROI, constraint propagation)
-  - Constrained RectROIs (parented to a LinearRegion) must have x-bounds locked to their parent at all times; no independent left/right movement or resize handles
-- Keybind/button to activate ROI creation, then click-based drawing flow
-- No hover tooltips, no React state for large data
-- On-screen event log showing roiCreated, roiUpdated (with bounds), roiDeleted, dataAppended, domainChanged, zoomChanged, panChanged
+All MVP features are complete (F1–F13, B1–B8). Implemented:
+- 10M+ points via WebGL / deck.gl ScatterplotLayer
+- Linear / log axes with d3-scale; scientific tick formatting
+- Wheel zoom (cursor-centered), drag pan (follow + grab modes), right-click drag zoom
+- Semi-live data append every 2 s with auto-expand domain
+- pyqtgraph-style ROIs (LinearRegion + nested RectROI, constraint propagation, x-locked children)
+- Audio pipeline: file loading, STFT spectrogram, HistogramLUT, biquad filters, playback + playhead
+- On-screen event log for all major events
 
-Later (v2):
+## Phase 2 — PLANNED (see PLAN.md for specs)
+
+Implement in order: **F16 → F15 → F14 → F17 → F18**
+
+- **F16** Rolling ring buffer DataStore (count + age expiration, wrapped GPU upload)
+- **F15** Lazy PlotDataView system (dirty-flag caching, ROI/domain filtering, histogram)
+- **F14** ROI domain model + mandatory versioning (`version`, `serializeAll`, `updateFromExternal`)
+- **F17** Shared DataStore/DataView across multiple PlotControllers
+- **F18** External integration interface contracts (adapter pattern; no HTTP/WebSocket in engine)
+
+Later (unscheduled):
 - Full nested RectROI nesting (multiple levels)
-- High-resolution export
+- High-resolution export (`plotController.exportPNG(options)`)
 - Snapping constraints
 
 ---
@@ -94,28 +106,48 @@ Later (v2):
 # Project Structure
 
 ```
-
-ssrc/
+src/
+  audio/
+    FilterController.js          (F13 — offline biquad DSP)
+    PlaybackController.js        (F12 — Web Audio playback + seek)
+  components/
+    FilterPanel.jsx              (F13 — filter UI + frequency response canvas)
+    HistogramLUTPanel.jsx        (F11 — amplitude remapping panel)
+    PlotCanvas.jsx               (React wrapper for PlotController)
+  integration/                   (F18 — PENDING; adapter contracts)
+    ExternalDataAdapter.js
+    ExternalROIAdapter.js
+    MockDataAdapter.js
+    MockROIAdapter.js
   plot/
-    PlotController.js
-    ViewportController.js
-    DataStore.js
+    DataStore.js                 (GPU typed-array buffers; F16 adds rolling ring buffer)
+    LinePlotController.js        (F8 — line/path plot variant)
+    PlotController.js            (main controller: zoom, pan, ROI, layers, render loop)
+    PlotDataView.js              (F15 — PENDING; lazy derived data view)
+    ViewportController.js        (canvas ↔ data coordinate transforms)
     ROI/
-      ROIBase.js
-      RectROI.js
-      LinearRegion.js
-      ROIController.js
       ConstraintEngine.js
-    layers/
-      ScatterLayer.js
-      LineLayer.js
-      ROILayer.js
+      LinearRegion.js
+      RectROI.js
+      ROIBase.js                 (F14 adds: version, updatedAt, domain, bumpVersion())
+      ROIController.js           (F14 adds: serializeAll, deserializeAll, updateFromExternal)
     axes/
       AxisController.js
       AxisRenderer.js
-  components/
-    PlotCanvas.jsx
-
+    layers/
+      HistogramLUTController.js  (F11 — LUT presets + histogram computation)
+      LineLayer.js
+      ROILayer.js
+      ScatterLayer.js
+      SpectrogramLayer.js        (F9 — STFT + BitmapLayer)
+examples/
+  ExampleApp.jsx                 (scatter plot demo)
+  HubPage.jsx                    (links all demos — update after every feature)
+  LineExample.jsx                (F8 — random-walk line demo)
+  SharedDataExample.jsx          (F17 — PENDING; multi-plot shared DataStore demo)
+  SpectrogramExample.jsx         (F9–F13 — audio spectrogram demo)
+docs/
+  plan-archive.md                (full specs of all completed features; append-only)
 ```
 
 ---
@@ -212,17 +244,19 @@ Support:
 ## ROIBase
 
 Properties:
-- id
-- parent
-- children
-- bounds (x1, x2, y1, y2)
-- flags (movable, resizable, visible)
+- id, parent, children
+- bounds: x1, x2, y1, y2
+- flags: movable, resizable, visible
 - metadata
+- **version** (monotonic integer, incremented on each user commit) ← F14
+- **updatedAt** (timestamp of last `bumpVersion()` call) ← F14
+- **domain** (`{ x: [x1, x2], y?: [y1, y2] }` snapshot, JSON-safe) ← F14
+
+Methods:
+- **`bumpVersion()`** — increments version, refreshes updatedAt + domain snapshot ← F14
 
 Events:
-- onCreate
-- onUpdate
-- onDelete
+- onCreate, onUpdate, onDelete
 
 ---
 
@@ -258,16 +292,21 @@ Events:
 ## ROIController
 
 Handles:
-
 - Keybind listener (e.g., 'R' key) OR button click to enter creation mode
 - While in creation mode: watch for plot canvas clicks to define ROI corners
   - For LinearRegion: single click sets x1, second click sets x2
   - For RectROI: first click sets top-left, second click sets bottom-right
 - Mouse move (drag to move existing ROI)
-- Mouse up
+- Mouse up → calls `roi.bumpVersion()`, emits `roiFinalized` ← F14
 - Handle selection (corner/edge detection)
 - Deletion
-- Emits events upward (all via EventEmitter)
+
+**Events emitted:** `roiCreated`, `roiUpdated` (drag), `roiFinalized` (commit on mouseup), `roiDeleted`, `roiExternalUpdate`, `roisChanged`
+
+**Serialization API (F14):**
+- `serializeAll()` → `[{ id, type, version, updatedAt, domain, metadata }]`
+- `deserializeAll(array)` — restore from serialized array (initial load only)
+- `updateFromExternal(serializedROI)` — version-gated: reject if `incoming.version <= current.version`; emit `roiExternalUpdate` on acceptance
 
 Must operate independently of React.
 
@@ -326,16 +365,59 @@ Examples:
 
 # DataStore Requirements
 
-- Holds `Float32Array` buffers for x, y, size; `Uint8Array` for colors
-- `appendData(newChunk)` — adds new points, resizes GPU buffers if needed
-  - Should update GPU buffers WITHOUT full reallocation (use buffer offset tricks or expand only)
-- `getGPUAttributes()` — returns { x, y, color, size } GPU-ready buffers
-- `getPointCount()` — returns current point count
-- Exposes no JSON arrays (all GPU-ready)
+- Extends `EventEmitter`; emits `'dirty'` on every append, `'dataExpired'` when rolling eviction occurs
+- Holds `Float32Array` buffers for x, y, size (`_sizeArr`); `Uint8Array` for colors (RGBA)
+- `appendData(newChunk)` — adds new points; resizes GPU buffers if needed (non-rolling) or writes into ring (rolling)
+- `getGPUAttributes()` — returns `{ x, y, size, color }` GPU-ready buffers (subarrays in non-rolling mode; ordered copy in rolling mode)
+- `getPointCount()` — returns current live point count
+- `getLogicalData()` — returns ordered `{ x, y, size, color }` (handles wrapped ring buffer; safe for CPU-side use)
+
+**Rolling ring buffer (F16):**
+- `enableRolling({ maxPoints?, maxAgeMs? })` — activates fixed-capacity ring mode; allocates `_timestamps: Float64Array`
+- `expireIfNeeded()` — advances `tailIndex` to evict stale/excess points; emits `'dataExpired'`
+- Internal fields: `_headIndex`, `_tailIndex`, `_rollingEnabled`, `_maxPoints`, `_maxAgeMs`, `_timestamps`
+- Non-rolling mode (`enableRolling` never called): all prior behavior unchanged; `_grow()` still used for dynamic resize
 
 ---
 
-# Export Mode (v2 feature)
+# PlotDataView Requirements (F15 — PENDING)
+
+`PlotDataView` (`src/plot/PlotDataView.js`) is a lazily-evaluated, dirty-flag-cached derived view over a `DataStore` or another `PlotDataView`. It never mutates its source.
+
+- `constructor(source, transformFn = null, opts = {})` — `opts.roiController` optional
+- `getData()` — recomputes if dirty, returns cached snapshot otherwise
+- `markDirty()` — sets dirty flag, emits `'dirty'` for child cascade
+- `filterByDomain(domain)` → new child PlotDataView
+- `filterByROI(roiId)` → new child PlotDataView (uses ROI bounding box)
+- `histogram({ field, bins })` → `{ counts: Float32Array, edges: Float32Array }`
+- `snapshot()` → deep copy (`.slice()` of all typed arrays)
+- `destroy()` — removes all event listeners
+
+**Dirty propagation rules:**
+- Mark dirty on: DataStore `'dirty'`, DataStore `'dataExpired'`, `roiFinalized`, `roiExternalUpdate`
+- Do **NOT** mark dirty on `roiUpdated` (drag must not trigger recompute)
+- Child views cascade via `'dirty'` event from parent
+
+---
+
+# External Integration Contracts (F18 — PENDING)
+
+The engine never implements HTTP, WebSocket, or auth. Integration packages implement two interfaces:
+
+**ExternalDataAdapter** (`src/integration/ExternalDataAdapter.js`):
+- `replaceData(bufferStruct)` — full dataset replacement; `bufferStruct = { x: Float32Array, y, size?, color? }`
+- `appendData(bufferStruct)` — incremental append
+
+**ExternalROIAdapter** (`src/integration/ExternalROIAdapter.js`):
+- `async load()` → `Promise<SerializedROI[]>` — load on init
+- `async save(serializedROI)` → `Promise<void>` — persist after `roiFinalized`
+- `subscribe(callback)` → unsubscribe function — receive external updates; engine calls `updateFromExternal()`
+
+Mock implementations in `src/integration/MockDataAdapter.js` and `MockROIAdapter.js`.
+
+---
+
+# Export Mode (unscheduled)
 
 Implement later:
 
@@ -414,28 +496,16 @@ Provide a complete example demonstrating:
 
 # Deliverables
 
-1. **Working implementation** with all MVP features:
-   - PlotController managing render loop
-   - ROI creation via keybind + click
-   - Live append every 2 seconds
-   - Constraint propagation (nested ROIs)
-   - All events emitted properly
+**Phase 1 (MVP) — COMPLETE**
+- ✅ PlotController + ScatterLayer + LineLayer + ROILayer + SpectrogramLayer
+- ✅ ROI creation (LinearRegion + RectROI), constraint propagation, event log
+- ✅ Audio pipeline: file load, STFT spectrogram, HistogramLUT, filters, playback
+- ✅ Example pages: scatter (`example.html`), line (`line.html`), spectrogram (`spectrogram.html`)
 
-2. **Clear README** explaining:
-   - Architecture and data flow
-   - How controllers interact
-   - EventEmitter usage
-   - Performance profile (how many points tested)
-   - Keybinds and interaction guide
-
-3. **Annotated code** for:
-   - ConstraintEngine logic (how nesting works)
-   - GPU buffer append strategy
-   - ROI coordinate calculation (screen ↔ data)
-
-4. **Example page** (HTML + React component):
-   - 1M points + live append demo
-   - All interaction features working
-   - Console logs for event debugging
-```
+**Phase 2 (Data Infrastructure) — PENDING**
+- ⏳ F16: Rolling ring buffer DataStore
+- ⏳ F15: Lazy PlotDataView (filtering, histogram, shared views)
+- ⏳ F14: ROI versioning + serialization + external sync
+- ⏳ F17: Multi-plot shared DataStore/DataView + SharedDataExample
+- ⏳ F18: External integration adapter contracts + mock implementations + README guide
 
