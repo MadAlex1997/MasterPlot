@@ -3,7 +3,7 @@ export default function HubPage() {
     {
       href: 'example.html',
       title: 'Scatter / ROI',
-      desc: '1M points + live append every 2 s. ROI creation (L/R keys), LinearRegion constraint propagation, event log. DataStore supports rolling ring buffer (count + age expiration).',
+      desc: '1M points + live append every 2 s. ROI creation (L/R keys), LinearRegion constraint propagation, event log. DataStore supports rolling ring buffer (count + age expiration). PlotDataView provides lazy filtered/histogram views with dirty-flag caching.',
     },
     {
       href: 'line.html',

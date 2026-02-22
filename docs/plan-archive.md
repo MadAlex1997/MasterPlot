@@ -2351,3 +2351,77 @@ const row = bin;
 - [x] Manual zoom not overridden (auto-domain only runs when `_autoExpand = true`)
 - [x] Non-rolling mode: prior behavior unchanged; `getGPUAttributes()` returns live subarray (no copy)
 - [x] `DataStore` emits `'dataExpired'` with `{ expired, remaining }`; emits `'dirty'` on every append
+
+---
+
+## F15 [COMPLETED] Feature: Lazy DataView System
+
+**Branch:** `feature/dataview-lazy`
+**Completed:** 2026-02-22
+
+**Goal:** Introduce a `PlotDataView` class representing a lazily-evaluated, dirty-flag-cached derived view over a `DataStore` (or another `PlotDataView`). Views support ROI filtering, domain filtering, histogram derivation, and snapshotting. They never mutate the DataStore. Multiple plots may share a single `PlotDataView`. Recomputation is deferred until `getData()` is called while dirty.
+
+---
+
+### Files created / modified
+
+| File | Action |
+|------|--------|
+| `src/plot/PlotDataView.js` | **Created** — core lazy view class |
+| `src/plot/ROI/ROIController.js` | **Modified** — emit `roiFinalized` stub from `_onMouseUp` |
+| `src/plot/PlotController.js` | **Modified** — accept `opts.dataStore` / `opts.dataView`; forward `roiFinalized` in `_wireEvents()` |
+| `README.md` | **Modified** — PlotDataView section, event table, architecture diagram |
+| `examples/HubPage.jsx` | **Modified** — updated Scatter/ROI card description |
+
+---
+
+### Implementation
+
+**`PlotDataView` constructor** `(source, transformFn = null, opts = {})`:
+- Accepts `DataStore` or parent `PlotDataView` as `source`; optional `opts.roiController`
+- `_dirty = true`, `_snapshot = null`
+- Wires `'dirty'` and `'dataExpired'` on source → `markDirty()`
+- Wires `'roiFinalized'` and `'roiExternalUpdate'` on roiController → `markDirty()`
+- Does NOT wire `'roiUpdated'` — drag must not trigger recompute
+
+**`getData()`** — if dirty, calls `_recompute()`, clears flag, returns snapshot; otherwise returns cached snapshot.
+
+**`markDirty()`** — sets `_dirty = true`, emits `'dirty'` for child view cascade.
+
+**`_recompute()`** — dispatches to `source.getLogicalData()` (DataStore) or `source.getData()` (parent PlotDataView); applies `_transform` if set; stores in `_snapshot`; emits `'recomputed'`.
+
+**`filterByDomain(domain)`** — returns new `PlotDataView(this, filterFn)` keeping only points within `domain.x` / `domain.y` ranges.
+
+**`filterByROI(roiId)`** — returns new `PlotDataView(this, filterFn)` keeping only points inside named ROI bounding box (reads bounds from `opts.roiController.getROI(roiId).getBounds()`); gracefully returns all data if ROI not found.
+
+**`histogram({ field, bins })`** — computes histogram over `getData()[field]`; returns `{ counts: Float32Array, edges: Float32Array }` where `edges.length === bins + 1`.
+
+**`snapshot()`** — returns deep copy via `.slice()` on all typed arrays.
+
+**`destroy()`** — removes all event listeners added in constructor.
+
+**`_filterPoints(data, predicate)`** — two-pass (count then copy) to allocate output typed arrays exactly sized to match count.
+
+**ROIController `_onMouseUp` stub** — captures `roi` before clearing drag state, then emits `roiFinalized` with `{ roi, bounds: roi.getBounds() }`. F14 replaces with versioned bumpVersion() payload.
+
+**PlotController opts prep** — `this._dataStore = opts.dataStore || new DataStore()` and `this._dataView = opts.dataView || null`. F17 adds ownership flags and render path integration.
+
+**PlotController `_wireEvents()`** — forwards `roiFinalized` from ROIController to self.
+
+---
+
+### Validation checklist
+
+- [x] `new PlotDataView(dataStore).getData()` returns same data as `dataStore.getLogicalData()`
+- [x] `appendData` → DataStore emits `'dirty'` → PlotDataView dirty → recomputes on next `getData()`
+- [x] `dataStore.expireIfNeeded()` fires `'dataExpired'` → PlotDataView dirty
+- [x] `filterByDomain({ x: [0, 10] })` returns only points with x in [0, 10]
+- [x] `filterByROI(roiId)` returns only points inside ROI bounding box
+- [x] `getData()` called twice without dirty change → same snapshot (no recompute)
+- [x] `roiUpdated` (drag) does NOT mark view dirty
+- [x] `roiFinalized` stub DOES mark view dirty
+- [x] Child view cascade: parent `markDirty()` → child becomes dirty via `'dirty'` event
+- [x] `histogram({ field: 'x', bins: 32 })` → `counts.length === 32`, `edges.length === 33`
+- [x] `snapshot()` returns deep copy — mutating it does not affect cache
+- [x] `destroy()` removes all listeners
+

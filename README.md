@@ -14,7 +14,7 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 
 ---
 
-## Current Capabilities (F1–F16)
+## Current Capabilities (F1–F16, F15)
 
 ### Core Plotting Engine
 - **WebGL rendering** via deck.gl `OrthographicView` — no maps, no geospatial assumptions
@@ -24,7 +24,8 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 - **Zoom** (mouse wheel, centered on cursor) and **pan** (drag) without touching data buffers
 - **Semi-live data append** — `Float32Array` buffers grow by 1.5× when capacity is exhausted; no full reallocation; deck.gl attribute views (`subarray`) update without copying
 - **Rolling ring buffer** — optional fixed-capacity circular buffer with count-based and age-based expiration; axis domain recalculates automatically after eviction
-- **Event log panel** — on-screen log of `dataAppended`, `domainChanged`, `zoomChanged`, `panChanged`, `roiCreated`, `roiUpdated`, `roiDeleted`
+- **PlotDataView** — lazily-evaluated, dirty-flag-cached derived view over a `DataStore` or another `PlotDataView`; supports domain filtering, ROI filtering, histogram derivation, and deep snapshot; dirty propagates through arbitrarily deep view chains
+- **Event log panel** — on-screen log of `dataAppended`, `domainChanged`, `zoomChanged`, `panChanged`, `roiCreated`, `roiUpdated`, `roiDeleted`, `roiFinalized`
 
 ### ROI System (pyqtgraph-style)
 - **LinearRegion** — vertical strip defined by x1/x2; created with `L` key + two clicks
@@ -57,6 +58,7 @@ MasterPlot is **controller-driven**, not React-state-driven. React only manages 
 ```
 PlotController (EventEmitter)
 ├── DataStore             — GPU typed array buffers (x/y/color/size)
+│   └── PlotDataView      — lazy derived view (filter, histogram, snapshot)
 ├── ViewportController    — canvas dimensions + screen↔data transforms
 ├── AxisController (x)    — d3-scale domain/range, tick generation
 ├── AxisController (y)
@@ -114,7 +116,8 @@ All events are emitted on `PlotController` (or `ROIController` before being re-e
 | `zoomChanged` | `{ factor, focalDataX, focalDataY }` | Zoom event |
 | `panChanged` | `{ dx, dy }` | Pan delta in screen pixels |
 | `roiCreated` | `{ roi, type }` | ROI was created |
-| `roiUpdated` | `{ roi, bounds }` | ROI was moved or resized |
+| `roiUpdated` | `{ roi, bounds }` | ROI was moved or resized (drag; fires many times) |
+| `roiFinalized` | `{ roi, bounds }` | ROI drag committed on mouseup (fires once per release) |
 | `roiDeleted` | `{ id }` | ROI was deleted |
 
 Usage:
@@ -184,6 +187,63 @@ Rolling mode is transparent to `PlotController` — `appendData()`, auto-expand 
 
 ---
 
+## PlotDataView (F15)
+
+`PlotDataView` (`src/plot/PlotDataView.js`) is a lazily-evaluated, dirty-flag-cached derived view over a `DataStore` or another `PlotDataView`. It never mutates its source.
+
+### API
+
+```js
+import { PlotDataView } from './src/plot/PlotDataView.js';
+
+// Wrap a DataStore
+const view = new PlotDataView(dataStore);
+
+// Or wrap another view (creates a child view; dirty cascades automatically)
+const domainView = new PlotDataView(parentView, null, { roiController });
+
+// Get data (recomputes only if dirty)
+const { x, y, size, color } = view.getData();
+
+// Derived views
+const filtered = view.filterByDomain({ x: [0, 100], y: [0, 50] });
+const roiView  = view.filterByROI('roi_1', { roiController });
+
+// Histogram (does not re-recompute if not dirty)
+const { counts, edges } = view.histogram({ field: 'x', bins: 64 });
+// edges.length === 65, counts.length === 64
+
+// Deep snapshot — mutating result does not affect cache
+const copy = view.snapshot();
+
+// Manual dirty mark (triggers child cascade)
+view.markDirty();
+
+// Cleanup
+view.destroy();
+```
+
+### Dirty propagation rules
+
+| Source event | Marks dirty? |
+|---|---|
+| `DataStore 'dirty'` (after `appendData`) | ✅ yes |
+| `DataStore 'dataExpired'` (rolling eviction) | ✅ yes |
+| `roiFinalized` (drag commit on mouseup) | ✅ yes |
+| `roiExternalUpdate` (incoming external sync) | ✅ yes |
+| `roiUpdated` (drag in progress) | ❌ no — drag must not trigger recompute |
+
+Child views automatically cascade dirty when their parent emits `'dirty'`. Chains of arbitrary depth work correctly.
+
+### Events
+
+| Event | Payload | Description |
+|---|---|---|
+| `'dirty'` | — | View became dirty (propagates to children) |
+| `'recomputed'` | `{ count }` | Recompute finished; snapshot is fresh |
+
+---
+
 ## ROI Constraint System
 
 `ConstraintEngine.enforceConstraints(parent, delta)`:
@@ -238,6 +298,7 @@ src/
   plot/
     PlotController.js     — central controller + render loop
     DataStore.js          — GPU typed array buffers
+    PlotDataView.js       — lazy derived view (filter / histogram / snapshot)
     ViewportController.js — coordinate transforms
     ROI/
       ROIBase.js          — abstract base class
@@ -276,8 +337,13 @@ public/
 
 See [PLAN.md](PLAN.md) for the full implementation plan and step status.
 
-Planned (not yet implemented):
+In progress / planned (Phase 2):
+- **F14** ROI domain model + mandatory versioning (`version`, `serializeAll`, `updateFromExternal`)
+- **F17** Shared DataStore/DataView across multiple PlotControllers
+- **F18** External integration adapter contracts (no HTTP/WebSocket in engine)
+
+Later (unscheduled):
 - Full multi-level RectROI nesting
-- High-resolution PNG export
+- High-resolution PNG export (`plotController.exportPNG(options)`)
 - Snapping constraints for ROIs
 - TypeScript migration

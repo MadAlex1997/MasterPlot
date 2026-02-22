@@ -48,7 +48,9 @@ export class PlotController extends EventEmitter {
     this._opts = opts;
 
     // ── Subsystems ──────────────────────────────────────────────────────────
-    this._dataStore = new DataStore();
+    // F15/F17: accept external DataStore / DataView injection
+    this._dataStore = opts.dataStore || new DataStore();
+    this._dataView  = opts.dataView  || null;
     this._viewport  = new ViewportController();
 
     this._xAxis = new AxisController({
@@ -598,10 +600,11 @@ export class PlotController extends EventEmitter {
     this._dataStore.on('dataExpired', e => this.emit('dataExpired', e));
 
     // ROI events
-    this._roiController.on('roiCreated',  e => this.emit('roiCreated',  e));
-    this._roiController.on('roiUpdated',  e => this.emit('roiUpdated',  e));
-    this._roiController.on('roiDeleted',  e => this.emit('roiDeleted',  e));
-    this._roiController.on('roisChanged', e => { this._dirty = true; });
+    this._roiController.on('roiCreated',   e => this.emit('roiCreated',   e));
+    this._roiController.on('roiUpdated',   e => this.emit('roiUpdated',   e));
+    this._roiController.on('roiDeleted',   e => this.emit('roiDeleted',   e));
+    this._roiController.on('roiFinalized', e => this.emit('roiFinalized', e)); // F15 stub; F14 enriches payload
+    this._roiController.on('roisChanged',  () => { this._dirty = true; });
 
     // Axis domain events
     this._xAxis.on('domainChanged', e => {

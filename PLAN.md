@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 3.1
+**Plan Version:** 3.2
 **Last Updated:** 2026-02-22
-**Status:** F16 last completed — F15, F14, F17, F18 PENDING (implement in this order)
+**Status:** F15 last completed — F14, F17, F18 PENDING (implement in this order)
 
 ---
 
@@ -65,7 +65,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | B7  | Fix: Y-axis pan direction | ✅ COMPLETED | — | 2026-02-21 |
 | B8  | Fix: Spectrogram page blank | ✅ COMPLETED | — | 2026-02-21 |
 | F16 | Rolling Ring Buffer DataStore | ✅ COMPLETED | feature/datastore-rolling | 2026-02-22 |
-| F15 | Lazy DataView System | ⏳ PENDING | feature/dataview-lazy | — |
+| F15 | Lazy DataView System | ✅ COMPLETED | feature/dataview-lazy | 2026-02-22 |
 | F14 | ROI Domain Model + Versioning | ⏳ PENDING | feature/roi-domain-versioning | — |
 | F17 | Shared Data Infrastructure | ⏳ PENDING | feature/shared-data | — |
 | F18 | External Integration Contracts | ⏳ PENDING | feature/integration-contract | — |
@@ -197,93 +197,10 @@ Full spec: [docs/plan-archive.md#f16](docs/plan-archive.md#f16)
 
 ---
 
-## F15 [PENDING] Feature: Lazy DataView System
-
-**Branch:** `feature/dataview-lazy` (create before starting)
-
-**Depends on:** F16 (`'dataExpired'` event and `getLogicalData()` on DataStore)
-
-**Partially depends on:** F14 — needs `roiFinalized` and `roiExternalUpdate` events from ROIController. Stub them during F15 development; wire fully after F14 lands.
-
-**Goal:** Introduce a `PlotDataView` class representing a lazily-evaluated, dirty-flag-cached derived view over a `DataStore` (or another `PlotDataView`). Views support ROI filtering, domain filtering, histogram derivation, and snapshotting. They never mutate the DataStore. Multiple plots may share a single `PlotDataView`. Recomputation is deferred until `getData()` is called while dirty.
-
----
-
-### Files to create / modify
-
-| File | Action |
-|------|--------|
-| `src/plot/PlotDataView.js` | **Create new** — core lazy view class |
-| `src/plot/ROI/ROIController.js` | **Modify (stub)** — emit `roiFinalized` from `_onMouseUp` |
-| `src/plot/PlotController.js` | **Modify** — accept `opts.dataStore` / `opts.dataView` (prep for F17) |
-
----
-
-### Implementation steps
-
-1. **Create `src/plot/PlotDataView.js`** extending EventEmitter:
-   - Constructor: `(source, transformFn = null, opts = {})` — accepts DataStore or parent PlotDataView; optional `opts.roiController`
-   - `_dirty = true`, `_snapshot = null`
-   - Wire source events: listen for `'dataExpired'` and `'dirty'` on source, and `'roiFinalized'` / `'roiExternalUpdate'` on `opts.roiController`; all call `this.markDirty()`
-   - **Do NOT** listen on `'roiUpdated'` — drag must not trigger recompute
-
-2. **`getData()`** — if dirty, call `_recompute()`, clear dirty flag, return snapshot. Otherwise return cached snapshot directly.
-
-3. **`markDirty()`** — sets `_dirty = true`, emits `'dirty'` to enable child view cascade.
-
-4. **`_recompute()`** — calls `source.getLogicalData()` (DataStore) or `source.getData()` (parent PlotDataView); applies `_transform` if set; stores in `_snapshot`; emits `'recomputed'`.
-
-5. **`filterByDomain(domain)`** — returns new `PlotDataView(this, filterFn)` keeping only points within `domain.x` / `domain.y` ranges.
-
-6. **`filterByROI(roiId)`** — returns new `PlotDataView(this, filterFn)` keeping only points inside named ROI bounding box (reads bounds from `opts.roiController.getROI(roiId).getBounds()`).
-
-7. **`histogram({ field, bins })`** — computes histogram over `getData()[field]`; returns `{ counts: Float32Array, edges: Float32Array }`.
-
-8. **`snapshot()`** — returns deep copy via `.slice()` on all typed arrays.
-
-9. **`destroy()`** — removes all event listeners.
-
-10. **Private `_filterPoints(data, predicate)` helper** — allocates output typed arrays of matching size; copies matching indices.
-
-11. **ROIController stub** — in `_onMouseUp`, after clearing drag state, add:
-    ```js
-    if (roi) this.emit('roiFinalized', { roi, bounds: roi.getBounds() });
-    ```
-    (F14 will replace this stub with versioned payload.)
-
-12. **PlotController opts prep** — add to constructor:
-    ```js
-    this._dataStore = opts.dataStore || new DataStore();
-    this._dataView  = opts.dataView  || null;
-    ```
-
----
-
-### Validation checklist
-
-- [ ] `new PlotDataView(dataStore).getData()` returns same data as `dataStore.getLogicalData()`
-- [ ] `appendData` → DataStore emits `'dirty'` → PlotDataView dirty → recomputes on next `getData()`
-- [ ] `dataStore.expireIfNeeded()` fires `'dataExpired'` → PlotDataView dirty
-- [ ] `filterByDomain({ x: [0, 10] })` returns only points with x in [0, 10]
-- [ ] `filterByROI(roiId)` returns only points inside ROI bounding box
-- [ ] `getData()` called twice without dirty change → same snapshot (no recompute)
-- [ ] `roiUpdated` (drag) does NOT mark view dirty
-- [ ] `roiFinalized` stub DOES mark view dirty
-- [ ] Child view cascade: parent `markDirty()` → child becomes dirty via `'dirty'` event
-- [ ] `histogram({ field: 'x', bins: 32 })` → `counts.length === 32`, `edges.length === 33`
-- [ ] `snapshot()` returns deep copy — mutating it does not affect cache
-- [ ] `destroy()` removes all listeners (verify with `.listenerCount()`)
-- [ ] 1M point identity `getData()` < 5 ms
-
----
-
-### Notes
-
-- Class named `PlotDataView` (file `src/plot/PlotDataView.js`) to avoid shadowing browser built-in `DataView`.
-- Dirty cascade relies on child views listening for the `'dirty'` event on their parent view — arbitrarily deep chains propagate correctly.
-- `roiUpdated` (drag) is explicitly NOT wired — this is the key performance invariant.
-- F14 replaces the `_onMouseUp` stub with a proper versioned `roiFinalized` event. `PlotDataView` wiring does not need to change — it only cares about the event name.
-- After completing: update `README.md`; update `examples/HubPage.jsx`.
+### F15 [COMPLETED] Feature: Lazy DataView System
+**Completed:** 2026-02-22 | **Branch:** feature/dataview-lazy
+Created `PlotDataView` (dirty-flag-cached lazy view with `filterByDomain`, `filterByROI`, `histogram`, `snapshot`, `destroy`); added `roiFinalized` stub to `ROIController._onMouseUp`; added `opts.dataStore`/`opts.dataView` prep and `roiFinalized` forwarding to `PlotController`.
+Full spec: [docs/plan-archive.md#f15](docs/plan-archive.md#f15)
 
 
 ---
@@ -540,3 +457,4 @@ Full spec: [docs/plan-archive.md#f16](docs/plan-archive.md#f16)
 
 - **2026-02-22 [Claude]**: F16, F15, F14, F17, F18 added as PENDING (from Features.md). Mandatory implementation order: F16 → F15 → F14 → F17 → F18. Plan version 3.0.
 - **2026-02-22 [Claude]**: Plan reorganized to v3.1 — completed specs archived to `docs/plan-archive.md`; PLAN.md now contains compact summaries + pending specs only. Future agents: follow rule 7 (archive on completion).
+- **2026-02-22 [Claude]**: F15 completed (v3.2) — `PlotDataView` created; `roiFinalized` stub added to ROIController; `opts.dataStore`/`opts.dataView` prep added to PlotController. Next: F14.

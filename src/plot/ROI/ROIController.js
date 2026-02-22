@@ -254,10 +254,15 @@ export class ROIController extends EventEmitter {
 
   _onMouseUp(e) {
     if (this._dragging) {
+      const roi = this._dragROI;
       this._dragging      = false;
       this._dragROI       = null;
       this._dragHandle    = null;
       this._dragStartData = null;
+
+      // F15 stub: emit roiFinalized on drag commit so PlotDataView can mark dirty.
+      // F14 will replace this with a versioned bumpVersion() payload.
+      if (roi) this.emit('roiFinalized', { roi, bounds: roi.getBounds() });
     }
   }
 
