@@ -1,12 +1,57 @@
 # MasterPlot
 
-A production-grade scientific plotting engine built with React, deck.gl (WebGL), and d3-scale.
+> **Prototype Disclosure**
+> MasterPlot is an **experimental prototype**, not a production-ready library.
+> It is being developed iteratively using **agentic AI** (Claude Code / Anthropic Claude) following a structured plan in [PLAN.md](PLAN.md).
+> Expect breaking changes, incomplete documentation, and rough edges.
+
+---
+
+**[Live Demo →](https://madalex1997.github.io/MasterPlot/)**
+
+A high-performance scientific plotting engine built on React, deck.gl (WebGL), and d3-scale.
+Designed for real-time data, large datasets (tested to 1M+ points), and audio/signal analysis workflows.
+
+---
+
+## Current Capabilities (F1–F13)
+
+### Core Plotting Engine
+- **WebGL rendering** via deck.gl `OrthographicView` — no maps, no geospatial assumptions
+- **Scatter plots** with instanced rendering (`ScatterLayer`) — GPU typed array buffers, no per-point JS objects
+- **Line plots** (`LineLayer`)
+- **Linear and log axes** via d3-scale; canvas 2D overlay for tick labels and grid
+- **Zoom** (mouse wheel, centered on cursor) and **pan** (drag) without touching data buffers
+- **Semi-live data append** — `Float32Array` buffers grow by 1.5× when capacity is exhausted; no full reallocation; deck.gl attribute views (`subarray`) update without copying
+- **Event log panel** — on-screen log of `dataAppended`, `domainChanged`, `zoomChanged`, `panChanged`, `roiCreated`, `roiUpdated`, `roiDeleted`
+
+### ROI System (pyqtgraph-style)
+- **LinearRegion** — vertical strip defined by x1/x2; created with `L` key + two clicks
+- **RectROI** — draggable/resizable rectangle; created with `R` key + two clicks; parented to a LinearRegion
+- **ConstraintEngine** — enforces parent-child bounds automatically:
+  - Children shift when parent moves (preserving relative offset)
+  - Children are clamped to parent bounds (not discarded)
+  - Recursive enforcement for multi-level nesting
+- **Deletion** with `D` key; cancel creation with `Esc`
+
+### Spectrogram / Audio Analysis Example
+A full-featured spectrogram viewer is available at the demo (Spectrogram tab):
+
+| Feature | Details |
+|---|---|
+| **Real-time STFT spectrogram** | WebGL rendered; configurable window size; hop = window/2 |
+| **Synchronized waveform** | PCM waveform shown below the spectrogram |
+| **Audio file loading** | Any format `AudioContext.decodeAudioData` supports (WAV, MP3, OGG, FLAC, etc.) |
+| **Live append mode** | Chirp + noise generated every 100 ms; toggle on/off |
+| **HistogramLUT panel** | pyqtgraph-style dB amplitude histogram; draggable level_min / level_max handles; 6 LUT presets (Viridis, Plasma, Inferno, Magma, Hot, Grayscale); Auto Level button |
+| **Audio playback** | Play / Pause / Stop; yellow dashed playhead line on both panels at 60 fps; Ctrl+click to seek on either panel |
+| **Frequency filters** | Offline biquad DSP via `OfflineAudioContext` (lowpass, highpass, bandpass, notch, allpass); frequency response curve preview; Apply / Clear Filter |
 
 ---
 
 ## Architecture Overview
 
-MasterPlot is **controller-driven**, not React-state-driven. React only manages DOM layout and UI chrome. All rendering, zoom, pan, and ROI interaction runs outside React's reconciler.
+MasterPlot is **controller-driven**, not React-state-driven. React only manages DOM layout and UI chrome. All rendering, zoom, pan, ROI interaction, and audio processing run outside React's reconciler.
 
 ```
 PlotController (EventEmitter)
@@ -21,6 +66,12 @@ PlotController (EventEmitter)
 └── deck.gl Deck          — WebGL render target (OrthographicView)
 
 AxisRenderer              — Canvas 2D overlay (ticks, labels, grid)
+
+Audio subsystem (spectrogram example only):
+├── SpectrogramLayer      — custom deck.gl layer; STFT → ImageBitmap → WebGL texture
+├── HistogramLUTController — dB histogram + LUT remapping (EventEmitter)
+├── PlaybackController    — Web Audio API playback with seek (EventEmitter)
+└── FilterController      — offline biquad DSP + frequency response (EventEmitter)
 ```
 
 ---
@@ -107,6 +158,7 @@ This avoids GC spikes during continuous data append.
 | `Esc` | Cancel creation mode |
 | `scroll` | Zoom (centered on cursor) |
 | `drag` | Pan |
+| `Ctrl+click` | Seek playhead (spectrogram example) |
 
 ---
 
@@ -150,14 +202,35 @@ src/
       ScatterLayer.js     — deck.gl scatter (instanced)
       LineLayer.js        — deck.gl polylines
       ROILayer.js         — deck.gl composite ROI renderer
+      SpectrogramLayer.js — STFT + WebGL texture spectrogram
+      HistogramLUTController.js — dB histogram + LUT remapping
     axes/
       AxisController.js   — d3-scale wrapper
       AxisRenderer.js     — canvas 2D ticks + labels
+  audio/
+    PlaybackController.js — Web Audio API playback + seek
+    FilterController.js   — offline biquad DSP + frequency response
   components/
     PlotCanvas.jsx        — React wrapper (canvas + controller lifecycle)
+    HistogramLUTPanel.jsx — histogram + level handles + LUT preset UI
+    FilterPanel.jsx       — filter type, cutoff, Q controls + response curve
 examples/
-  ExampleApp.jsx          — demo with all MVP features
-  dataGenerator.js        — test data generation
+  HubPage.jsx             — demo navigation hub
+  ExampleApp.jsx          — scatter/ROI/live-append demo
+  LineExample.jsx         — line plot demo
+  SpectrogramExample.jsx  — full audio analysis demo
 public/
   index.html
 ```
+
+---
+
+## Roadmap
+
+See [PLAN.md](PLAN.md) for the full implementation plan and step status.
+
+Planned (not yet implemented):
+- Full multi-level RectROI nesting
+- High-resolution PNG export
+- Snapping constraints for ROIs
+- TypeScript migration

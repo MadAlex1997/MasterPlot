@@ -26,6 +26,7 @@ This document tracks the multi-step implementation of MasterPlot. Each step has 
 3. **When Completing**: Mark step as `[COMPLETED]` and verify dependencies
 4. **If Something Breaks**: Mark the affected step as `[REGRESSED]` and document the issue
 5. **On Handoff**: Clearly mark next step for the following agent
+6. **After every completed feature**: Update `README.md` to reflect new capabilities **and** update `HubPage.jsx` so the new demo/example is linked from the hub. GitHub Actions deploys from `main` — a merged PR or push to `main` is sufficient to update https://madalex1997.github.io/MasterPlot/. Do NOT mark a feature `[COMPLETED]` without completing this step.
 
 ---
 

@@ -8,6 +8,7 @@ module.exports = (env, argv) => {
     // Multi-entry: one bundle per example page
     entry: {
       main:        './src/index.js',
+      example:     './src/example.js',
       line:        './src/line.js',
       spectrogram: './src/spectrogram.js',
     },
@@ -40,6 +41,11 @@ module.exports = (env, argv) => {
         template: './public/index.html',
         filename: 'index.html',
         chunks:   ['main'],
+      }),
+      new HtmlWebpackPlugin({
+        template: './public/example.html',
+        filename: 'example.html',
+        chunks:   ['example'],
       }),
       new HtmlWebpackPlugin({
         template: './public/line.html',

@@ -1,6 +1,11 @@
 export default function HubPage() {
   const demos = [
     {
+      href: 'example.html',
+      title: 'Scatter / ROI',
+      desc: '1M points + live append every 2 s. ROI creation (L/R keys), LinearRegion constraint propagation, event log.',
+    },
+    {
       href: 'line.html',
       title: 'Line Plot',
       desc: '1M points rendered via WebGL. Zoom, pan, ROI selection.',
@@ -8,7 +13,7 @@ export default function HubPage() {
     {
       href: 'spectrogram.html',
       title: 'Spectrogram',
-      desc: 'Real-time audio spectrogram with synchronized playhead.',
+      desc: 'Real-time STFT spectrogram with audio file loading, HistogramLUT, playback, and biquad filters.',
     },
   ];
 
@@ -42,7 +47,7 @@ export default function HubPage() {
       gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
       gap: 20,
       width: '100%',
-      maxWidth: 640,
+      maxWidth: 900,
     },
     card: {
       display: 'flex',

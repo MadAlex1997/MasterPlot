@@ -42,6 +42,13 @@ All implementation work follows the plan in `PLAN.md`. **Read that file first be
    - All commits for this work go on the feature branch — do NOT commit directly to main/master
    - After build verification, the branch is ready for review/merge
 
+7. **After every completed feature, update the README and demo:**
+   - Update `README.md` to document any new capabilities, controls, or architecture changes
+   - Update `examples/HubPage.jsx` so the new demo/example is linked from the hub page
+   - If a new webpack entry/HTML page is needed, add it to `webpack.config.js` and `public/`
+   - GitHub Actions deploys from `main` automatically — merging to `main` updates https://madalex1997.github.io/MasterPlot/
+   - A feature is **not complete** until README and HubPage reflect it
+
 ---
 
 You are building a **production-grade scientific plotting engine** in:
