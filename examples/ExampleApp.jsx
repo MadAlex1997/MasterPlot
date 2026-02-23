@@ -12,6 +12,8 @@
  *  8. Live append: 10k points every 2 seconds (toggleable)
  *  9. Auto-expand domain toggle
  * 10. All events logged to console
+ * 11. LinearRegion table (EX1) — updates on roiCreated/roiFinalized/roiDeleted
+ * 12. RectROI subset table (EX1) — shows rects overlapping selected LinearRegion
  *
  * Keybinds:
  *   L  — create LinearRegion
@@ -20,12 +22,17 @@
  *   Esc — cancel creation
  */
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import PlotCanvas from '../src/components/PlotCanvas.jsx';
 import { generatePoints, generateAppendChunk } from './dataGenerator.js';
 
 const INITIAL_POINT_COUNT = 1_000_000;
 const APPEND_INTERVAL_MS  = 2_000;
+
+/** True if [a0,a1] overlaps [b0,b1] (open-interval test) */
+function xOverlaps(a, b) {
+  return a[0] < b[1] && a[1] > b[0];
+}
 
 export default function ExampleApp() {
   const plotRef  = useRef(null);
@@ -38,8 +45,70 @@ export default function ExampleApp() {
   const [dragPan, setDragPan] = useState(false);
   const [panSpeed, setPanSpeed] = useState(0.02);
 
+  // ── EX1: ROI table state ────────────────────────────────────────────────────
+  const [linearROIs,      setLinearROIs]      = useState([]);
+  const [selectedLinearId, setSelectedLinearId] = useState(null);
+  const [childRects,      setChildRects]      = useState([]);
+
+  // Refs to avoid stale closures in event handler callbacks
+  const roiControllerRef    = useRef(null);
+  const selectedLinearIdRef = useRef(null);
+
   const addLog = (msg) => {
     setLog(prev => [msg, ...prev].slice(0, 20));
+  };
+
+  // ── EX1: refresh both tables from serializeAll() ────────────────────────────
+  const refreshROITables = useCallback(() => {
+    const rc = roiControllerRef.current;
+    if (!rc) return;
+    const all     = rc.serializeAll();
+    const linears = all.filter(r => r.type === 'linearRegion');
+    setLinearROIs(linears);
+
+    const selId = selectedLinearIdRef.current;
+    if (selId) {
+      const sel = linears.find(l => l.id === selId);
+      if (sel) {
+        setChildRects(all.filter(r => r.type === 'rect' && xOverlaps(r.domain.x, sel.domain.x)));
+      } else {
+        // Selected linear was deleted — clear selection
+        selectedLinearIdRef.current = null;
+        setSelectedLinearId(null);
+        setChildRects([]);
+      }
+    } else {
+      setChildRects([]);
+    }
+  }, []); // stable: reads only from refs
+
+  // ── EX1: onInit — subscribe to roiController after controller is ready ──────
+  const handlePlotInit = useCallback((controller) => {
+    roiControllerRef.current = controller.roiController;
+    const rc = controller.roiController;
+    rc.on('roiCreated',  refreshROITables);
+    rc.on('roiFinalized', refreshROITables);
+    rc.on('roiDeleted',  refreshROITables);
+  }, [refreshROITables]);
+
+  // ── EX1: select/deselect a linear region row ─────────────────────────────────
+  const handleSelectLinear = (id) => {
+    const newId = selectedLinearIdRef.current === id ? null : id;
+    selectedLinearIdRef.current = newId;
+    setSelectedLinearId(newId);
+
+    // Immediately recompute child rects for new selection
+    const rc = roiControllerRef.current;
+    if (!rc) { setChildRects([]); return; }
+    const all = rc.serializeAll();
+    if (newId) {
+      const sel = all.find(l => l.id === newId);
+      if (sel) {
+        setChildRects(all.filter(r => r.type === 'rect' && xOverlaps(r.domain.x, sel.domain.x)));
+        return;
+      }
+    }
+    setChildRects([]);
   };
 
   // Handle events from PlotController
@@ -146,6 +215,8 @@ export default function ExampleApp() {
     setPanSpeed(v);
   };
 
+  // ── Styles ──────────────────────────────────────────────────────────────────
+
   const containerStyle = {
     display:       'flex',
     flexDirection: 'column',
@@ -171,10 +242,11 @@ export default function ExampleApp() {
     flex:     1,
     position: 'relative',
     overflow: 'hidden',
+    minHeight: 0,
   };
 
   const logPanelStyle = {
-    height:      120,
+    height:      100,
     background:  '#0a0a0a',
     borderTop:   '1px solid #222',
     overflowY:   'auto',
@@ -183,12 +255,47 @@ export default function ExampleApp() {
     flexShrink:  0,
   };
 
-  const keybindStyle = {
+  const roiPanelStyle = {
     display:     'flex',
-    gap:         12,
-    alignItems:  'center',
-    color:       '#888',
+    flexDirection: 'row',
+    gap:         0,
+    height:      160,
+    background:  '#0c0c0c',
+    borderTop:   '1px solid #2a2a2a',
+    flexShrink:  0,
+    overflow:    'hidden',
   };
+
+  const tableContainerStyle = {
+    flex:       1,
+    overflowY:  'auto',
+    padding:    '6px 10px',
+    borderRight: '1px solid #222',
+  };
+
+  const tableStyle = {
+    width:          '100%',
+    borderCollapse: 'collapse',
+    fontSize:       11,
+  };
+
+  const thStyle = {
+    textAlign:    'left',
+    padding:      '2px 6px',
+    color:        '#666',
+    borderBottom: '1px solid #2a2a2a',
+    fontWeight:   'normal',
+    userSelect:   'none',
+  };
+
+  const keyStyle = {
+    background: '#222', border: '1px solid #444', borderRadius: 3,
+    padding: '1px 5px', color: '#ddd',
+  };
+
+  const kbd = (k) => (
+    <span style={keyStyle}>{k}</span>
+  );
 
   const checkboxLabelStyle = {
     display:    'flex',
@@ -199,11 +306,12 @@ export default function ExampleApp() {
     userSelect: 'none',
   };
 
-  const kbd = (k) => (
-    <span style={{ background: '#222', border: '1px solid #444', borderRadius: 3, padding: '1px 5px', color: '#ddd' }}>
-      {k}
-    </span>
-  );
+  const keybindStyle = {
+    display:     'flex',
+    gap:         12,
+    alignItems:  'center',
+    color:       '#888',
+  };
 
   return (
     <div style={containerStyle}>
@@ -252,6 +360,7 @@ export default function ExampleApp() {
           xLabel="X"
           yLabel="Y"
           onEvent={handleEvent}
+          onInit={handlePlotInit}
         />
       </div>
 
@@ -262,6 +371,107 @@ export default function ExampleApp() {
           </div>
         ))}
         {log.length === 0 && <span style={{ color: '#333' }}>Event log (last 20 events)...</span>}
+      </div>
+
+      {/* ── EX1: ROI Inspection Tables ──────────────────────────────────────── */}
+      <div style={roiPanelStyle}>
+        {/* Left: LinearRegion table */}
+        <div style={tableContainerStyle}>
+          <div style={{ color: '#888', fontSize: 11, marginBottom: 4 }}>
+            LinearRegions
+            <span style={{ color: '#444', marginLeft: 8 }}>
+              {linearROIs.length === 0 ? '(none — press L to draw)' : `${linearROIs.length} total · click row to filter rects`}
+            </span>
+          </div>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>ID</th>
+                <th style={thStyle}>Left</th>
+                <th style={thStyle}>Right</th>
+                <th style={thStyle}>Ver</th>
+              </tr>
+            </thead>
+            <tbody>
+              {linearROIs.map(r => {
+                const isSelected = r.id === selectedLinearId;
+                return (
+                  <tr
+                    key={r.id}
+                    onClick={() => handleSelectLinear(r.id)}
+                    style={{
+                      cursor:     'pointer',
+                      background: isSelected ? '#1a2a1a' : 'transparent',
+                    }}
+                  >
+                    <td style={{ padding: '2px 6px', color: isSelected ? '#8f8' : '#88b', fontSize: 10 }}>
+                      {r.id.slice(0, 8)}
+                    </td>
+                    <td style={{ padding: '2px 6px', color: '#ccc' }}>
+                      {r.domain.x[0].toFixed(2)}
+                    </td>
+                    <td style={{ padding: '2px 6px', color: '#ccc' }}>
+                      {r.domain.x[1].toFixed(2)}
+                    </td>
+                    <td style={{ padding: '2px 6px', color: '#666' }}>
+                      {r.version}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Right: RectROI subset table */}
+        <div style={{ ...tableContainerStyle, borderRight: 'none' }}>
+          <div style={{ color: '#888', fontSize: 11, marginBottom: 4 }}>
+            RectROIs within selected LinearRegion
+            <span style={{ color: '#444', marginLeft: 8 }}>
+              {!selectedLinearId
+                ? '(select a LinearRegion row)'
+                : childRects.length === 0
+                  ? '(none — press R inside a LinearRegion)'
+                  : `${childRects.length} rect${childRects.length !== 1 ? 's' : ''}`}
+            </span>
+          </div>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>ID</th>
+                <th style={thStyle}>Left</th>
+                <th style={thStyle}>Right</th>
+                <th style={thStyle}>Bottom</th>
+                <th style={thStyle}>Top</th>
+                <th style={thStyle}>Ver</th>
+              </tr>
+            </thead>
+            <tbody>
+              {childRects.map(r => (
+                <tr key={r.id}>
+                  <td style={{ padding: '2px 6px', color: '#b88', fontSize: 10 }}>
+                    {r.id.slice(0, 8)}
+                  </td>
+                  <td style={{ padding: '2px 6px', color: '#ccc' }}>
+                    {r.domain.x[0].toFixed(2)}
+                  </td>
+                  <td style={{ padding: '2px 6px', color: '#ccc' }}>
+                    {r.domain.x[1].toFixed(2)}
+                  </td>
+                  <td style={{ padding: '2px 6px', color: '#ccc' }}>
+                    {r.domain.y ? r.domain.y[0].toFixed(2) : '—'}
+                  </td>
+                  <td style={{ padding: '2px 6px', color: '#ccc' }}>
+                    {r.domain.y ? r.domain.y[1].toFixed(2) : '—'}
+                  </td>
+                  <td style={{ padding: '2px 6px', color: '#666' }}>
+                    {r.version}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

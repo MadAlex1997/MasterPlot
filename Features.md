@@ -1,464 +1,292 @@
-Below is a **PLAN.md extension** ready to append to your existing file.
-It follows your architectural decisions exactly:
-
-* Engine purity maintained
-* Lazy DataView model
-* Rolling ring buffer
-* Mandatory ROI versioning
-* Shared DataStore + Shared DataView
-* Integration layer external
-
----
 
 # ============================================================
 
-# MasterPlot PLAN.md Extension
-
-# Data I/O, Rolling Windows, and Shared Scientific Workflows
+# Example Improvements Plan
 
 # ============================================================
 
+These changes apply to example implementations only.
+No engine modifications permitted.
+
 ---
 
-# F16 — Rolling Ring Buffer DataStore
+# EX1 — Scatter + ROI Tables Enhancement
 
 ## Objective
 
-Introduce a high-performance rolling data mode supporting:
+Enhance the scatter + histogram example to:
 
-* Count-based expiration
-* Time-based expiration
-* Continuous append
-* GPU-safe wrapped buffer uploads
-* Deterministic domain updates
+1. Add a table listing all LinearRegion ROIs with:
 
-This must not break existing append-only mode.
+   * Left bound
+   * Right bound
+   * ROI id
+   * Version
 
----
+2. Add a second table listing RectROIs that fall within the currently selected LinearRegion:
 
-## Architectural Requirements
-
-### DataStore must support:
-
-```ts
-enableRolling({ maxPoints?: number, maxAgeMs?: number })
-append(points)
-expireIfNeeded()
-clear()
-getLogicalData()
-```
-
-### Internal Structure
-
-DataStore maintains:
-
-* capacity
-* size
-* headIndex
-* tailIndex
-* timestamps[]
-* data arrays (typed arrays)
-* rollingEnabled flag
-
-No array splicing allowed.
+   * Left
+   * Right
+   * Bottom
+   * Top
+   * ROI id
+   * Version
 
 ---
 
-## Expiration Rules
+## Constraints
 
-Expire when:
-
-```
-size > maxPoints
-OR
-timestamp < now - maxAgeMs
-```
-
-Expiration must:
-
-* Advance tail pointer
-* Adjust size
-* Not reallocate arrays
-* Mark dependent DataViews dirty
+* Use roiController.serializeAll()
+* Use roiFinalized event for updates
+* No direct geometry inspection outside serialized form
+* No engine modifications
 
 ---
 
-## GPU Upload Strategy
+## Implementation Plan
 
-If tail <= head:
+### Step 1 — Linear Region Table
 
-* Upload contiguous slice
+* Subscribe to:
 
-If wrapped:
+  * roiCreated
+  * roiFinalized
+  * roiDeleted
+* Filter serialized ROIs by type === 'linear'
+* Populate React state
+* Render simple table
 
-* Upload two slices
-* Preserve logical ordering
+Columns:
 
-No data copying beyond minimal slice operations.
+* ID
+* Left (domain.x[0])
+* Right (domain.x[1])
+* Version
 
 ---
 
-## Axis Interaction
+### Step 2 — RectROI Subset Table
 
-If AxisController is in auto-domain mode:
+* Track selected LinearRegion (via row click)
 
-* Domain must update when expiration changes min/max
-* Manual zoom must not be overridden
+* On selection:
+
+  * Get its domain.x bounds
+  * Filter serialized ROIs:
+    type === 'rect'
+    AND rect.domain.x overlaps selected linear region
+
+* Render second table
+
+Columns:
+
+* ID
+* Left
+* Right
+* Bottom
+* Top
+* Version
 
 ---
 
 ## Validation
 
-* Append 1M points
-* Expire 500k
-* Confirm no corruption
-* Confirm wrapped upload works
-* Confirm domain updates correctly
-* Performance benchmark: append + expire under 10ms per 100k batch
+* Drag LinearRegion → tables update only on finalize
+* Drag RectROI → table updates only on finalize
+* Version increments correctly
+* No performance lag during drag
 
 ---
 
-## Branch
+# EX2 — Spectrogram Example UI Refinement
 
-feature/datastore-rolling
+## Objectives
 
----
+1. Move frequency filter controls next to waveform
+2. Apply frequency bandpass filter to:
 
-# F15 — Lazy DataView System
-
-## Objective
-
-Introduce immutable, lazily evaluated derived data views supporting:
-
-* ROI filtering
-* Domain filtering
-* Histogram derivation
-* Density (stub for future)
-* Shared use across plots
-
-DataView must never mutate DataStore.
+   * Spectrogram
+   * Waveform
+3. Replace sliders with float input boxes
+4. Show both bottom and top bounds explicitly
 
 ---
 
-## Core API
+## Constraints
 
-```ts
-class DataView {
-  constructor(parentView | dataStore, transformFn)
+* Use DataView filterByDomain()
+* No filtering in React
+* No engine modification
+* No re-implementation of filtering logic
 
-  getData()
-  markDirty()
-  filterByDomain(domain)
-  filterByROI(roiId)
-  histogram({ field, bins })
-  snapshot()
-}
+---
+
+## Implementation Plan
+
+### Step 1 — UI Relocation
+
+* Move filter component into waveform container layout
+* Maintain same state source
+
+---
+
+### Step 2 — Float Inputs
+
+Replace sliders with:
+
+```tsx
+<input type="number" step="0.1" />
 ```
 
----
+State:
 
-## Execution Model
+* lowFreq
+* highFreq
 
-* Lazy evaluation
-* Dirty-flag based
-* Cached snapshot
-* Recompute only when getData() called and dirty = true
+Validate:
 
----
-
-## Dirty Propagation Rules
-
-Mark dirty on:
-
-* DataStore append
-* DataStore expire
-* roiFinalized
-* roiExternalUpdate
-
-Do NOT mark dirty on roiUpdated (drag).
+* lowFreq < highFreq
+* within data domain
 
 ---
 
-## Shared Behavior
+### Step 3 — Shared DataView Filter
 
-Multiple plots may reference:
+Create:
 
-* Same DataStore
-* Same DataView
-* Derived DataViews
+```js
+const filteredView = baseView.filterByDomain({
+  y: [lowFreq, highFreq]
+});
+```
 
-Derived views must cascade dirty state properly.
+Apply filteredView to:
 
----
+* Spectrogram layer
+* Waveform layer
 
-## Performance Safeguards
+Ensure:
 
-* Batched recompute scheduling
-* No recompute during ROI drag
-* Histogram recompute only after ROI finalize
+* On input change → mark DataView dirty
+* Lazy recompute only when plot pulls
 
 ---
 
 ## Validation
 
-* Scatter + histogram sharing base view
-* ROI applied → histogram updates only
-* Remove ROI → histogram restores
-* No recompute during drag
-* Large dataset test (1M+)
+* Changing bounds updates both plots
+* No lag while typing (debounce optional)
+* Bandpass limits visible in UI
+* Domain values display correctly
 
 ---
 
-## Branch
-
-feature/dataview-lazy
-
----
-
-# F14 — ROI Domain Model + Mandatory Versioning
+# EX3 — Rolling Lines Example Improvement
 
 ## Objective
 
-Refactor ROI system to be:
+Replace random data with deterministic alternating:
 
-* Domain-based (plot-agnostic)
-* Version-controlled
-* Safe for shared workflows
-* Compatible with external sync
+* sin wave
+* cos wave
+* phase spaced to prevent overlap
+
+This makes:
+
+* Rolling behavior visually meaningful
+* Expiration behavior observable
+* Easier performance debugging
 
 ---
 
-## Serialized ROI Schema
+## Implementation Plan
 
-```ts
-{
-  id: string
-  type: string
-  domain: {
-    x?: [number, number]
-    y?: [number, number]
-  }
-  version: number
-  updatedAt: number
-  metadata?: object
+### Step 1 — Deterministic Generator
+
+Replace random generator with:
+
+```js
+const amplitude = 1
+const spacing = 3
+const t = globalTime
+
+if (seriesIndex % 2 === 0) {
+    y = amplitude * Math.sin(t) + seriesIndex * spacing
+} else {
+    y = amplitude * Math.cos(t) + seriesIndex * spacing
 }
 ```
 
-Version is mandatory and monotonic.
+Increment time continuously.
 
 ---
 
-## Controller Additions
+### Step 2 — Ensure Non-Overlap
 
-```ts
-serializeAll()
-deserializeAll(array)
-updateFromExternal(serializedROI)
+Use vertical offset:
+
+```js
+offset = seriesIndex * (2 * amplitude + padding)
 ```
 
 ---
 
-## Version Rules
+### Step 3 — Preserve Rolling Logic
 
-On external update:
-
-```
-if incoming.version <= current.version:
-    ignore
-else:
-    apply and emit roiExternalUpdate
-```
-
-Conflict resolution is not engine responsibility.
-
----
-
-## Event Model
-
-ROIController emits:
-
-* roiCreated
-* roiUpdated (drag only)
-* roiFinalized (commit)
-* roiDeleted
-* roiExternalUpdate
-
-Only these trigger DataView dirtying:
-
-* roiFinalized
-* roiExternalUpdate
+* Do not modify DataStore rolling mode
+* Ensure append frequency unchanged
+* Confirm expiration still works
 
 ---
 
 ## Validation
 
-* Reject stale versions
-* Nested ROI constraints remain valid
-* Drag does not recompute DataViews
-* External update propagates correctly
+* Waves do not overlap
+* Expiration visibly removes oldest waves
+* No performance degradation
+* Rolling behavior clearly demonstrable
 
 ---
 
-## Branch
+# Regression Checklist (Examples)
 
-feature/roi-domain-versioning
+After all changes:
 
----
+### Scatter Example
 
-# F17 — Shared Data Infrastructure
+* ROI drag does not freeze UI
+* Table updates only on finalize
+* Filtering correct
 
-## Objective
+### Spectrogram Example
 
-Enable multiple PlotControllers to:
+* Bandpass affects both plots
+* Float boxes stable
+* No jitter or infinite update loop
 
-* Share a DataStore
-* Share DataViews
-* React independently to ROI changes
+### Rolling Example
 
----
-
-## Requirements
-
-* DataStore instance may be passed to multiple plots
-* DataView may be reused across plots
-* ROI filtering may affect some views but not others
-* Base data must remain immutable
+* Continuous smooth waves
+* Expiration working
+* No buffer corruption
 
 ---
 
-## Example Scenario
+# Scope Control
 
-* Scatter plot uses base view
-* Histogram uses baseView.filterByROI()
-* Apply ROI → histogram updates
-* Scatter remains unchanged
-* Remove ROI → histogram restores
+These example updates must:
 
----
+* Not modify engine core
+* Not introduce new engine events
+* Not modify DataView logic
+* Not bypass lazy evaluation
 
-## Validation
-
-* Multi-plot synchronization test
-* ROI filtering correctness
-* No unintended base view mutation
-* No duplicate recompute
+All behavior must rely on existing public interfaces.
 
 ---
 
-## Branch
+If you'd like, I can now:
 
-feature/shared-data
-
----
-
-# F18 — External Integration Interface Contracts
-
-## Objective
-
-Define strict engine-facing contracts for integration packages.
-
-MasterPlot must not implement HTTP, WebSocket, or API logic.
-
----
-
-## Data Adapter Interface
-
-```ts
-interface ExternalDataAdapter {
-  replaceData(bufferStruct)
-  appendData(bufferStruct)
-}
-```
-
----
-
-## ROI Adapter Interface
-
-```ts
-interface ExternalROIAdapter {
-  load(): SerializedROI[]
-  save(roi: SerializedROI)
-  subscribe(callback: (roi) => void)
-}
-```
-
----
-
-## Responsibilities
-
-Integration layer may implement:
-
-* Query bar UI
-* API fetch logic
-* Sync services
-* Conflict resolution
-* Authentication
-
-Engine remains pure.
-
----
-
-## Documentation Requirements
-
-* Integration guide in README
-* Mock adapter example
-* Clear separation diagram
-
----
-
-## Branch
-
-feature/integration-contract
-
----
-
-# Global Regression Requirements
-
-Every feature must verify:
-
-### Data Integrity
-
-* No ghost points
-* No stale DataView cache
-* No index corruption in wrapped buffers
-
-### ROI Integrity
-
-* Version rejection works
-* Nested constraints preserved
-* No infinite update loops
-
-### Performance
-
-* 1M append benchmark
-* 10M rolling window benchmark
-* 100 ROI finalize operations
-* Histogram recompute under acceptable threshold
-
-### Multi-Plot
-
-* Shared DataStore scenario works
-* Shared DataView scenario works
-* ROI filtering does not mutate base data
-
----
-
-# Implementation Order (Mandatory)
-
-1. F16 — Rolling DataStore
-2. F15 — Lazy DataView
-3. F14 — ROI Domain + Versioning
-4. F17 — Shared Data Infrastructure
-5. F18 — Integration Contracts
-
-Do not reorder.
-
----
-
-If you'd like next, I can generate:
-
-* A dedicated IDE-agent execution prompt for F16
-* Or a deep technical spec for the ring buffer + GPU upload mechanics before implementation
-* Or a performance benchmarking plan
-
-Your architecture is now clean, deterministic, and extensible without compromising engine purity.
+* Write an IDE-agent execution prompt for implementing these example changes
+* Or provide minimal React pseudocode structure for each example
+* Or design a small shared ExampleState utility to standardize example behavior

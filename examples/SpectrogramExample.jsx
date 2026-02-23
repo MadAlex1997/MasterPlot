@@ -5,8 +5,9 @@
  * at 44100 Hz sample rate.
  *
  * Layout (top → bottom):
- *   1. Spectrogram panel  (SpectrogramLayer / BitmapLayer)
+ *   1. Spectrogram panel  (SpectrogramLayer / BitmapLayer) + LUT sidebar
  *   2. Waveform panel     (buildLineLayer / PathLayer, downsampled by WAVEFORM_STEP)
+ *      + frequency band controls + FilterPanel sidebar
  *
  * Live append: every 500 ms, extend the chirp signal by 0.25 s and
  * rebuild both layers.
@@ -14,6 +15,8 @@
  * Controls:
  *   windowSize selector (256 / 512 / 1024 / 2048)
  *   Live append checkbox
+ *   Frequency band: lowFreq / highFreq float inputs (sets spectrogram y-domain)
+ *   FilterPanel: DSP filter type/cutoff/Q + Apply/Clear
  *
  * Interaction (both panels):
  *   Scroll wheel → zoom (centered on cursor)
@@ -200,6 +203,10 @@ export default function SpectrogramExample() {
   const [applying,         setApplying]         = useState(false);
   const [filterSampleRate, setFilterSampleRate] = useState(SAMPLE_RATE);
   const [timeWindow,       setTimeWindow]       = useState(null);  // null = All
+
+  // ── EX2: Frequency band filter state (controls spectrogram y-domain) ────────
+  const [lowFreq,  setLowFreq]  = useState(0);
+  const [highFreq, setHighFreq] = useState(SAMPLE_RATE / 2);
 
   const addLog = (msg) => setLog(prev => [msg, ...prev].slice(0, 20));
 
@@ -675,6 +682,17 @@ export default function SpectrogramExample() {
     waveDirtyRef.current = true;
   }, [timeWindow]);
 
+  // ── EX2: Apply frequency band to spectrogram y-axis when inputs change ───────
+  useEffect(() => {
+    const yAxis = yAxisRef.current;
+    if (!yAxis) return;
+    const lo = Math.max(0, lowFreq);
+    const hi = Math.min(loadedSampleRateRef.current / 2, highFreq);
+    if (lo >= hi) return;  // invalid range — don't apply
+    yAxis.setDomain([lo, hi]);
+    dirtyRef.current = true;
+  }, [lowFreq, highFreq]);
+
   // ── UI handlers ───────────────────────────────────────────────────────────
 
   const handleLiveAppendChange = (e) => {
@@ -729,6 +747,9 @@ export default function SpectrogramExample() {
       originalSamplesRef.current = samplesRef.current.slice();  // snapshot for "Clear Filter"
       setFilterSampleRate(sr);
       dataTriggerRef.current += 1;
+      // Reset frequency band to full range for new file
+      setLowFreq(0);
+      setHighFreq(sr / 2);
       // Downsample for waveform
       const numWavePts = Math.floor(pcm.length / WAVEFORM_STEP);
       const newWX = new Float32Array(numWavePts);
@@ -789,6 +810,21 @@ export default function SpectrogramExample() {
     addLog('Filter cleared — original audio restored');
   };
 
+  // ── EX2: Frequency band input handlers ────────────────────────────────────
+
+  const handleLowFreqChange = (e) => {
+    const v = parseFloat(e.target.value);
+    if (!isNaN(v)) setLowFreq(v);
+  };
+
+  const handleHighFreqChange = (e) => {
+    const v = parseFloat(e.target.value);
+    if (!isNaN(v)) setHighFreq(v);
+  };
+
+  const nyquist = loadedSampleRateRef.current / 2;
+  const freqBandValid = lowFreq < highFreq && lowFreq >= 0 && highFreq <= nyquist;
+
   // ── Styles ────────────────────────────────────────────────────────────────
 
   const containerStyle = {
@@ -802,7 +838,7 @@ export default function SpectrogramExample() {
     borderBottom: '1px solid #333', fontSize: 12, flexShrink: 0,
   };
   const plotWrapStyle = {
-    flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+    flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0,
   };
   const panelStyle = { position: 'relative', overflow: 'hidden' };
   const canvasStyle = { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' };
@@ -818,6 +854,11 @@ export default function SpectrogramExample() {
   const selectStyle = {
     background: '#222', border: '1px solid #444', borderRadius: 3,
     color: '#ccc', padding: '2px 6px', fontSize: 12, marginLeft: 4,
+  };
+  const numInputStyle = {
+    background: '#1a1a1a', border: '1px solid #444', borderRadius: 3,
+    color: '#ccc', padding: '2px 5px', fontSize: 11, width: 72,
+    fontFamily: 'monospace',
   };
 
   return (
@@ -874,19 +915,6 @@ export default function SpectrogramExample() {
           />
         </label>
 
-        {/* Clear Filter button */}
-        <button
-          onClick={handleClearFilter}
-          disabled={!originalSamplesRef.current}
-          style={{
-            background: '#222', border: '1px solid #555', borderRadius: 3,
-            color: originalSamplesRef.current ? '#fa8' : '#555',
-            padding: '2px 8px', fontSize: 12, cursor: 'pointer', fontFamily: 'monospace',
-          }}
-        >
-          Clear Filter
-        </button>
-
         {/* Playback controls */}
         <button
           onClick={() => {
@@ -922,32 +950,106 @@ export default function SpectrogramExample() {
       </div>
 
       <div style={plotWrapStyle}>
-        {/* Spectrogram row: plot canvas + right sidebar (LUT + Filter) side-by-side */}
+        {/* Spectrogram row: plot canvas + LUT sidebar */}
         <div style={{ flex: 3, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
           <div style={{ ...panelStyle, flex: 1 }}>
             <canvas ref={webglRef} style={canvasStyle} />
             <canvas ref={axisRef}  style={{ ...canvasStyle, pointerEvents: 'none' }} />
           </div>
-          {/* Right sidebar: LUT panel + Filter panel, vertically stacked */}
+          {/* LUT sidebar only (FilterPanel moved to waveform section) */}
           <div style={{ width: 140, display: 'flex', flexDirection: 'column', borderLeft: '1px solid #333', flexShrink: 0 }}>
-            <div style={{ flex: 1, overflow: 'hidden' }}>
-              <HistogramLUTPanel controller={lutControllerRef.current} />
-            </div>
-            <FilterPanel
-              controller={filterControllerRef.current}
-              sampleRate={filterSampleRate}
-              onApply={handleApplyFilter}
-              applying={applying}
-            />
+            <HistogramLUTPanel controller={lutControllerRef.current} />
           </div>
         </div>
 
         <div style={dividerStyle} />
 
-        {/* Waveform panel — unchanged */}
-        <div style={{ ...panelStyle, flex: 1.5 }}>
-          <canvas ref={waveWebglRef} style={canvasStyle} />
-          <canvas ref={waveAxisRef}  style={{ ...canvasStyle, pointerEvents: 'none' }} />
+        {/* Waveform row: plot canvas + controls sidebar */}
+        <div style={{ flex: 1.5, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
+          <div style={{ ...panelStyle, flex: 1 }}>
+            <canvas ref={waveWebglRef} style={canvasStyle} />
+            <canvas ref={waveAxisRef}  style={{ ...canvasStyle, pointerEvents: 'none' }} />
+          </div>
+
+          {/* Waveform sidebar: frequency band inputs + FilterPanel */}
+          <div style={{
+            width: 180, display: 'flex', flexDirection: 'column',
+            borderLeft: '1px solid #333', flexShrink: 0, overflowY: 'auto',
+          }}>
+            {/* Frequency band section */}
+            <div style={{ padding: '8px 10px', borderBottom: '1px solid #2a2a2a' }}>
+              <div style={{ color: '#888', fontSize: 10, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>
+                Freq Band (Hz)
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#666', fontSize: 11 }}>
+                  Low
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max={nyquist}
+                    value={lowFreq}
+                    onChange={handleLowFreqChange}
+                    style={numInputStyle}
+                  />
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#666', fontSize: 11 }}>
+                  High
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max={nyquist}
+                    value={highFreq}
+                    onChange={handleHighFreqChange}
+                    style={numInputStyle}
+                  />
+                </label>
+                <div style={{ fontSize: 10, color: freqBandValid ? '#6a6' : '#a55' }}>
+                  {freqBandValid
+                    ? `${lowFreq.toFixed(1)} – ${highFreq.toFixed(1)} Hz`
+                    : 'Invalid range'}
+                </div>
+                <button
+                  onClick={() => { setLowFreq(0); setHighFreq(nyquist); }}
+                  style={{
+                    background: '#222', border: '1px solid #444', borderRadius: 3,
+                    color: '#888', padding: '2px 6px', fontSize: 10,
+                    cursor: 'pointer', fontFamily: 'monospace',
+                  }}
+                >
+                  Reset to full
+                </button>
+              </div>
+            </div>
+
+            {/* DSP FilterPanel (moved from spectrogram sidebar) */}
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              <FilterPanel
+                controller={filterControllerRef.current}
+                sampleRate={filterSampleRate}
+                onApply={handleApplyFilter}
+                applying={applying}
+              />
+            </div>
+
+            {/* Clear Filter button */}
+            <div style={{ padding: '6px 10px', borderTop: '1px solid #2a2a2a' }}>
+              <button
+                onClick={handleClearFilter}
+                disabled={!originalSamplesRef.current}
+                style={{
+                  width: '100%',
+                  background: '#222', border: '1px solid #555', borderRadius: 3,
+                  color: originalSamplesRef.current ? '#fa8' : '#555',
+                  padding: '3px 8px', fontSize: 11, cursor: 'pointer', fontFamily: 'monospace',
+                }}
+              >
+                Clear DSP Filter
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

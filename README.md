@@ -14,7 +14,7 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 
 ---
 
-## Current Capabilities (F1–F18 complete)
+## Current Capabilities (F1–F18 + EX1–EX3 complete)
 
 ### Core Plotting Engine
 - **WebGL rendering** via deck.gl `OrthographicView` — no maps, no geospatial assumptions
@@ -50,7 +50,26 @@ A full-featured spectrogram viewer is available at the demo (Spectrogram tab):
 | **Live append mode** | Chirp + noise generated every 100 ms; toggle on/off |
 | **HistogramLUT panel** | pyqtgraph-style dB amplitude histogram; draggable level_min / level_max handles; 6 LUT presets (Viridis, Plasma, Inferno, Magma, Hot, Grayscale); Auto Level button |
 | **Audio playback** | Play / Pause / Stop; yellow dashed playhead line on both panels at 60 fps; Ctrl+click to seek on either panel |
-| **Frequency filters** | Offline biquad DSP via `OfflineAudioContext` (lowpass, highpass, bandpass, notch, allpass); frequency response curve preview; Apply / Clear Filter |
+| **Frequency band controls (EX2)** | Low/High `<input type="number">` inputs next to the waveform panel; updates the spectrogram y-axis domain in real time to zoom to a frequency band; validity indicator + "Reset to full" button |
+| **Frequency filters** | Offline biquad DSP via `OfflineAudioContext` (lowpass, highpass, bandpass, notch, allpass) in the waveform sidebar; frequency response curve preview; Apply / Clear DSP Filter |
+
+### Scatter + ROI Example (EX1)
+The main scatter demo (`ExampleApp`) includes two live ROI inspection tables below the event log:
+
+| Table | Contents | Update trigger |
+|---|---|---|
+| **LinearRegion table** | ID (truncated) · Left bound · Right bound · Version | `roiCreated`, `roiFinalized`, `roiDeleted` |
+| **RectROI subset table** | ID · Left · Right · Bottom · Top · Version | Same — filtered to rects overlapping the selected LinearRegion |
+
+Click any LinearRegion row to select it and populate the RectROI table. Click again to deselect. Tables never update during drag (`roiUpdated` is intentionally ignored), so there is no UI jitter while moving ROIs.
+
+### Line / Rolling-Window Examples (EX3)
+Both `LineExample` and `RollingLineExample` now use **deterministic sin/cos waves** instead of random walks:
+
+- Signal A and C → `amplitude × sin(t) + offset`
+- Signal B → `amplitude × cos(t) + offset`
+- Vertical offset per signal (`i × (2 × amplitude + spacing)`) keeps all bands visually separated
+- Rolling expiration (`trimBefore`) removes the trailing edge of each wave as new data arrives, making the rolling window immediately obvious
 
 ---
 
@@ -377,11 +396,12 @@ src/
     HistogramLUTPanel.jsx — histogram + level handles + LUT preset UI
     FilterPanel.jsx       — filter type, cutoff, Q controls + response curve
 examples/
-  HubPage.jsx             — demo navigation hub
-  ExampleApp.jsx          — scatter/ROI/live-append demo
-  LineExample.jsx         — line plot demo
-  SpectrogramExample.jsx  — full audio analysis demo
-  SharedDataExample.jsx   — two-plot shared DataStore + filtered DataView demo (F17)
+  HubPage.jsx              — demo navigation hub
+  ExampleApp.jsx           — scatter/ROI/live-append + ROI inspection tables (EX1)
+  LineExample.jsx          — deterministic sin/cos waves + 5k-sample rolling window (EX3)
+  RollingLineExample.jsx   — deterministic sin/cos waves + 30s wall-clock rolling window (EX3)
+  SpectrogramExample.jsx   — full audio analysis + frequency band inputs (EX2)
+  SharedDataExample.jsx    — two-plot shared DataStore + filtered DataView demo (F17)
 src/
   integration/
     ExternalDataAdapter.js — interface contract for external data sources (F18)

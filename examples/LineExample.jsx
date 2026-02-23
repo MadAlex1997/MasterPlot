@@ -1,8 +1,19 @@
 /**
  * LineExample — demonstrates buildLineLayer / PathLayer via LinePlotController.
  *
- * Three independent random-walk signals (A, B, C) are appended live.
- * Each signal accumulates 500 new samples per second.
+ * Three deterministic sin/cos signals (A, B, C) are appended live and
+ * vertically offset so they never overlap, making rolling expiration easy to
+ * observe.  Each signal accumulates 500 new samples per tick (every 1 second).
+ *
+ * Wave formula (EX3):
+ *   amplitude = 1, spacing = 3
+ *   offset_i  = i * (2 * amplitude + spacing)   → 0, 5, 10 for i = 0..2
+ *   even i → amplitude * sin(t) + offset_i
+ *   odd  i → amplitude * cos(t) + offset_i
+ *   t increments by TIME_STEP per sample (continuous, never resets)
+ *
+ * Rolling window: the last WINDOW_SAMPLES samples stay visible; older
+ * points are evicted via LinePlotController.trimBefore() each tick.
  *
  * Controls:
  *   Live append checkbox — start/stop the 1-second append interval
@@ -13,38 +24,43 @@
  *   Drag         → pan (grab-and-drag)
  */
 
-import React, { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { LinePlotController } from '../src/plot/LinePlotController.js';
 
 // ── Signal configuration ──────────────────────────────────────────────────────
 
 const SIGNALS = [
-  { id: 'A', color: [0,   220, 220, 220], label: 'A (cyan)'   },
-  { id: 'B', color: [255, 160,  40, 220], label: 'B (orange)' },
-  { id: 'C', color: [100, 230,  80, 220], label: 'C (lime)'   },
+  { id: 'A', color: [0,   220, 220, 220], label: 'A (sin, cyan)'   },
+  { id: 'B', color: [255, 160,  40, 220], label: 'B (cos, orange)' },
+  { id: 'C', color: [100, 230,  80, 220], label: 'C (sin, lime)'   },
 ];
 
 const SAMPLES_PER_TICK = 500;
 const TICK_MS          = 1000;
+const AMPLITUDE        = 1;
+const SPACING          = 3;
+const TIME_STEP        = (2 * Math.PI) / 200;  // one full cycle per 200 samples
+const WINDOW_SAMPLES   = 5000;                 // rolling: keep last 5 000 samples
 
-// Random-walk state per signal (module-level, reset with module reload)
-const walkState = { A: 0, B: 0, C: 0 };
-
-function generateWalkSamples(id, count) {
-  const out = new Float32Array(count);
-  let v = walkState[id];
-  for (let i = 0; i < count; i++) {
-    v += (Math.random() - 0.5) * 0.3;
-    out[i] = v;
-  }
-  walkState[id] = v;
-  return out;
+/** Compute y-offset for signal index i. */
+function signalOffset(i) {
+  return i * (2 * AMPLITUDE + SPACING);
 }
 
-function resetWalkState() {
-  walkState.A = 0;
-  walkState.B = 0;
-  walkState.C = 0;
+/**
+ * Generate SAMPLES_PER_TICK deterministic sin/cos samples for signal i.
+ * startSample is the global sample counter at the beginning of this tick.
+ */
+function generateWaveSamples(signalIndex, startSample, count) {
+  const offset = signalOffset(signalIndex);
+  const out    = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    const t = (startSample + i) * TIME_STEP;
+    out[i] = (signalIndex % 2 === 0)
+      ? AMPLITUDE * Math.sin(t) + offset
+      : AMPLITUDE * Math.cos(t) + offset;
+  }
+  return out;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -60,17 +76,22 @@ export default function LineExample() {
 
   const addLog = (msg) => setLog(prev => [msg, ...prev].slice(0, 20));
 
-  // ── tick: append one round of samples ──────────────────────────────────────
+  // ── tick: append one round of deterministic wave samples ───────────────────
 
   const doTick = (ctrl) => {
     const xBase = ctrl.xCounter;
-    for (const sig of SIGNALS) {
-      const samples = generateWalkSamples(sig.id, SAMPLES_PER_TICK);
+    SIGNALS.forEach((sig, i) => {
+      const samples = generateWaveSamples(i, xBase, SAMPLES_PER_TICK);
       ctrl.appendSignalData(sig.id, samples, xBase);
-    }
+    });
     ctrl.advanceXCounter(SAMPLES_PER_TICK);
+
+    // Rolling expiration: remove points older than WINDOW_SAMPLES
+    const xMin = ctrl.xCounter - WINDOW_SAMPLES;
+    if (xMin > 0) ctrl.trimBefore(xMin);
+
     ctrl.expandDomains();
-    addLog(`dataAppended: +${SAMPLES_PER_TICK} samples/signal  x=[0, ${ctrl.xCounter}]`);
+    addLog(`dataAppended: +${SAMPLES_PER_TICK} samples/signal  x=[${Math.max(0, ctrl.xCounter - WINDOW_SAMPLES)}, ${ctrl.xCounter}]`);
   };
 
   const startInterval = (ctrl) => {
@@ -91,14 +112,19 @@ export default function LineExample() {
       ac.width  = wc.width;
       ac.height = wc.height;
 
+      // y-domain spans all three signal bands + padding
+      const numSignals = SIGNALS.length;
+      const yTop    = signalOffset(numSignals - 1) + AMPLITUDE + 0.5;
+      const yBottom = -AMPLITUDE - 0.5;
+
       const ctrl = new LinePlotController({
-        xDomain: [0, SAMPLES_PER_TICK],
-        yDomain: [-1, 1],
+        xDomain: [0, WINDOW_SAMPLES],
+        yDomain: [yBottom, yTop],
         xLabel:  'sample',
         yLabel:  'value',
       });
 
-      for (const sig of SIGNALS) ctrl.addSignal(sig.id, sig.color);
+      SIGNALS.forEach(sig => ctrl.addSignal(sig.id, sig.color));
 
       ctrl.init(wc, ac);
 
@@ -108,7 +134,7 @@ export default function LineExample() {
           addLog(`panChanged: dx=${d.dx.toFixed(0)} dy=${d.dy.toFixed(0)}`);
         }
       });
-      ctrl.on('reset',        () => addLog('reset'));
+      ctrl.on('reset', () => addLog('reset'));
 
       controllerRef.current = ctrl;
 
@@ -139,7 +165,6 @@ export default function LineExample() {
 
   const handleReset = () => {
     clearInterval(intervalRef.current);
-    resetWalkState();
     controllerRef.current?.reset();
 
     // Restart append after reset
@@ -201,6 +226,11 @@ export default function LineExample() {
           {SIGNALS.map(s => <span key={s.id}>{legendDot(s.color)}{s.label}&nbsp;&nbsp;</span>)}
         </span>
 
+        <span style={{ color: '#555' }}>|</span>
+        <span style={{ color: '#666', fontSize: 11 }}>
+          rolling window: {WINDOW_SAMPLES.toLocaleString()} samples
+        </span>
+
         <label style={checkboxLabelStyle}>
           <input type="checkbox" checked={liveAppend} onChange={handleLiveAppendChange} />
           Live append
@@ -209,7 +239,6 @@ export default function LineExample() {
         <button style={btnStyle} onClick={handleReset}>Reset</button>
 
         <span style={{ marginLeft: 'auto', color: '#666' }}>
-          {/* keybind hint */}
           scroll=zoom · drag=pan
         </span>
       </div>

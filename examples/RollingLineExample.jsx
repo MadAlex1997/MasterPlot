@@ -1,12 +1,22 @@
 /**
  * RollingLineExample — demonstrates 30-second rolling expiration on a line plot.
  *
- * Three live signals are appended every 200 ms. Data older than 30 seconds is
- * trimmed from the path arrays on each tick — the left edge of the plot visibly
- * advances, showing expiration in real time.
+ * Three live deterministic sin/cos signals are appended every 200 ms.
+ * Signals are vertically offset so they never overlap, making it trivially
+ * easy to see the wave shape and rolling expiration simultaneously.
+ *
+ * Wave formula (EX3):
+ *   amplitude = 1, spacing = 3
+ *   offset_i  = i * (2 * amplitude + spacing)   → 0, 5, 10 for i = 0..2
+ *   even i → amplitude * sin(2π * FREQ * t) + offset_i
+ *   odd  i → amplitude * cos(2π * FREQ * t) + offset_i
+ *   t = wall-clock seconds elapsed since start
+ *
+ * Data older than WINDOW_SECS is trimmed from the path arrays each tick —
+ * the left edge of the plot visibly advances.
  *
  * X-axis: elapsed seconds since start (wall-clock time)
- * Y-axis: signal amplitude (auto-fits on each tick)
+ * Y-axis: signal amplitude (offset bands)
  *
  * Controls:
  *   Pause / Resume — freeze / resume live append
@@ -14,36 +24,28 @@
  *   Drag           — pan
  */
 
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { LinePlotController } from '../src/plot/LinePlotController.js';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const WINDOW_SECS    = 30;          // seconds of data to retain
-const TICK_MS        = 200;         // append interval (ms)
-const SAMPLES_PER_TICK = 20;        // points appended per signal per tick
-const TICK_DURATION  = TICK_MS / 1000;  // seconds covered per tick
+const WINDOW_SECS      = 30;           // seconds of data to retain
+const TICK_MS          = 200;          // append interval (ms)
+const SAMPLES_PER_TICK = 20;           // points appended per signal per tick
+const TICK_DURATION    = TICK_MS / 1000;  // seconds covered per tick
+const AMPLITUDE        = 1;
+const SPACING          = 3;
+const FREQ             = 0.4;          // Hz — one full cycle every 2.5 s
 
 const SIGNALS = [
-  { id: 'A', color: [0,   220, 220, 220], label: 'A' },
-  { id: 'B', color: [255, 160,  40, 220], label: 'B' },
-  { id: 'C', color: [100, 230,  80, 220], label: 'C' },
+  { id: 'A', color: [0,   220, 220, 220], label: 'A (sin)' },
+  { id: 'B', color: [255, 160,  40, 220], label: 'B (cos)' },
+  { id: 'C', color: [100, 230,  80, 220], label: 'C (sin)' },
 ];
 
-// ── Signal generators (independent per signal) ────────────────────────────────
-
-function makeSineNoiseGen(freq, amplitude, noiseScale) {
-  let phase = Math.random() * Math.PI * 2;
-  return function generateSamples(xBase, count) {
-    const out = new Float32Array(count);
-    const dt = TICK_DURATION / count;
-    for (let i = 0; i < count; i++) {
-      const t = xBase + i * dt;
-      out[i] = amplitude * Math.sin(2 * Math.PI * freq * t + phase)
-             + noiseScale * (Math.random() - 0.5);
-    }
-    return out;
-  };
+/** Vertical offset for signal i so bands don't overlap. */
+function signalOffset(i) {
+  return i * (2 * AMPLITUDE + SPACING);
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -67,41 +69,37 @@ export default function RollingLineExample() {
 
   // ── tick ───────────────────────────────────────────────────────────────────
 
-  const doTick = useCallback((ctrl, generators) => {
+  const doTick = useCallback((ctrl) => {
     if (pausedRef.current) return;
 
-    const now = (Date.now() - startTimeRef.current) / 1000;  // seconds elapsed
+    const now        = (Date.now() - startTimeRef.current) / 1000;  // seconds elapsed
     const xWindowMin = now - WINDOW_SECS;
+    const dt         = TICK_DURATION / SAMPLES_PER_TICK;  // seconds per sample
 
-    // Append new samples for each signal
-    for (let s = 0; s < SIGNALS.length; s++) {
-      const sig = SIGNALS[s];
-      const xBase = now - TICK_DURATION;
-      const samples = generators[s](xBase, SAMPLES_PER_TICK);
-      ctrl.appendSignalData(sig.id, samples, xBase);
-    }
+    // Append one sample at a time so x = exact wall-clock time.
+    // appendSignalData does: path.push([xBase + i, y, 0]) for each i.
+    // With a single-element call (count=1), x = xBase + 0 = t ✓.
+    SIGNALS.forEach((sig, i) => {
+      const offset = signalOffset(i);
+      for (let s = 0; s < SAMPLES_PER_TICK; s++) {
+        const t = now - TICK_DURATION + s * dt;
+        const y = (i % 2 === 0)
+          ? AMPLITUDE * Math.sin(2 * Math.PI * FREQ * t) + offset
+          : AMPLITUDE * Math.cos(2 * Math.PI * FREQ * t) + offset;
+        ctrl.appendSignalData(sig.id, [y], t);
+      }
+    });
 
     // Trim data older than the rolling window
     const prevCount = ctrl.getPointCount();
     ctrl.trimBefore(xWindowMin);
     const trimmed = prevCount - ctrl.getPointCount();
 
-    // Keep x domain = [now - WINDOW_SECS, now], y auto-fit
-    let yMin = Infinity, yMax = -Infinity;
-    for (const sig of SIGNALS) {
-      // Access path data through the internal map — safe for example code
-      const internal = ctrl._signals.get(sig.id);
-      if (!internal) continue;
-      for (const pt of internal.path) {
-        if (pt[1] < yMin) yMin = pt[1];
-        if (pt[1] > yMax) yMax = pt[1];
-      }
-    }
-    const yPad = (yMax - yMin) * 0.08 || 0.5;
-    ctrl.setDomains(
-      [xWindowMin, now],
-      [yMin - yPad, yMax + yPad]
-    );
+    // y range is deterministic: [−AMPLITUDE, AMPLITUDE + maxOffset] + padding
+    const numSigs = SIGNALS.length;
+    const yBottom = -AMPLITUDE - 0.5;
+    const yTop    = signalOffset(numSigs - 1) + AMPLITUDE + 0.5;
+    ctrl.setDomains([xWindowMin, now], [yBottom, yTop]);
 
     const totalPts = ctrl.getPointCount();
     setPointCount(totalPts);
@@ -119,22 +117,16 @@ export default function RollingLineExample() {
     const ac = axisRef.current;
     if (!wc || !ac) return;
 
-    // Signal generators — one per signal, stable across ticks
-    const generators = [
-      makeSineNoiseGen(0.3, 1.0, 0.15),
-      makeSineNoiseGen(0.7, 0.7, 0.20),
-      makeSineNoiseGen(0.15, 1.3, 0.10),
-    ];
-
     const raf = requestAnimationFrame(() => {
       wc.width  = wc.offsetWidth  || 800;
       wc.height = wc.offsetHeight || 600;
       ac.width  = wc.width;
       ac.height = wc.height;
 
+      const numSigs = SIGNALS.length;
       const ctrl = new LinePlotController({
         xDomain: [0, WINDOW_SECS],
-        yDomain: [-2, 2],
+        yDomain: [-AMPLITUDE - 0.5, signalOffset(numSigs - 1) + AMPLITUDE + 0.5],
         xLabel:  'time (s)',
         yLabel:  'amplitude',
       });
@@ -148,12 +140,12 @@ export default function RollingLineExample() {
           addLog(`pan: dx=${d.dx.toFixed(0)} dy=${d.dy.toFixed(0)}`);
       });
 
-      startTimeRef.current = Date.now();
+      startTimeRef.current  = Date.now();
       controllerRef.current = ctrl;
 
       // Initial tick then start interval
-      doTick(ctrl, generators);
-      intervalRef.current = setInterval(() => doTick(ctrl, generators), TICK_MS);
+      doTick(ctrl);
+      intervalRef.current = setInterval(() => doTick(ctrl), TICK_MS);
     });
 
     return () => {

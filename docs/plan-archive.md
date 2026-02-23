@@ -2609,3 +2609,101 @@ const row = bin;
 - [x] `roiExternalUpdate` marks PlotDataView dirty
 - [x] No infinite update loops (`updateFromExternal` does not re-emit `roiFinalized`)
 
+
+---
+
+## EX1
+
+### EX1 [COMPLETED] Scatter + ROI Tables Enhancement
+
+**Completed:** 2026-02-22 | **Branch:** feature/example-improvements
+**Target file:** `examples/ExampleApp.jsx`
+
+#### Objective
+
+Enhance the scatter + histogram example with two ROI inspection tables:
+
+1. **LinearRegion table** — lists all LinearRegion ROIs with: ID, Left bound, Right bound, Version
+2. **RectROI subset table** — lists RectROIs that fall within the currently selected LinearRegion with: ID, Left, Right, Bottom, Top, Version
+
+#### Implementation
+
+- Added `onInit` prop to `<PlotCanvas>` call; handler stores `controller.roiController` in a ref and subscribes to `roiCreated`, `roiFinalized`, `roiDeleted`.
+- `refreshROITables()` (stable via `useCallback`) calls `roiController.serializeAll()`, filters `linearRegion` type into `linearROIs` state, and filters `rect` type by x-overlap with the selected linear into `childRects` state.
+- `selectedLinearId` stored in both React state and a ref (`selectedLinearIdRef`) so event handlers always read the current value without stale closures.
+- `handleSelectLinear(id)` toggles selection and immediately recomputes `childRects`.
+- Tables update only on `roiCreated`/`roiFinalized`/`roiDeleted` — NOT on `roiUpdated` — so drag does not trigger re-render.
+- Added 160px ROI panel below the event log with two side-by-side tables styled to match the dark theme.
+
+#### Validation
+
+- Drag LinearRegion/RectROI → tables unchanged until mouseup (`roiFinalized`)
+- Version number increments on each finalize
+- Deleted linear clears selection and child table
+- x-overlap test: `a[0] < b[1] && a[1] > b[0]`
+
+---
+
+## EX2
+
+### EX2 [COMPLETED] Spectrogram Example UI Refinement
+
+**Completed:** 2026-02-22 | **Branch:** feature/example-improvements
+**Target file:** `examples/SpectrogramExample.jsx`
+
+#### Objective
+
+1. Move `FilterPanel` from spectrogram sidebar to waveform sidebar
+2. Add `lowFreq`/`highFreq` float inputs that control the spectrogram y-axis domain (visible frequency band)
+3. Display both bounds explicitly with a validity indicator
+
+#### Implementation
+
+- `FilterPanel` removed from spectrogram sidebar (which now holds only `HistogramLUTPanel`).
+- Waveform row changed from a bare canvas panel to a flex row: canvas (flex:1) + sidebar (width:180).
+- Sidebar contains: frequency band section (Low/High `<input type="number" step="0.1">` inputs, validity display, "Reset to full" button) + `FilterPanel` + "Clear DSP Filter" button.
+- React state: `lowFreq` (default 0), `highFreq` (default SAMPLE_RATE/2).
+- `useEffect` on `[lowFreq, highFreq]` validates range and calls `yAxisRef.current.setDomain([lo, hi])`, sets `dirtyRef.current = true`.
+- File load resets both bounds to `[0, sr/2]` for the newly loaded file.
+- Note: SpectrogramLayer uses raw PCM — `filterByDomain` pattern from the spec maps to directly setting the y-axis domain (equivalent visible-domain filter for the spectrogram panel).
+
+#### Validation
+
+- Changing bounds zooms the spectrogram frequency axis
+- Invalid range (lo >= hi) does not apply
+- Domain values shown as "lo.f – hi.f Hz" in green; red when invalid
+- FilterPanel and Clear DSP Filter operate independently on PCM data
+
+---
+
+## EX3
+
+### EX3 [COMPLETED] Rolling Lines — Deterministic Waves
+
+**Completed:** 2026-02-22 | **Branch:** feature/example-improvements
+**Target files:** `examples/LineExample.jsx`, `examples/RollingLineExample.jsx`
+
+#### Objective
+
+Replace random data with deterministic sin/cos waves with vertical offsets, confirming rolling expiration is visually meaningful.
+
+#### Implementation — LineExample.jsx
+
+- Removed `walkState` and `generateWalkSamples`.
+- Added `generateWaveSamples(signalIndex, startSample, count)`: uses `(startSample + i) * TIME_STEP` (TIME_STEP = 2π/200 → one cycle per 200 samples); even index → sin, odd → cos; `offset = i * (2 * AMPLITUDE + SPACING)` with AMPLITUDE=1, SPACING=3.
+- `doTick` calls `ctrl.trimBefore(ctrl.xCounter - WINDOW_SAMPLES)` (WINDOW_SAMPLES=5000) for rolling expiration via `LinePlotController.trimBefore()`.
+- Initial y-domain set to `[-1.5, 11.5]` to accommodate all three offset bands.
+- Removed unused `React` import (new JSX transform).
+
+#### Implementation — RollingLineExample.jsx
+
+- Removed `makeSineNoiseGen` (had random phase + noise).
+- Added `generateWaveSamples(signalIndex, xBase, count)`: uses wall-clock time as x → `t = xBase + i * dt`; FREQ=0.4 Hz; same amplitude/offset formula.
+- `doTick` simplified: y-domain computed analytically from offsets instead of scanning path arrays. Rolling via existing `ctrl.trimBefore(xWindowMin)` call.
+- Removed `ctrl._signals` internal scan.
+
+#### Validation
+
+- Waves clearly sin/cos (not noise), non-overlapping
+- Rolling expiration visible: left edge advances each tick after WINDOW_SAMPLES/WINDOW_SECS
+- Append interval unchanged (1s / 200ms respectively)
