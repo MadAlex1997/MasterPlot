@@ -2,7 +2,7 @@
  * ExampleApp — demonstrates all MasterPlot MVP features.
  *
  * Features demonstrated:
- *  1. 1M initial points rendered via WebGL (log-x axis)
+ *  1. 10k initial points rendered via WebGL (log-x axis); dropdown switches 10k–10M
  *  2. Zoom (mouse wheel, centered on cursor)
  *  3. Pan (drag)
  *  4. LinearRegion creation ('L' key → 2 clicks)
@@ -29,8 +29,9 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import PlotCanvas from '../src/components/PlotCanvas.jsx';
 import { generatePoints, generateAppendChunk } from './dataGenerator.js';
 
-const INITIAL_POINT_COUNT = 1_000_000;
-const APPEND_INTERVAL_MS  = 2_000;
+const INITIAL_POINT_COUNT  = 10_000;
+const APPEND_INTERVAL_MS   = 2_000;
+const POINT_COUNT_OPTIONS  = [10_000, 100_000, 1_000_000, 5_000_000, 10_000_000];
 
 /** True if [a0,a1] overlaps [b0,b1] (open-interval test) */
 function xOverlaps(a, b) {
@@ -47,6 +48,7 @@ export default function ExampleApp() {
   const [autoExpand, setAutoExpand] = useState(true);
   const [dragPan, setDragPan] = useState(false);
   const [panSpeed, setPanSpeed] = useState(0.02);
+  const [pointCount, setPointCount] = useState(INITIAL_POINT_COUNT);
 
   // ── EX1: ROI table state ────────────────────────────────────────────────────
   const [linearROIs,      setLinearROIs]      = useState([]);
@@ -218,6 +220,32 @@ export default function ExampleApp() {
     setPanSpeed(v);
   };
 
+  // ── EX4: Replace DataStore data on point-count dropdown change ───────────────
+  const handlePointCountChange = (e) => {
+    const count = Number(e.target.value);
+    setPointCount(count);
+    const controller = plotRef.current?.getController();
+    if (!controller) return;
+
+    // Pause live append during replacement
+    clearInterval(appendIntervalRef.current);
+
+    // Clear store (resets count/indices without de-allocating buffers)
+    controller.dataStore.clear();
+
+    // Reset domain to the generator's range so autoExpand has a clean baseline
+    controller.xAxis.setDomain([0, 10000]);
+    controller.yAxis.setDomain([0, 100]);
+
+    // Load new data — no large arrays stored in React state
+    controller.appendData(generatePoints(count));
+
+    // Resume live append if it was running
+    if (liveAppend) {
+      startAppend(controller);
+    }
+  };
+
   // ── Styles ──────────────────────────────────────────────────────────────────
 
   const containerStyle = {
@@ -349,6 +377,18 @@ export default function ExampleApp() {
             value={panSpeed} onChange={handlePanSpeedChange}
             style={{ verticalAlign: 'middle', margin: '0 4px' }} />
           {panSpeed.toFixed(3)}
+        </label>
+        <label style={checkboxLabelStyle}>
+          Points
+          <select
+            value={pointCount}
+            onChange={handlePointCountChange}
+            style={{ background: '#222', color: '#ccc', border: '1px solid #444', borderRadius: 3, padding: '1px 4px', fontSize: 11 }}
+          >
+            {POINT_COUNT_OPTIONS.map(n => (
+              <option key={n} value={n}>{n.toLocaleString()}</option>
+            ))}
+          </select>
         </label>
         <span style={{ marginLeft: 'auto', color: '#666' }}>ROIs: {roiCount}</span>
       </div>
