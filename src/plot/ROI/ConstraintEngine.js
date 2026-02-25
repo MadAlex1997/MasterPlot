@@ -3,7 +3,7 @@
  *
  * How it works:
  * ─────────────
- * 1. After a parent ROI is moved/resized, call enforceConstraints(parent).
+ * 1. After a parent ROI is moved/resized, call applyConstraints(parent, delta).
  * 2. The engine walks the parent's children (and their children, depth-first).
  * 3. For each child, it applies two rules:
  *      a. SHIFT rule  — if the parent *moved*, shift the child by the same delta
@@ -12,6 +12,11 @@
  *         the parent bounds, clamp it to the nearest parent edge.
  * 4. After adjusting a child, recurse into that child's own children (they must
  *    also satisfy constraints relative to the newly-clamped child).
+ *
+ * Return value:
+ *   applyConstraints returns a Set<ROIBase> containing only the descendants
+ *   whose bounds actually changed (numeric comparison). The caller uses this to
+ *   emit roiUpdated (drag) or bumpVersion + roiFinalized (mouseup) selectively.
  *
  * Cascade sequence:
  *   parentMoved → childShifted → grandChildShifted → ...
@@ -29,19 +34,37 @@ export class ConstraintEngine {
   }
 
   /**
-   * Enforce constraints on all descendants of a moved/resized parent.
+   * Apply constraints on all descendants of a moved/resized parent.
+   * Returns the set of descendant ROIs whose bounds actually changed.
    *
    * @param {ROIBase} parent     — the ROI that was just updated
    * @param {object}  delta      — { dx, dy } the parent itself moved by
-   *                               (used for shift rule; pass {dx:0,dy:0} for resize)
-   * @param {Set}     [visited]  — internal recursion guard
+   *                               (pass {dx:0,dy:0} for resize-only operations)
+   * @returns {Set<ROIBase>}     — descendants whose bounds changed (numeric comparison)
    */
-  enforceConstraints(parent, delta = { dx: 0, dy: 0 }, visited = new Set()) {
+  applyConstraints(parent, delta = { dx: 0, dy: 0 }) {
+    const changed = new Set();
+    this._applyRecursive(parent, delta, new Set(), changed);
+    return changed;
+  }
+
+  /**
+   * Internal recursive implementation.
+   *
+   * @param {ROIBase} parent
+   * @param {object}  delta     — { dx, dy }
+   * @param {Set}     visited   — loop guard (ROI ids)
+   * @param {Set}     changed   — accumulator for ROIs whose bounds changed
+   */
+  _applyRecursive(parent, delta, visited, changed) {
     if (visited.has(parent.id)) return;
     visited.add(parent.id);
 
     for (const child of parent.children) {
       if (visited.has(child.id)) continue;
+
+      // ── Snapshot before any modification ─────────────────────────────────
+      const before = { x1: child.x1, x2: child.x2, y1: child.y1, y2: child.y2 };
 
       // ── Step 1: Shift child by same delta as parent ───────────────────────
       // This preserves the child's relative position inside the parent.
@@ -65,13 +88,21 @@ export class ConstraintEngine {
         this._clampChild(child, parent);
       }
 
-      // Emit an update event so the render layer picks up the change
+      // ── Track whether bounds actually changed (numeric comparison) ────────
+      if (
+        child.x1 !== before.x1 || child.x2 !== before.x2 ||
+        child.y1 !== before.y1 || child.y2 !== before.y2
+      ) {
+        changed.add(child);
+      }
+
+      // Emit an update event so any future render-layer listeners pick up changes
       child.emit('onUpdate', { roi: child, bounds: child.getBounds() });
 
       // ── Step 3: Recurse — child's own children must satisfy constraints ───
       // delta for the grandchildren is zero here because the child itself may
       // have been clamped to a different position than a straight shift would give.
-      this.enforceConstraints(child, { dx: 0, dy: 0 }, visited);
+      this._applyRecursive(child, { dx: 0, dy: 0 }, visited, changed);
     }
   }
 

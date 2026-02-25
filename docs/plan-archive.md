@@ -2707,3 +2707,44 @@ Replace random data with deterministic sin/cos waves with vertical offsets, conf
 - Waves clearly sin/cos (not noise), non-overlapping
 - Rolling expiration visible: left edge advances each tick after WINDOW_SAMPLES/WINDOW_SECS
 - Append interval unchanged (1s / 200ms respectively)
+
+---
+
+## F19 [COMPLETED] Cascading ROI Update + Conditional Child Versioning
+
+**Branch:** `feature/F19`
+**Completed:** 2026-02-24
+
+### Problem
+
+When a parent ROI (e.g. LinearRegion) was dragged, its children received constraint-adjusted bounds via `ConstraintEngine.enforceConstraints` but:
+- Did NOT emit `roiUpdated` — so event log / tables never showed child movement
+- Did NOT bump version on mouseup — so versioning model (F14) was incomplete
+- Did NOT emit `roiFinalized` — breaking PlotDataView dirty propagation and external adapters
+
+### Solution
+
+**ConstraintEngine** (`src/plot/ROI/ConstraintEngine.js`):
+- `enforceConstraints(parent, delta, visited)` replaced by:
+  - Public `applyConstraints(parent, delta = {dx:0,dy:0}) → Set<ROIBase>`
+  - Internal `_applyRecursive(parent, delta, visited, changed)` accumulates changed ROIs
+- Before applying shift/clamp to each child, bounds are snapshotted
+- After applying, bounds are compared (numeric); if different, child is added to the returned `Set`
+- `onUpdate` still emitted on child for any future render-layer listeners
+
+**ROIController drag phase** (`_onMouseMove`):
+- Replaced `enforceConstraints(roi, delta)` with `const changed = applyConstraints(roi, delta)`
+- After emitting `roiUpdated` for the active ROI, iterates `changed` and emits `roiUpdated` for each child
+
+**ROIController mouseup phase** (`_onMouseUp`):
+- After bumping the active ROI's version and emitting `roiFinalized`, walks all descendants via `roi.walkChildren(child => ...)`
+- For each descendant, compares current bounds (`child.x1/x2/y1/y2`) against committed domain snapshot (`child.domain.x/y`)
+- If any coordinate differs: calls `child.bumpVersion()` and emits `roiFinalized` with full versioned payload
+- Guard: `d.y ? ... : false` handles LinearRegion children whose domain has no y field
+
+### Acceptance Criteria Met
+
+- Child ROIs emit `roiUpdated` live during parent drag ✅
+- Version increments only when bounds actually changed ✅
+- No false-positive bumps ✅
+- PlotDataView dirty propagation correct (roiFinalized triggers markDirty) ✅

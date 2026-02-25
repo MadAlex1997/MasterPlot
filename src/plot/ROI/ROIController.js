@@ -319,14 +319,21 @@ export class ROIController extends EventEmitter {
         roi.emit('onUpdate', { roi, bounds: roi.getBounds() });
       }
 
-      // Enforce constraints downward (children follow)
+      // Enforce constraints downward (children follow); collect changed set (F19)
       const delta = roi.type === 'linearRegion'
         ? { dx: roi.x1 - sb.x1, dy: 0 }
         : { dx: roi.x1 - sb.x1, dy: roi.y1 - sb.y1 };
 
-      this._constraintEngine.enforceConstraints(roi, delta);
+      const changed = this._constraintEngine.applyConstraints(roi, delta);
 
+      // Emit roiUpdated for the active ROI itself
       this.emit('roiUpdated', { roi, bounds: roi.getBounds() });
+
+      // F19: also emit roiUpdated for each child whose bounds actually changed
+      changed.forEach(child => {
+        this.emit('roiUpdated', { roi: child, bounds: child.getBounds() });
+      });
+
       this.emit('roisChanged', { rois: this.getAllROIs() });
       return;
     }
@@ -360,6 +367,29 @@ export class ROIController extends EventEmitter {
           updatedAt: roi.updatedAt,
           domain:    roi.domain,
         });
+
+        // F19: for each descendant whose bounds differ from the last committed
+        // domain snapshot, bump its version and emit roiFinalized.
+        // Only bumps when bounds actually changed — no false-positive increments.
+        roi.walkChildren(child => {
+          const d = child.domain;
+          const xChanged = child.x1 !== d.x[0] || child.x2 !== d.x[1];
+          const yChanged = d.y
+            ? (child.y1 !== d.y[0] || child.y2 !== d.y[1])
+            : false;
+
+          if (xChanged || yChanged) {
+            child.bumpVersion();
+            this.emit('roiFinalized', {
+              roi:       child,
+              bounds:    child.getBounds(),
+              version:   child.version,
+              updatedAt: child.updatedAt,
+              domain:    child.domain,
+            });
+          }
+        });
+
         this.emit('roisChanged', { rois: this.getAllROIs() });
       }
     }

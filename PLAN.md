@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 3.7
-**Last Updated:** 2026-02-22
-**Status:** All EX features complete. All Phase 1, Phase 2, and example improvements done.
+**Plan Version:** 3.9
+**Last Updated:** 2026-02-24
+**Status:** All Phase 1, Phase 2, and example improvements done. Phase 3 active (F19 done; F20 next).
 
 ---
 
@@ -72,6 +72,11 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | EX1 | Scatter + ROI Tables | ✅ COMPLETED | feature/example-improvements | 2026-02-22 |
 | EX2 | Spectrogram UI Refinement | ✅ COMPLETED | feature/example-improvements | 2026-02-22 |
 | EX3 | Rolling Lines Improvement | ✅ COMPLETED | feature/example-improvements | 2026-02-22 |
+| F19 | Cascading ROI Update + Child Versioning | ✅ COMPLETED | feature/F19 | 2026-02-24 |
+| F20 | LineROI (Vertical/Horizontal + Labels) | ⏳ PENDING | — | — |
+| F21 | Axis Drag Scaling (Midpoint Zoom) | ⏳ PENDING | — | — |
+| EX4 | Scatter Performance Dropdown | ⏳ PENDING | — | — |
+| EX5 | Geophysics / Seismography Example | ⏳ PENDING | — | — |
 
 ---
 
@@ -236,6 +241,8 @@ Full spec: [docs/plan-archive.md#f18](docs/plan-archive.md#f18)
 - **2026-02-22 [Claude]**: F18 completed (v3.5) — External Integration Contracts. `src/integration/` directory created with `ExternalDataAdapter`, `ExternalROIAdapter`, `MockDataAdapter`, `MockROIAdapter`. README "External Integration" section added with architecture diagram, bufferStruct table, contract docs, ROI sync flow, and mock snippets. HubPage integration guide card added. All Phase 2 features (F14–F18) now complete.
 - **2026-02-22 [Claude]**: EX1, EX2, EX3 added as PENDING (v3.6) — example-only improvements from Features.md. No engine modifications permitted. Implementation order: EX1 → EX2 → EX3.
 - **2026-02-22 [Claude]**: EX1, EX2, EX3 completed (v3.7) — EX1: ROI tables in ExampleApp.jsx (roiController.serializeAll(), onInit subscription, selectedLinearId ref pattern); EX2: FilterPanel relocated to waveform sidebar, lowFreq/highFreq number inputs set spectrogram y-axis domain; EX3: deterministic sin/cos waves with vertical offsets in both LineExample.jsx and RollingLineExample.jsx, rolling via trimBefore(). All EX features done.
+- **2026-02-24 [Claude]**: Phase 3 incorporated (v3.8) — F19, F20, F21, EX4, EX5 added as PENDING from Features.md. Mandatory order: F19 → F20 → F21 → EX4 → EX5. Features.md cleared to stub; prompt.md updated to reflect Phase 2 complete / Phase 3 active.
+- **2026-02-24 [Claude]**: F19 completed (v3.9) — `ConstraintEngine.enforceConstraints` replaced by `applyConstraints(parent, delta) → Set<ROI>`; ROIController drag emits `roiUpdated` for changed children; mouseup walks descendants via `walkChildren`, bumps version and emits `roiFinalized` only when bounds differ from domain snapshot. Next: F20.
 
 ---
 
@@ -255,3 +262,316 @@ Full spec: [docs/plan-archive.md#ex2](docs/plan-archive.md#ex2)
 **Completed:** 2026-02-22 | **Branch:** feature/example-improvements
 Replaced random-walk generators in `LineExample.jsx` and `RollingLineExample.jsx` with deterministic sin/cos waves (amplitude=1, spacing=3, vertical offsets per signal). Rolling expiration via `trimBefore()` keeps a 5000-sample window in LineExample and 30s wall-clock window in RollingLineExample. Waves are clearly sin/cos, non-overlapping.
 Full spec: [docs/plan-archive.md#ex3](docs/plan-archive.md#ex3)
+
+---
+
+## Phase 3 — Pending Features
+
+**Mandatory implementation order:**
+
+```
+F19 → F20 → F21 → EX4 → EX5
+```
+
+---
+
+### F19 [COMPLETED] Cascading ROI Update + Conditional Child Versioning
+**Completed:** 2026-02-24 | **Branch:** feature/F19
+`ConstraintEngine.enforceConstraints` replaced by `applyConstraints(parent, delta) → Set<ROI>` (snapshots bounds before/after, returns changed descendants); `ROIController` drag phase emits `roiUpdated` for each changed child; mouseup phase walks descendants via `walkChildren`, compares to domain snapshot, and calls `bumpVersion()` + emits `roiFinalized` only when bounds actually changed.
+Full spec: [docs/plan-archive.md#f19](docs/plan-archive.md#f19)
+
+# F20 [PENDING] — LineROI (Vertical/Horizontal + Half Variants + Labels)
+
+**Type:** Engine Feature
+
+---
+
+## New File
+
+```
+src/plot/ROI/LineROI.js
+```
+
+Extends `ROIBase`.
+
+---
+
+## Supported Modes
+
+| Mode              | Geometry          |
+| ----------------- | ----------------- |
+| vline             | full height       |
+| hline             | full width        |
+| vline-half-top    | top → midpoint    |
+| vline-half-bottom | bottom → midpoint |
+| hline-half-left   | left → midpoint   |
+| hline-half-right  | right → midpoint  |
+
+---
+
+## Properties
+
+```
+orientation: 'vertical' | 'horizontal'
+mode: string
+position: number
+label?: string (max 25 characters)
+```
+
+---
+
+## Label Rules
+
+* Arbitrary string
+* Max 25 characters
+* Intended for seismic phases (P, Pg, Pn, S, etc.)
+* Only render on half variants
+* Positioned near tip, centered perpendicular to line
+* Render via Canvas overlay (NOT WebGL)
+
+---
+
+## Interaction
+
+* Draggable along axis
+* Not resizable
+* Emits standard ROI events
+
+---
+
+## Nesting Rules
+
+LineROI may be child only if alignment matches:
+
+* Vertical LineROI may be child of LinearRegion
+* Horizontal LineROI may be child of horizontal ROI
+* Mixed alignment disallowed
+
+ConstraintEngine must enforce parent domain bounds.
+
+---
+
+## Serialization
+
+```
+{
+  id,
+  type: "LineROI",
+  orientation,
+  mode,
+  position,
+  label,
+  version,
+  updatedAt
+}
+```
+
+---
+
+## Acceptance Criteria
+
+* `V` creates vertical
+* `H` creates horizontal
+* Labels render correctly
+* Versioning works
+* Alignment rules enforced
+
+---
+
+# F21 [PENDING] — Axis Drag Scaling (Midpoint Zoom)
+
+**Type:** Engine Interaction
+
+---
+
+## Behavior
+
+| Axis | Drag Direction | Result   |
+| ---- | -------------- | -------- |
+| Y    | Down           | Zoom In  |
+| Y    | Up             | Zoom Out |
+| X    | Left           | Zoom In  |
+| X    | Right          | Zoom Out |
+
+---
+
+## Scaling Rules
+
+* Exponential scaling
+* Centered on axis midpoint
+* Uses same domain math as wheel zoom
+* Must respect Y-axis inversion convention
+
+---
+
+## Implementation
+
+### AxisRenderer
+
+```
+getAxisHit(px, py) → 'x' | 'y' | null
+```
+
+---
+
+### PlotController
+
+Add:
+
+```
+_onAxisDragStart
+_onAxisDragMove
+_onAxisDragEnd
+```
+
+Zoom math:
+
+```
+const delta = axis === 'x' ? dx : dy;
+const zoomFactor = Math.exp(delta * sensitivity);
+axisController.scaleDomainFromMidpoint(zoomFactor);
+```
+
+Emit `zoomChanged`.
+
+---
+
+## Acceptance Criteria
+
+* Dragging on axis zooms
+* Dragging inside plot pans
+* Log/linear/time scales supported
+* No GPU buffer mutation
+
+---
+
+# EX4 [PENDING] — Scatter Performance Dropdown
+
+**Type:** Example Only
+
+---
+
+## Changes
+
+### Default Initial Points
+
+Set to:
+
+```
+10,000
+```
+
+---
+
+### Add Dropdown
+
+Options:
+
+```
+10,000
+100,000
+1,000,000
+5,000,000
+10,000,000
+```
+
+On selection:
+
+* Replace DataStore data
+* Recompute domain
+* Reset live append state
+
+No engine changes allowed.
+
+---
+
+## Acceptance Criteria
+
+* Fast initial load
+* Clean re-render
+* No memory leaks
+* React does not own large arrays
+
+---
+
+# EX5 [PENDING] — Geophysics / Seismography Example
+
+**Type:** New Example Page
+
+---
+
+## New Files
+
+```
+examples/SeismographyExample.jsx
+src/seismography.js
+public/seismography.html
+```
+
+Update:
+
+* webpack config
+* HubPage.jsx
+* README.md
+
+---
+
+## Architecture
+
+* 10 stacked PlotControllers
+* Shared X-domain
+* Independent Y-axis per plot
+* Shared DataStore
+
+---
+
+## Signals
+
+For each plot `i`:
+
+```
+y_i = sin(freq_i * t + phase_i) + offset_i
+```
+
+Offsets prevent overlap.
+
+---
+
+## Line ROIs
+
+Each plot contains:
+
+* One `vline-half-bottom`
+* With label
+
+Bottom variant required.
+
+---
+
+## React Table
+
+Columns:
+
+| Plot Index | Label | Position |
+
+Must:
+
+* Subscribe to ROIController
+* Update only on `roiFinalized`
+* Allow editing label (≤25 chars)
+* Allow editing position
+* Use `updateFromExternal()` (version gated)
+
+React must not own geometry.
+
+---
+
+## Acceptance Criteria
+
+* 10 signals render
+* Shared X zoom/pan
+* Independent Y axes
+* Vlines draggable
+* Table edits sync correctly
+* Version increments correct
+* No performance regression
