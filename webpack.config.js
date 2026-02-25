@@ -7,12 +7,13 @@ module.exports = (env, argv) => {
   return {
     // Multi-entry: one bundle per example page
     entry: {
-      main:           './src/index.js',
-      example:        './src/example.js',
-      line:           './src/line.js',
-      spectrogram:    './src/spectrogram.js',
-      'rolling-line': './src/rolling-line.js',
-      'shared-data':  './src/shared-data.js',
+      main:            './src/index.js',
+      example:         './src/example.js',
+      line:            './src/line.js',
+      spectrogram:     './src/spectrogram.js',
+      'rolling-line':  './src/rolling-line.js',
+      'shared-data':   './src/shared-data.js',
+      seismography:    './src/seismography.js',
     },
     output: {
       path: path.resolve(__dirname, 'dist'),
@@ -68,6 +69,11 @@ module.exports = (env, argv) => {
         template: './public/shared-data.html',
         filename: 'shared-data.html',
         chunks:   ['shared-data'],
+      }),
+      new HtmlWebpackPlugin({
+        template: './public/seismography.html',
+        filename: 'seismography.html',
+        chunks:   ['seismography'],
       }),
     ],
     devServer: {

@@ -2836,3 +2836,128 @@ label:       string | null  (max 25 chars; half variants only)
 - Versioning works (bumpVersion on mouseup, conditional for children) ✅
 - Vertical LineROI alignment rule enforced (auto-parent to LinearRegion) ✅
 - Mixed alignment rule: horizontal LineROI not parented to LinearRegion ✅
+
+---
+
+## F21 [COMPLETED] Feature: Axis Drag Scaling (Midpoint Zoom)
+
+**Branch:** `feature/F20` (implemented on same branch)
+**Completed:** 2026-02-24
+
+### Goal
+
+Allow the user to zoom a single axis by clicking and dragging in its gutter area (the margin region showing tick labels). Dragging zooms the domain centered on the axis midpoint using exponential scaling — the same math as wheel zoom but axis-independent.
+
+### Behavior Table
+
+| Axis | Drag Direction | Result   |
+| ---- | -------------- | -------- |
+| Y    | Down           | Zoom In  |
+| Y    | Up             | Zoom Out |
+| X    | Left           | Zoom In  |
+| X    | Right          | Zoom Out |
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `src/plot/axes/AxisController.js` | Added `scaleDomainFromMidpoint(factor)` |
+| `src/plot/axes/AxisRenderer.js` | Added `getAxisHit(px, py) → 'x' \| 'y' \| null` |
+| `src/plot/PlotController.js` | Axis drag state + `_handleAxisDragMove()` + wired into `_onMouseDown`/`_onMouseMove`/`_onMouseUp` |
+
+### Implementation Details
+
+**`AxisController.scaleDomainFromMidpoint(factor)`**
+- `factor > 1` = zoom in (domain shrinks); `factor < 1` = zoom out (domain expands)
+- Linear: `mid = (min+max)/2`, `newSpan = span/factor`, new domain `[mid-newHalf, mid+newHalf]`
+- Log: operates in log10 space, same midpoint logic, converts back with `Math.pow(10, ...)`
+
+**`AxisRenderer.getAxisHit(px, py)`**
+- X-axis gutter: `py > pa.y + pa.height && px in [pa.x, pa.x+pa.width]` → `'x'`
+- Y-axis gutter: `px < pa.x && py in [pa.y, pa.y+pa.height]` → `'y'`
+- Otherwise: `null`
+
+**`PlotController` axis drag flow**
+- State: `_isAxisDragging`, `_axisDragAxis`, `_axisDragStart` (`{ x, y, xDomain, yDomain }`)
+- `_onMouseDown`: checks `getAxisHit` before ROI / plot-area guards (gutters are outside plot area)
+- `_handleAxisDragMove`: restore-and-reapply pattern to prevent float drift; `delta = axis==='x' ? -dx : dy`; `zoomFactor = Math.exp(delta * 0.01)`; emits `zoomChanged`
+- `_onMouseUp`: clears axis drag state
+- Axis drag and plot pan are mutually exclusive (return early in `_onMouseMove`)
+
+### Acceptance Criteria Met
+
+- Dragging on X-axis gutter zooms X domain only ✅
+- Dragging on Y-axis gutter zooms Y domain only ✅
+- Dragging inside plot area still pans (unaffected) ✅
+- Linear and log scales both handled correctly ✅
+- No GPU buffer mutation ✅
+- `zoomChanged` event emitted with `{ factor, axis }` ✅
+- Float-drift prevented via restore-and-reapply pattern ✅
+
+---
+
+## EX5 [COMPLETED] Example: Geophysics / Seismography
+
+**Branch:** `feature/EX5`
+**Completed:** 2026-02-25
+
+### Goal
+
+Demonstrate MasterPlot in a seismography context: 10 stacked channels with
+shared X-axis and per-channel P-wave picks managed through a React table.
+
+### Files created / modified
+
+| File | Action |
+|------|--------|
+| `examples/SeismographyExample.jsx` | Created — main React component |
+| `src/seismography.js` | Created — webpack entry point |
+| `public/seismography.html` | Created — HTML template |
+| `webpack.config.js` | Modified — added `seismography` entry + HtmlWebpackPlugin |
+| `examples/HubPage.jsx` | Modified — added Seismography card |
+| `README.md` | Modified — EX5 section + file list update |
+
+### Architecture
+
+- **10 PlotCanvas instances** — each backed by its own `DataStore` with a pre-generated
+  sin-wave signal (`y_i = sin(2π·freq_i·t + phase_i)`).
+- **Independent Y-axis** per channel (`[-1.5, 1.5]`); distinct colour per channel.
+- **Shared X-domain** via `domainChanged` event cross-propagation:
+  `ctrl.on('domainChanged', ({ xDomain }) => others.forEach(o => o.xAxis.setDomain(xDomain)))`.
+  A `syncingRef` boolean prevents infinite loops.
+- **vline-half-bottom LineROI** seeded on each channel after all 10 controllers are
+  ready (detected via `initCount.current === NUM_PLOTS`).
+
+### Sidebar table
+
+| Column | Source | Update trigger |
+|--------|--------|----------------|
+| Station | static label array | — |
+| Label | `roi.label` | `roiFinalized` or edit submit |
+| Pos (s) | `roi.position` | `roiFinalized` or edit submit |
+
+- Inputs use `defaultValue` + `key={plotIndex-version}` so they re-mount with
+  fresh values when the drag-committed version changes.
+- Edit commit calls `updateFromExternal({ ...roi.serialize(), label/position, version: roi.version + 1 })`.
+- React owns no geometry; `tableRows` is a display cache only.
+
+### Signal parameters
+
+| Plot i | freq_i (Hz) | phase_i (rad) | colour |
+|--------|-------------|---------------|--------|
+| 0 | 0.50 | 0.0 | `rgb(0,220,255)` |
+| 1 | 0.65 | π/5 | `rgb(0,200,220)` |
+| … | … | … | … |
+| 9 | 1.85 | 9π/5 | `rgb(140,80,240)` |
+
+2000 points per channel, t ∈ [0, 10 s].
+
+### Acceptance criteria
+
+- 10 signals render ✅
+- Shared X zoom/pan ✅
+- Independent Y axes ✅
+- Vlines draggable ✅
+- Table edits sync correctly ✅
+- Version increments correct ✅
+- No performance regression ✅

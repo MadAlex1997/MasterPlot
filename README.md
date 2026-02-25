@@ -14,7 +14,7 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 
 ---
 
-## Current Capabilities (F1–F18 + EX1–EX3 complete)
+## Current Capabilities (F1–F21 + EX1–EX5 complete)
 
 ### Core Plotting Engine
 - **WebGL rendering** via deck.gl `OrthographicView` — no maps, no geospatial assumptions
@@ -47,6 +47,21 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 - **Deletion** with `D` key; cancel creation with `Esc`
 - **ROI versioning (F14)** — every ROI carries a monotonic `version` counter, `updatedAt` timestamp, and a JSON-safe `domain` snapshot; `bumpVersion()` is called automatically on mouseup; `LinearRegion.domain` omits `y` (spans ±Infinity)
 
+### Axis Drag Scaling (F21)
+Drag directly on the axis gutter (the tick-label margin) to zoom that axis independently, centered on its midpoint:
+
+| Axis | Drag Direction | Result   |
+|------|----------------|----------|
+| Y    | Down           | Zoom In  |
+| Y    | Up             | Zoom Out |
+| X    | Left           | Zoom In  |
+| X    | Right          | Zoom Out |
+
+- Dragging inside the plot area still **pans** as before; only gutter drags zoom
+- Works on linear and log scales; uses exponential scaling (`Math.exp`) identical in feel to wheel zoom
+- Emits `zoomChanged` with `{ factor, axis }`
+- Float drift prevented via restore-and-reapply pattern
+
 ### Spectrogram / Audio Analysis Example
 A full-featured spectrogram viewer is available at the demo (Spectrogram tab):
 
@@ -78,6 +93,20 @@ Both `LineExample` and `RollingLineExample` now use **deterministic sin/cos wave
 - Signal B → `amplitude × cos(t) + offset`
 - Vertical offset per signal (`i × (2 × amplitude + spacing)`) keeps all bands visually separated
 - Rolling expiration (`trimBefore`) removes the trailing edge of each wave as new data arrives, making the rolling window immediately obvious
+
+### Seismography Example (EX5)
+
+Ten stacked seismograph channels in a single page, each backed by its own `DataStore` and independent Y-axis:
+
+| Feature | Details |
+|---|---|
+| **10 channels** | Independent sin-wave signals with distinct frequency and phase per channel |
+| **Shared X-axis** | Zoom or pan on any channel propagates the new x-domain to all others via `domainChanged` → `xAxis.setDomain()` |
+| **P-wave picks** | Each channel has a pre-seeded `vline-half-bottom` LineROI with a station label rendered on the canvas overlay |
+| **Draggable picks** | Drag any pick to update its position; table row refreshes on `roiFinalized` |
+| **Sidebar table** | Station · Label · Pos (s); edits committed on Enter/blur |
+| **Version-gated edits** | Table edit calls `updateFromExternal()` with `version + 1`; rejected if a concurrent drag committed a higher version |
+| **React owns no geometry** | `tableRows` is a display cache; all bounds live in `LineROI.position` |
 
 ---
 
@@ -411,6 +440,7 @@ examples/
   RollingLineExample.jsx   — deterministic sin/cos waves + 30s wall-clock rolling window (EX3)
   SpectrogramExample.jsx   — full audio analysis + frequency band inputs (EX2)
   SharedDataExample.jsx    — two-plot shared DataStore + filtered DataView demo (F17)
+  SeismographyExample.jsx  — 10 stacked channels, shared X-axis, vline picks + table (EX5)
 src/
   integration/
     ExternalDataAdapter.js — interface contract for external data sources (F18)

@@ -30,6 +30,11 @@ export default function HubPage() {
       title: 'Integration Guide (F18)',
       desc: 'ExternalDataAdapter + ExternalROIAdapter contracts. MockDataAdapter (random batches on timer) and MockROIAdapter (localStorage-backed ROI persistence). README → External Integration section.',
     },
+    {
+      href: 'seismography.html',
+      title: 'Seismography (EX5)',
+      desc: '10 stacked channels with shared X-axis zoom/pan. Each channel has an independent Y-axis and a draggable vline-half-bottom P-wave pick. Sidebar table shows station, label, and position — edits are version-gated via updateFromExternal(). React owns zero geometry.',
+    },
   ];
 
   const styles = {

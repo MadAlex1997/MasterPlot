@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 4.0
-**Last Updated:** 2026-02-24
-**Status:** All Phase 1, Phase 2, and example improvements done. Phase 3 active (F19, F20 done; F21 next).
+**Plan Version:** 4.2
+**Last Updated:** 2026-02-25
+**Status:** All Phase 1, Phase 2, example improvements (EX1–EX3), F19/F20/F21, and EX5 done. EX4 pending.
 
 ---
 
@@ -74,9 +74,9 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | EX3 | Rolling Lines Improvement | ✅ COMPLETED | feature/example-improvements | 2026-02-22 |
 | F19 | Cascading ROI Update + Child Versioning | ✅ COMPLETED | feature/F19 | 2026-02-24 |
 | F20 | LineROI (Vertical/Horizontal + Labels) | ✅ COMPLETED | feature/F20 | 2026-02-24 |
-| F21 | Axis Drag Scaling (Midpoint Zoom) | ⏳ PENDING | — | — |
+| F21 | Axis Drag Scaling (Midpoint Zoom) | ✅ COMPLETED | feature/F20 | 2026-02-24 |
 | EX4 | Scatter Performance Dropdown | ⏳ PENDING | — | — |
-| EX5 | Geophysics / Seismography Example | ⏳ PENDING | — | — |
+| EX5 | Geophysics / Seismography Example | ✅ COMPLETED | feature/EX5 | 2026-02-25 |
 
 ---
 
@@ -244,6 +244,8 @@ Full spec: [docs/plan-archive.md#f18](docs/plan-archive.md#f18)
 - **2026-02-24 [Claude]**: Phase 3 incorporated (v3.8) — F19, F20, F21, EX4, EX5 added as PENDING from Features.md. Mandatory order: F19 → F20 → F21 → EX4 → EX5. Features.md cleared to stub; prompt.md updated to reflect Phase 2 complete / Phase 3 active.
 - **2026-02-24 [Claude]**: F19 completed (v3.9) — `ConstraintEngine.enforceConstraints` replaced by `applyConstraints(parent, delta) → Set<ROI>`; ROIController drag emits `roiUpdated` for changed children; mouseup walks descendants via `walkChildren`, bumps version and emits `roiFinalized` only when bounds differ from domain snapshot. Next: F20.
 - **2026-02-24 [Claude]**: F20 completed (v4.0) — `LineROI` (6 modes, optional label, half-variant canvas labels, auto-parent to LinearRegion); V/H keys; `_syncPosition` hook in ConstraintEngine; `ROILayer` LineROI rendering via PathLayer + plotXMin/plotXMax props; `AxisRenderer.render(rois)` + `_renderLineROILabels`; `PlotController` passes rois to axisRenderer and xMin/xMax to ROILayer; `ROIController.serializeAll` calls `roi.serialize()`; `updateFromExternal` handles LineROI. Next: F21.
+- **2026-02-24 [Claude]**: F21 completed (v4.1) — `AxisController.scaleDomainFromMidpoint(factor)` (linear+log); `AxisRenderer.getAxisHit(px,py)`; `PlotController` axis drag state + `_handleAxisDragMove` (restore-and-reapply, sensitivity=0.01, X:left=zoom-in, Y:down=zoom-in); emits `zoomChanged`. Next: EX4.
+- **2026-02-25 [Claude]**: EX5 completed (v4.2) — `SeismographyExample.jsx` (10 stacked PlotCanvas, shared X via domainChanged cross-propagation, one vline-half-bottom LineROI per channel, React table with version-gated label/position edits); webpack + HubPage + README updated. EX4 still pending.
 
 ---
 
@@ -286,70 +288,10 @@ Full spec: [docs/plan-archive.md#f19](docs/plan-archive.md#f19)
 New `LineROI` class (6 modes: vline/hline + 4 half-variants); V/H keys create full lines; single-click creation; draggable; optional label (≤25 chars) on half-variants rendered via canvas 2D overlay; auto-parenting of vertical LineROI into LinearRegion; `_syncPosition` hook in ConstraintEngine; `serialize()` override; `serializeAll` and `updateFromExternal` extended.
 Full spec: [docs/plan-archive.md#f20](docs/plan-archive.md#f20)
 
-# F21 [PENDING] — Axis Drag Scaling (Midpoint Zoom)
-
-**Type:** Engine Interaction
-
----
-
-## Behavior
-
-| Axis | Drag Direction | Result   |
-| ---- | -------------- | -------- |
-| Y    | Down           | Zoom In  |
-| Y    | Up             | Zoom Out |
-| X    | Left           | Zoom In  |
-| X    | Right          | Zoom Out |
-
----
-
-## Scaling Rules
-
-* Exponential scaling
-* Centered on axis midpoint
-* Uses same domain math as wheel zoom
-* Must respect Y-axis inversion convention
-
----
-
-## Implementation
-
-### AxisRenderer
-
-```
-getAxisHit(px, py) → 'x' | 'y' | null
-```
-
----
-
-### PlotController
-
-Add:
-
-```
-_onAxisDragStart
-_onAxisDragMove
-_onAxisDragEnd
-```
-
-Zoom math:
-
-```
-const delta = axis === 'x' ? dx : dy;
-const zoomFactor = Math.exp(delta * sensitivity);
-axisController.scaleDomainFromMidpoint(zoomFactor);
-```
-
-Emit `zoomChanged`.
-
----
-
-## Acceptance Criteria
-
-* Dragging on axis zooms
-* Dragging inside plot pans
-* Log/linear/time scales supported
-* No GPU buffer mutation
+### F21 [COMPLETED] Axis Drag Scaling (Midpoint Zoom)
+**Completed:** 2026-02-24 | **Branch:** feature/F20
+`AxisController.scaleDomainFromMidpoint(factor)` (linear + log); `AxisRenderer.getAxisHit(px, py)` hits X/Y gutter regions; `PlotController` axis drag state + `_handleAxisDragMove` using restore-and-reapply + `Math.exp(delta*0.01)`; emits `zoomChanged`. X: drag-left=zoom-in; Y: drag-down=zoom-in.
+Full spec: [docs/plan-archive.md#f21](docs/plan-archive.md#f21)
 
 ---
 
@@ -402,84 +344,7 @@ No engine changes allowed.
 
 ---
 
-# EX5 [PENDING] — Geophysics / Seismography Example
-
-**Type:** New Example Page
-
----
-
-## New Files
-
-```
-examples/SeismographyExample.jsx
-src/seismography.js
-public/seismography.html
-```
-
-Update:
-
-* webpack config
-* HubPage.jsx
-* README.md
-
----
-
-## Architecture
-
-* 10 stacked PlotControllers
-* Shared X-domain
-* Independent Y-axis per plot
-* Shared DataStore
-
----
-
-## Signals
-
-For each plot `i`:
-
-```
-y_i = sin(freq_i * t + phase_i) + offset_i
-```
-
-Offsets prevent overlap.
-
----
-
-## Line ROIs
-
-Each plot contains:
-
-* One `vline-half-bottom`
-* With label
-
-Bottom variant required.
-
----
-
-## React Table
-
-Columns:
-
-| Plot Index | Label | Position |
-
-Must:
-
-* Subscribe to ROIController
-* Update only on `roiFinalized`
-* Allow editing label (≤25 chars)
-* Allow editing position
-* Use `updateFromExternal()` (version gated)
-
-React must not own geometry.
-
----
-
-## Acceptance Criteria
-
-* 10 signals render
-* Shared X zoom/pan
-* Independent Y axes
-* Vlines draggable
-* Table edits sync correctly
-* Version increments correct
-* No performance regression
+### EX5 [COMPLETED] Geophysics / Seismography Example
+**Completed:** 2026-02-25 | **Branch:** feature/EX5
+10 stacked channels with shared X-axis (domainChanged cross-propagation), independent Y-axes, one vline-half-bottom LineROI per channel seeded after all 10 controllers are ready, and a React sidebar table with version-gated label/position edits via `updateFromExternal()`.
+Full spec: [docs/plan-archive.md#ex5](docs/plan-archive.md#ex5)
