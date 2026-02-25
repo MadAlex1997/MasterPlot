@@ -2748,3 +2748,91 @@ When a parent ROI (e.g. LinearRegion) was dragged, its children received constra
 - Version increments only when bounds actually changed ✅
 - No false-positive bumps ✅
 - PlotDataView dirty propagation correct (roiFinalized triggers markDirty) ✅
+
+---
+
+## F20 [COMPLETED] Feature: LineROI (Vertical/Horizontal + Half Variants + Labels)
+
+**Branch:** `feature/F20`
+**Completed:** 2026-02-24
+
+### New File
+
+`src/plot/ROI/LineROI.js` — extends `ROIBase`.
+
+### Supported Modes
+
+| Mode              | Geometry                        |
+| ----------------- | ------------------------------- |
+| vline             | Full height vertical line        |
+| hline             | Full width horizontal line       |
+| vline-half-top    | Vertical — midpoint → top        |
+| vline-half-bottom | Vertical — bottom → midpoint     |
+| hline-half-left   | Horizontal — left → midpoint     |
+| hline-half-right  | Horizontal — midpoint → right    |
+
+### Properties
+
+```
+orientation: 'vertical' | 'horizontal'
+mode:        string (one of the 6 modes above)
+position:    number  (data coordinate on primary axis)
+label:       string | null  (max 25 chars; half variants only)
+```
+
+### ROIBase bounds sync
+
+`_syncBoundsFromPosition()` — writes `position` into x1/x2 (vertical) or y1/y2 (horizontal) so ConstraintEngine can operate without special-casing LineROI.
+
+`_syncPosition()` — writes the (possibly clamped) x1/y1 back into `position`. Called by ConstraintEngine after any clamp, and by ROIController after parent-upward clamping.
+
+### Versioning
+
+`bumpVersion()` override — domain stores `{ x: [position, position] }` (vertical) or `{ y: [position, position] }` (horizontal).
+
+### Interaction
+
+- Created with `V` key (vertical) or `H` key (horizontal) — single click sets position.
+- Auto-parented: vertical LineROI inside a LinearRegion is parented and x-constrained.
+- Draggable along primary axis; not resizable.
+- `hitTest()` — returns `'move'` if pointer within 8 px of line.
+- `applyDelta()` — restores-and-reapplies pattern; vertical uses `x1 + dx`, horizontal uses `y1 + dy`.
+
+### Label Rendering
+
+- Labels only rendered for half-variant modes.
+- Drawn on the 2D canvas overlay by `AxisRenderer._renderLineROILabels()` — NOT in WebGL.
+- Positioned near the tip (open end of the half-line), centered perpendicular to the line.
+- Dark stroke behind text for readability over plot content.
+
+### Serialization
+
+```json
+{ "id": "...", "type": "lineROI", "orientation": "vertical", "mode": "vline-half-bottom",
+  "position": 42.5, "label": "P", "version": 3, "updatedAt": 1234567890, "domain": { "x": [42.5, 42.5] } }
+```
+
+`serialize()` instance method added to LineROI; `ROIController.serializeAll()` calls `roi.serialize()` when present.
+
+### Files Modified
+
+| File | Change |
+|---|---|
+| `src/plot/ROI/LineROI.js` | **NEW** — full LineROI implementation |
+| `src/plot/ROI/ConstraintEngine.js` | Call `child._syncPosition?.()` after any clamp |
+| `src/plot/ROI/ROIController.js` | Import LineROI; V/H keys; `createVLine`/`createHLine` modes; `_handleLineROICreationClick`; `_findLineROIParent`; `_hitTest` handles `lineROI`; `_roiFromSerialized` handles `lineROI`; `serializeAll` calls `roi.serialize()` if present; `updateFromExternal` syncs position/label/mode for LineROI; parent-clamp position sync |
+| `src/plot/layers/ROILayer.js` | `plotXMin`/`plotXMax` props; LineROI rendering via PathLayer; selected-state handle dot |
+| `src/plot/axes/AxisRenderer.js` | `render(rois=[])` signature; `_renderLineROILabels()` |
+| `src/plot/PlotController.js` | Pass `plotXMin`/`plotXMax` to ROILayer; pass `rois` to `axisRenderer.render()` |
+| `examples/ExampleApp.jsx` | V/H key hints in header and JSX doc comment |
+| `examples/HubPage.jsx` | Updated Scatter/ROI card description |
+| `README.md` | LineROI section; architecture tree updated |
+
+### Acceptance Criteria Met
+
+- `V` creates vertical vline ✅
+- `H` creates horizontal hline ✅
+- Labels render on half-variants via canvas overlay ✅
+- Versioning works (bumpVersion on mouseup, conditional for children) ✅
+- Vertical LineROI alignment rule enforced (auto-parent to LinearRegion) ✅
+- Mixed alignment rule: horizontal LineROI not parented to LinearRegion ✅

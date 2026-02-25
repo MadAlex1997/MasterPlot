@@ -354,6 +354,7 @@ export class PlotController extends EventEmitter {
       ? this._dataView.getData()
       : this._dataStore.getGPUAttributes();
     const rois     = this._roiController.getAllROIs();
+    const [xMin, xMax] = this._xAxis.getDomain();
     const [yMin, yMax] = this._yAxis.getDomain();
     const xIsLog = this._xAxis.scaleType === 'log';
     const yIsLog = this._yAxis.scaleType === 'log';
@@ -367,6 +368,8 @@ export class PlotController extends EventEmitter {
     layers.push(new ROILayer({
       id:       'roi-layer',
       rois,
+      plotXMin: xMin,
+      plotXMax: xMax,
       plotYMin: yMin,
       plotYMax: yMax,
       xIsLog,
@@ -378,9 +381,9 @@ export class PlotController extends EventEmitter {
       layers,
     });
 
-    // Render axis overlay
+    // Render axis overlay (pass rois so LineROI labels are drawn on canvas)
     if (this._axisRenderer) {
-      this._axisRenderer.render();
+      this._axisRenderer.render(rois);
     }
   }
 

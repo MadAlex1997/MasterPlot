@@ -32,10 +32,18 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 ### ROI System (pyqtgraph-style)
 - **LinearRegion** — vertical strip defined by x1/x2; created with `L` key + two clicks
 - **RectROI** — draggable/resizable rectangle; created with `R` key + two clicks; parented to a LinearRegion
+- **LineROI (F20)** — single-pixel line ROI (vertical or horizontal); created with `V` (vertical) or `H` (horizontal) key + one click
+  - **Modes:** `vline` · `hline` · `vline-half-top` · `vline-half-bottom` · `hline-half-left` · `hline-half-right`
+  - **Labels** — optional string (≤25 chars); rendered on the canvas 2D overlay (not WebGL); only on half-variants; positioned near the tip
+  - **Draggable** along its primary axis; not resizable
+  - **Auto-parenting** — vertical LineROI created inside a LinearRegion is automatically parented and x-constrained
+  - **Alignment rules** — vertical LineROI may be child of LinearRegion; horizontal LineROI may be child of a horizontal-bounding ROI; mixed alignments ignored
+  - **Versioning** — `bumpVersion()` stores `domain: { x: [pos, pos] }` (vertical) or `{ y: [pos, pos] }` (horizontal); `serialize()` / `updateFromExternal()` carry `position`, `label`, `mode`
 - **ConstraintEngine** — enforces parent-child bounds automatically:
   - Children shift when parent moves (preserving relative offset)
   - Children are clamped to parent bounds (not discarded)
   - Recursive enforcement for multi-level nesting
+  - **F19:** `applyConstraints` returns the set of descendants whose bounds actually changed; `bumpVersion` + `roiFinalized` only emitted when bounds differ from last committed domain snapshot
 - **Deletion** with `D` key; cancel creation with `Esc`
 - **ROI versioning (F14)** — every ROI carries a monotonic `version` counter, `updatedAt` timestamp, and a JSON-safe `domain` snapshot; `bumpVersion()` is called automatically on mouseup; `LinearRegion.domain` omits `y` (spans ±Infinity)
 
@@ -86,8 +94,9 @@ PlotController (EventEmitter)
 ├── AxisController (y)
 ├── ROIController         — creation, drag, resize, delete
 │   ├── ConstraintEngine  — parent-child bound enforcement
+│   ├── LinearRegion      — vertical strip, contains RectROIs / LineROIs
 │   ├── RectROI           — draggable/resizable rectangle
-│   └── LinearRegion      — vertical strip, contains RectROIs
+│   └── LineROI           — single vertical or horizontal line (6 modes, optional label)
 └── deck.gl Deck          — WebGL render target (OrthographicView)
 
 AxisRenderer              — Canvas 2D overlay (ticks, labels, grid)

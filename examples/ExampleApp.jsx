@@ -14,10 +14,13 @@
  * 10. All events logged to console
  * 11. LinearRegion table (EX1) — updates on roiCreated/roiFinalized/roiDeleted
  * 12. RectROI subset table (EX1) — shows rects overlapping selected LinearRegion
+ * 13. LineROI creation ('V' key → vertical vline, 'H' key → horizontal hline)
  *
  * Keybinds:
- *   L  — create LinearRegion
+ *   L  — create LinearRegion (2 clicks: x1, x2)
  *   R  — create RectROI (auto-parents to overlapping LinearRegion)
+ *   V  — create vertical LineROI (single click; auto-parents inside LinearRegion)
+ *   H  — create horizontal LineROI (single click)
  *   D  — delete selected ROI
  *   Esc — cancel creation
  */
@@ -321,6 +324,8 @@ export default function ExampleApp() {
         <div style={keybindStyle}>
           {kbd('L')} LinearRegion &nbsp;
           {kbd('R')} RectROI &nbsp;
+          {kbd('V')} VLine &nbsp;
+          {kbd('H')} HLine &nbsp;
           {kbd('D')} Delete &nbsp;
           {kbd('Esc')} Cancel &nbsp;
           {kbd('scroll')} Zoom &nbsp;

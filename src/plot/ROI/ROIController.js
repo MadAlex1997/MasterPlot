@@ -22,6 +22,7 @@
 import { EventEmitter } from 'events';
 import { RectROI, HANDLES } from './RectROI.js';
 import { LinearRegion, LR_HANDLES } from './LinearRegion.js';
+import { LineROI, LINE_HANDLE } from './LineROI.js';
 import { ConstraintEngine } from './ConstraintEngine.js';
 
 export class ROIController extends EventEmitter {
@@ -134,14 +135,12 @@ export class ROIController extends EventEmitter {
    * @returns {{ id, type, version, updatedAt, domain, metadata }[]}
    */
   serializeAll() {
-    return this.getAllROIs().map(roi => ({
-      id:        roi.id,
-      type:      roi.type,
-      version:   roi.version,
-      updatedAt: roi.updatedAt,
-      domain:    roi.domain,
-      metadata:  roi.metadata,
-    }));
+    return this.getAllROIs().map(roi =>
+      typeof roi.serialize === 'function'
+        ? roi.serialize()
+        : { id: roi.id, type: roi.type, version: roi.version,
+            updatedAt: roi.updatedAt, domain: roi.domain, metadata: roi.metadata }
+    );
   }
 
   /**
@@ -178,13 +177,28 @@ export class ROIController extends EventEmitter {
 
     if (existing) {
       // Apply bounds from domain
-      if (serializedROI.domain.x) {
+      if (serializedROI.domain && serializedROI.domain.x) {
         existing.x1 = serializedROI.domain.x[0];
         existing.x2 = serializedROI.domain.x[1];
       }
-      if (serializedROI.domain.y) {
+      if (serializedROI.domain && serializedROI.domain.y) {
         existing.y1 = serializedROI.domain.y[0];
         existing.y2 = serializedROI.domain.y[1];
+      }
+      // LineROI: sync position from explicit field or from updated bounds
+      if (existing.type === 'lineROI') {
+        if (serializedROI.position !== undefined) {
+          existing.position = serializedROI.position;
+          existing._syncBoundsFromPosition();
+        } else if (typeof existing._syncPosition === 'function') {
+          existing._syncPosition();
+        }
+        if (serializedROI.label !== undefined) {
+          existing.label = serializedROI.label != null
+            ? String(serializedROI.label).slice(0, 25)
+            : null;
+        }
+        if (serializedROI.mode !== undefined) existing.mode = serializedROI.mode;
       }
       existing.version   = serializedROI.version;
       existing.updatedAt = serializedROI.updatedAt;
@@ -206,7 +220,11 @@ export class ROIController extends EventEmitter {
   // ─── Creation mode ────────────────────────────────────────────────────────────
 
   enterCreateMode(type) {
-    this._mode         = type === 'linear' ? 'createLinear' : 'createRect';
+    this._mode = type === 'linear' ? 'createLinear'
+               : type === 'rect'   ? 'createRect'
+               : type === 'vline'  ? 'createVLine'
+               : type === 'hline'  ? 'createHLine'
+               : 'idle';
     this._creationStep = 0;
     this._creationData = null;
     this.emit('modeChanged', { mode: this._mode });
@@ -232,6 +250,12 @@ export class ROIController extends EventEmitter {
         break;
       case 'r':
         this.enterCreateMode('rect');
+        break;
+      case 'v':
+        this.enterCreateMode('vline');
+        break;
+      case 'h':
+        this.enterCreateMode('hline');
         break;
       case 'd':
         if (this._activeROI) {
@@ -261,6 +285,16 @@ export class ROIController extends EventEmitter {
 
     if (this._mode === 'createRect') {
       this._handleRectCreationClick(dataX, dataY);
+      return;
+    }
+
+    if (this._mode === 'createVLine') {
+      this._handleLineROICreationClick(dataX, dataY, 'vertical');
+      return;
+    }
+
+    if (this._mode === 'createHLine') {
+      this._handleLineROICreationClick(dataX, dataY, 'horizontal');
       return;
     }
 
@@ -315,6 +349,10 @@ export class ROIController extends EventEmitter {
           roi.x2 = roi.parent.x2;
         } else {
           this._constraintEngine._clampChild(roi, roi.parent);
+        }
+        // LineROI: write the clamped bound back into position
+        if (typeof roi._syncPosition === 'function') {
+          roi._syncPosition();
         }
         roi.emit('onUpdate', { roi, bounds: roi.getBounds() });
       }
@@ -460,6 +498,54 @@ export class ROIController extends EventEmitter {
   }
 
   /**
+   * Single-click creation of a LineROI.
+   * V key → vertical vline, H key → horizontal hline.
+   *
+   * Vertical LineROIs are auto-parented to the first LinearRegion whose
+   * x-range contains the click position.
+   *
+   * @param {number} dataX
+   * @param {number} dataY
+   * @param {'vertical'|'horizontal'} orientation
+   */
+  _handleLineROICreationClick(dataX, dataY, orientation) {
+    const position = orientation === 'vertical' ? dataX : dataY;
+    const mode     = orientation === 'vertical' ? 'vline' : 'hline';
+
+    const lineROI = new LineROI({ orientation, mode, position });
+
+    // Auto-parent vertical LineROI inside the first enclosing LinearRegion
+    if (orientation === 'vertical') {
+      const parent = this._findLineROIParent(lineROI);
+      if (parent) lineROI.setParent(parent);
+    }
+
+    this._rois.set(lineROI.id, lineROI);
+    lineROI.onCreate();
+    this._activeROI = lineROI;
+    this._selectOnly(lineROI);
+
+    this.emit('roiCreated', { roi: lineROI, type: 'lineROI' });
+    this.emit('roisChanged', { rois: this.getAllROIs() });
+    this.cancelCreateMode();
+  }
+
+  /**
+   * Find the first LinearRegion whose x-range contains the LineROI's position.
+   * @param {LineROI} lineROI
+   * @returns {LinearRegion|null}
+   */
+  _findLineROIParent(lineROI) {
+    for (const roi of this._rois.values()) {
+      if (roi.type !== 'linearRegion') continue;
+      if (lineROI.position >= roi.x1 && lineROI.position <= roi.x2) {
+        return roi;
+      }
+    }
+    return null;
+  }
+
+  /**
    * Reconstruct a ROI instance from a serialized object.
    * @param {{ id, type, version, updatedAt, domain, metadata }} s
    * @returns {ROIBase|null}
@@ -473,6 +559,22 @@ export class ROIController extends EventEmitter {
       const [x1, x2] = s.domain.x;
       const [y1, y2] = s.domain.y;
       roi = new RectROI({ id: s.id, x1, x2, y1, y2, metadata: s.metadata || {} });
+    } else if (s.type === 'lineROI') {
+      // Recover position: prefer explicit field, fall back to domain
+      const position = s.position !== undefined
+        ? s.position
+        : (s.orientation === 'horizontal'
+            ? (s.domain?.y?.[0] ?? 0)
+            : (s.domain?.x?.[0] ?? 0));
+      roi = new LineROI({
+        id:          s.id,
+        orientation: s.orientation || 'vertical',
+        mode:        s.mode        || (s.orientation === 'horizontal' ? 'hline' : 'vline'),
+        position,
+        label:       s.label  || null,
+        domain:      s.domain || undefined,
+        metadata:    s.metadata || {},
+      });
     } else {
       return null;
     }
@@ -511,6 +613,9 @@ export class ROIController extends EventEmitter {
       if (roi.type === 'linearRegion') {
         const handle = roi.hitTest(screenX, screenY, this._viewport);
         if (handle !== LR_HANDLES.NONE) return { roi, handle };
+      } else if (roi.type === 'lineROI') {
+        const handle = roi.hitTest(screenX, screenY, this._viewport);
+        if (handle !== LINE_HANDLE.NONE) return { roi, handle };
       } else {
         const handle = roi.hitTestHandles(screenX, screenY, this._viewport);
         if (handle !== HANDLES.NONE) return { roi, handle };

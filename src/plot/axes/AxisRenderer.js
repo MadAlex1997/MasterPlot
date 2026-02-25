@@ -53,7 +53,13 @@ export class AxisRenderer {
 
   // ─── Main render ─────────────────────────────────────────────────────────────
 
-  render() {
+  /**
+   * Render axes and optional LineROI labels onto the 2D canvas overlay.
+   *
+   * @param {import('../ROI/ROIBase').ROIBase[]} [rois=[]] — current ROI list;
+   *   half-variant LineROI labels are drawn here per spec (NOT in WebGL).
+   */
+  render(rois = []) {
     if (!this._visible || this._exportMode) {
       this._clear();
       return;
@@ -82,6 +88,9 @@ export class AxisRenderer {
 
     // Y-axis ticks
     this._renderYTicks(ctx, pa);
+
+    // LineROI labels (half-variants only; canvas overlay per spec)
+    this._renderLineROILabels(ctx, rois, pa);
 
     ctx.restore();
   }
@@ -173,6 +182,83 @@ export class AxisRenderer {
       ctx.textAlign    = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(this._yAxis.label, 0, 0);
+      ctx.restore();
+    }
+  }
+
+  // ─── LineROI labels ──────────────────────────────────────────────────────────
+
+  /**
+   * Render text labels for LineROI half-variants onto the canvas overlay.
+   *
+   * Rules (from spec):
+   *   - Labels only render on half variants (mode contains 'half')
+   *   - Positioned near the tip (the "open" end of the half-line)
+   *   - Centered perpendicular to the line direction
+   *   - Clipped to plot area
+   *
+   * @param {CanvasRenderingContext2D} ctx
+   * @param {import('../ROI/ROIBase').ROIBase[]} rois
+   * @param {{ x, y, width, height }} pa  — plot area bounds
+   */
+  _renderLineROILabels(ctx, rois, pa) {
+    const s = this._style;
+
+    for (const roi of rois) {
+      if (roi.type !== 'lineROI') continue;
+      if (!roi.flags.visible) continue;
+      if (!roi.label) continue;
+      if (!roi.mode.includes('half')) continue;
+
+      const LABEL_PAD = 14; // pixels from the tip edge
+
+      ctx.save();
+      ctx.font      = `bold ${s.fontSize}px ${s.fontFamily}`;
+      ctx.lineWidth = 3;
+      // Dark stroke behind text for legibility over the plot
+      ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+
+      if (roi.orientation === 'vertical') {
+        const lx = this._viewport.dataXToScreen(roi.position);
+        // Only render if within plot x-range
+        if (lx < pa.x || lx > pa.x + pa.width) { ctx.restore(); continue; }
+
+        ctx.textAlign = 'center';
+        let ly;
+        if (roi.mode === 'vline-half-top') {
+          // Tip is at the top of the plot area
+          ly = pa.y + LABEL_PAD;
+          ctx.textBaseline = 'top';
+        } else {
+          // vline-half-bottom: tip is at the bottom
+          ly = pa.y + pa.height - LABEL_PAD;
+          ctx.textBaseline = 'bottom';
+        }
+        ctx.strokeText(roi.label, lx, ly);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(roi.label, lx, ly);
+
+      } else {
+        const ly = this._viewport.dataYToScreen(roi.position);
+        // Only render if within plot y-range
+        if (ly < pa.y || ly > pa.y + pa.height) { ctx.restore(); continue; }
+
+        ctx.textBaseline = 'bottom';
+        let lx;
+        if (roi.mode === 'hline-half-left') {
+          // Tip is at the left edge of the plot
+          lx = pa.x + LABEL_PAD;
+          ctx.textAlign = 'left';
+        } else {
+          // hline-half-right: tip is at the right edge
+          lx = pa.x + pa.width - LABEL_PAD;
+          ctx.textAlign = 'right';
+        }
+        ctx.strokeText(roi.label, lx, ly - 2);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(roi.label, lx, ly - 2);
+      }
+
       ctx.restore();
     }
   }

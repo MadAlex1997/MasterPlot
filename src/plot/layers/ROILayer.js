@@ -33,10 +33,12 @@ export class ROILayer extends CompositeLayer {
     const yIsLog = this.props.yIsLog || false;
     const toX = v => xIsLog ? Math.log10(Math.max(v, 1e-10)) : v;
     const toY = v => yIsLog ? Math.log10(Math.max(v, 1e-10)) : v;
-    const { plotYMin, plotYMax } = this.props;
-    // Convert plot y-extent to deck.gl space for LinearRegion height
+    const { plotYMin, plotYMax, plotXMin, plotXMax } = this.props;
+    // Convert plot extents to deck.gl space
     const deckYMin = toY(plotYMin);
     const deckYMax = toY(plotYMax);
+    const deckXMin = toX(plotXMin);
+    const deckXMax = toX(plotXMax);
 
     const layers = [];
 
@@ -44,7 +46,11 @@ export class ROILayer extends CompositeLayer {
       if (!roi.flags.visible) continue;
 
       const alpha  = roi.selected ? SELECTED_ALPHA : FILL_ALPHA;
-      const color  = roi.color || (roi.type === 'linearRegion' ? [100, 160, 255] : [255, 140, 60]);
+      const color  = roi.color || (
+        roi.type === 'linearRegion' ? [100, 160, 255] :
+        roi.type === 'lineROI'      ? [255, 80, 80]   :
+        [255, 140, 60]  // rect
+      );
 
       if (roi.type === 'linearRegion') {
         // LinearRegion: vertical stripe — use plot y-extent for height
@@ -81,6 +87,63 @@ export class ROILayer extends CompositeLayer {
           widthUnits: 'pixels',
           pickable: false,
         }));
+
+      } else if (roi.type === 'lineROI') {
+        // LineROI: rendered as a PathLayer line in deck.gl coordinate space.
+        // Labels for half-variants are drawn on the canvas overlay by AxisRenderer.
+        const lineAlpha = roi.selected ? 240 : 180;
+        const lineWidth = roi.selected ? 2 : 1;
+
+        const midX = (deckXMin + deckXMax) / 2;
+        const midY = (deckYMin + deckYMax) / 2;
+
+        let path;
+        if (roi.orientation === 'vertical') {
+          const lx = toX(roi.position);
+          switch (roi.mode) {
+            case 'vline-half-top':    path = [[lx, midY, 0], [lx, deckYMax, 0]]; break;
+            case 'vline-half-bottom': path = [[lx, deckYMin, 0], [lx, midY, 0]]; break;
+            default:                  path = [[lx, deckYMin, 0], [lx, deckYMax, 0]]; // vline
+          }
+        } else {
+          const ly = toY(roi.position);
+          switch (roi.mode) {
+            case 'hline-half-left':  path = [[deckXMin, ly, 0], [midX, ly, 0]]; break;
+            case 'hline-half-right': path = [[midX, ly, 0], [deckXMax, ly, 0]]; break;
+            default:                 path = [[deckXMin, ly, 0], [deckXMax, ly, 0]]; // hline
+          }
+        }
+
+        layers.push(new PathLayer({
+          id:         `${roi.id}-line`,
+          data:       [{ path }],
+          getPath:    d => d.path,
+          getColor:   [...color, lineAlpha],
+          getWidth:   lineWidth,
+          widthUnits: 'pixels',
+          pickable:   false,
+        }));
+
+        // Move handle (midpoint dot) when selected
+        if (roi.selected) {
+          const handlePos = roi.orientation === 'vertical'
+            ? [toX(roi.position), midY, 0]
+            : [midX, toY(roi.position), 0];
+
+          layers.push(new ScatterplotLayer({
+            id:             `${roi.id}-handle`,
+            data:           [{ position: handlePos }],
+            getPosition:    d => d.position,
+            getRadius:      HANDLE_RADIUS,
+            getFillColor:   [255, 255, 255, 220],
+            getLineColor:   [0, 0, 0, 255],
+            stroked:        true,
+            getLineWidth:   1,
+            radiusUnits:    'pixels',
+            lineWidthUnits: 'pixels',
+            pickable:       false,
+          }));
+        }
 
       } else {
         // RectROI: filled rectangle with border
@@ -138,6 +201,8 @@ export class ROILayer extends CompositeLayer {
 
 ROILayer.defaultProps = {
   rois:       { type: 'array',    value: [] },
+  plotXMin:   { type: 'number',   value: 0   },
+  plotXMax:   { type: 'number',   value: 1   },
   plotYMin:   { type: 'number',   value: 0   },
   plotYMax:   { type: 'number',   value: 100  },
   xIsLog:     { type: 'boolean',  value: false },

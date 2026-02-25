@@ -3,7 +3,7 @@ export default function HubPage() {
     {
       href: 'example.html',
       title: 'Scatter / ROI',
-      desc: '1M points + live append every 2 s. ROI creation (L/R keys), LinearRegion constraint propagation, event log. ROIs carry monotonic version numbers; serializeAll/deserializeAll/updateFromExternal enable persistence and external sync. DataStore supports rolling ring buffer (count + age expiration). PlotDataView provides lazy filtered/histogram views with dirty-flag caching.',
+      desc: '1M points + live append every 2 s. ROI creation: L (LinearRegion), R (RectROI), V (vertical LineROI), H (horizontal LineROI). LinearRegion constraint propagation + cascading child versioning (F19). LineROI (F20): full/half variants with canvas-overlay labels, draggable, version-gated sync. ROIs carry monotonic version numbers; serializeAll/updateFromExternal enable persistence. DataStore supports rolling ring buffer; PlotDataView provides lazy filtered views.',
     },
     {
       href: 'line.html',

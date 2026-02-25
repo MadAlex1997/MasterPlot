@@ -88,6 +88,11 @@ export class ConstraintEngine {
         this._clampChild(child, parent);
       }
 
+      // ── For LineROI: write the clamped x1/y1 back into position ─────────
+      if (typeof child._syncPosition === 'function') {
+        child._syncPosition();
+      }
+
       // ── Track whether bounds actually changed (numeric comparison) ────────
       if (
         child.x1 !== before.x1 || child.x2 !== before.x2 ||

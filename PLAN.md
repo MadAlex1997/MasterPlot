@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 3.9
+**Plan Version:** 4.0
 **Last Updated:** 2026-02-24
-**Status:** All Phase 1, Phase 2, and example improvements done. Phase 3 active (F19 done; F20 next).
+**Status:** All Phase 1, Phase 2, and example improvements done. Phase 3 active (F19, F20 done; F21 next).
 
 ---
 
@@ -73,7 +73,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | EX2 | Spectrogram UI Refinement | ✅ COMPLETED | feature/example-improvements | 2026-02-22 |
 | EX3 | Rolling Lines Improvement | ✅ COMPLETED | feature/example-improvements | 2026-02-22 |
 | F19 | Cascading ROI Update + Child Versioning | ✅ COMPLETED | feature/F19 | 2026-02-24 |
-| F20 | LineROI (Vertical/Horizontal + Labels) | ⏳ PENDING | — | — |
+| F20 | LineROI (Vertical/Horizontal + Labels) | ✅ COMPLETED | feature/F20 | 2026-02-24 |
 | F21 | Axis Drag Scaling (Midpoint Zoom) | ⏳ PENDING | — | — |
 | EX4 | Scatter Performance Dropdown | ⏳ PENDING | — | — |
 | EX5 | Geophysics / Seismography Example | ⏳ PENDING | — | — |
@@ -243,6 +243,7 @@ Full spec: [docs/plan-archive.md#f18](docs/plan-archive.md#f18)
 - **2026-02-22 [Claude]**: EX1, EX2, EX3 completed (v3.7) — EX1: ROI tables in ExampleApp.jsx (roiController.serializeAll(), onInit subscription, selectedLinearId ref pattern); EX2: FilterPanel relocated to waveform sidebar, lowFreq/highFreq number inputs set spectrogram y-axis domain; EX3: deterministic sin/cos waves with vertical offsets in both LineExample.jsx and RollingLineExample.jsx, rolling via trimBefore(). All EX features done.
 - **2026-02-24 [Claude]**: Phase 3 incorporated (v3.8) — F19, F20, F21, EX4, EX5 added as PENDING from Features.md. Mandatory order: F19 → F20 → F21 → EX4 → EX5. Features.md cleared to stub; prompt.md updated to reflect Phase 2 complete / Phase 3 active.
 - **2026-02-24 [Claude]**: F19 completed (v3.9) — `ConstraintEngine.enforceConstraints` replaced by `applyConstraints(parent, delta) → Set<ROI>`; ROIController drag emits `roiUpdated` for changed children; mouseup walks descendants via `walkChildren`, bumps version and emits `roiFinalized` only when bounds differ from domain snapshot. Next: F20.
+- **2026-02-24 [Claude]**: F20 completed (v4.0) — `LineROI` (6 modes, optional label, half-variant canvas labels, auto-parent to LinearRegion); V/H keys; `_syncPosition` hook in ConstraintEngine; `ROILayer` LineROI rendering via PathLayer + plotXMin/plotXMax props; `AxisRenderer.render(rois)` + `_renderLineROILabels`; `PlotController` passes rois to axisRenderer and xMin/xMax to ROILayer; `ROIController.serializeAll` calls `roi.serialize()`; `updateFromExternal` handles LineROI. Next: F21.
 
 ---
 
@@ -280,103 +281,10 @@ F19 → F20 → F21 → EX4 → EX5
 `ConstraintEngine.enforceConstraints` replaced by `applyConstraints(parent, delta) → Set<ROI>` (snapshots bounds before/after, returns changed descendants); `ROIController` drag phase emits `roiUpdated` for each changed child; mouseup phase walks descendants via `walkChildren`, compares to domain snapshot, and calls `bumpVersion()` + emits `roiFinalized` only when bounds actually changed.
 Full spec: [docs/plan-archive.md#f19](docs/plan-archive.md#f19)
 
-# F20 [PENDING] — LineROI (Vertical/Horizontal + Half Variants + Labels)
-
-**Type:** Engine Feature
-
----
-
-## New File
-
-```
-src/plot/ROI/LineROI.js
-```
-
-Extends `ROIBase`.
-
----
-
-## Supported Modes
-
-| Mode              | Geometry          |
-| ----------------- | ----------------- |
-| vline             | full height       |
-| hline             | full width        |
-| vline-half-top    | top → midpoint    |
-| vline-half-bottom | bottom → midpoint |
-| hline-half-left   | left → midpoint   |
-| hline-half-right  | right → midpoint  |
-
----
-
-## Properties
-
-```
-orientation: 'vertical' | 'horizontal'
-mode: string
-position: number
-label?: string (max 25 characters)
-```
-
----
-
-## Label Rules
-
-* Arbitrary string
-* Max 25 characters
-* Intended for seismic phases (P, Pg, Pn, S, etc.)
-* Only render on half variants
-* Positioned near tip, centered perpendicular to line
-* Render via Canvas overlay (NOT WebGL)
-
----
-
-## Interaction
-
-* Draggable along axis
-* Not resizable
-* Emits standard ROI events
-
----
-
-## Nesting Rules
-
-LineROI may be child only if alignment matches:
-
-* Vertical LineROI may be child of LinearRegion
-* Horizontal LineROI may be child of horizontal ROI
-* Mixed alignment disallowed
-
-ConstraintEngine must enforce parent domain bounds.
-
----
-
-## Serialization
-
-```
-{
-  id,
-  type: "LineROI",
-  orientation,
-  mode,
-  position,
-  label,
-  version,
-  updatedAt
-}
-```
-
----
-
-## Acceptance Criteria
-
-* `V` creates vertical
-* `H` creates horizontal
-* Labels render correctly
-* Versioning works
-* Alignment rules enforced
-
----
+### F20 [COMPLETED] LineROI (Vertical/Horizontal + Half Variants + Labels)
+**Completed:** 2026-02-24 | **Branch:** feature/F20
+New `LineROI` class (6 modes: vline/hline + 4 half-variants); V/H keys create full lines; single-click creation; draggable; optional label (≤25 chars) on half-variants rendered via canvas 2D overlay; auto-parenting of vertical LineROI into LinearRegion; `_syncPosition` hook in ConstraintEngine; `serialize()` override; `serializeAll` and `updateFromExternal` extended.
+Full spec: [docs/plan-archive.md#f20](docs/plan-archive.md#f20)
 
 # F21 [PENDING] — Axis Drag Scaling (Midpoint Zoom)
 
