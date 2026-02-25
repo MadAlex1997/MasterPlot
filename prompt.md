@@ -76,15 +76,19 @@ All MVP features are complete (F1–F13, B1–B8). Implemented:
 - Audio pipeline: file loading, STFT spectrogram, HistogramLUT, biquad filters, playback + playhead
 - On-screen event log for all major events
 
-## Phase 2 — PLANNED (see PLAN.md for specs)
+## Phase 2 — COMPLETE ✅
 
-Implement in order: **F16 → F15 → F14 → F17 → F18**
+All Phase 2 features done: F16 (rolling DataStore), F15 (lazy DataView), F14 (ROI versioning), F17 (shared data), F18 (external adapters).
 
-- **F16** Rolling ring buffer DataStore (count + age expiration, wrapped GPU upload)
-- **F15** Lazy PlotDataView system (dirty-flag caching, ROI/domain filtering, histogram)
-- **F14** ROI domain model + mandatory versioning (`version`, `serializeAll`, `updateFromExternal`)
-- **F17** Shared DataStore/DataView across multiple PlotControllers
-- **F18** External integration interface contracts (adapter pattern; no HTTP/WebSocket in engine)
+## Phase 3 — ACTIVE (see PLAN.md for specs)
+
+Implement in order: **F19 → F20 → F21 → EX4 → EX5**
+
+- **F19** Cascading ROI Update + Conditional Child Versioning (Engine Fix — Critical)
+- **F20** LineROI (Vertical/Horizontal + Half Variants + Labels)
+- **F21** Axis Drag Scaling (Midpoint Zoom) on X and Y axes
+- **EX4** Scatter Performance Dropdown (10k–10M points)
+- **EX5** Geophysics / Seismography Example (10 stacked plots, shared X, vline ROIs)
 
 Later (unscheduled):
 - Full nested RectROI nesting (multiple levels)
@@ -502,10 +506,17 @@ Provide a complete example demonstrating:
 - ✅ Audio pipeline: file load, STFT spectrogram, HistogramLUT, filters, playback
 - ✅ Example pages: scatter (`example.html`), line (`line.html`), spectrogram (`spectrogram.html`)
 
-**Phase 2 (Data Infrastructure) — PENDING**
-- ⏳ F16: Rolling ring buffer DataStore
-- ⏳ F15: Lazy PlotDataView (filtering, histogram, shared views)
-- ⏳ F14: ROI versioning + serialization + external sync
-- ⏳ F17: Multi-plot shared DataStore/DataView + SharedDataExample
-- ⏳ F18: External integration adapter contracts + mock implementations + README guide
+**Phase 2 (Data Infrastructure) — COMPLETE ✅**
+- ✅ F16: Rolling ring buffer DataStore
+- ✅ F15: Lazy PlotDataView (filtering, histogram, shared views)
+- ✅ F14: ROI versioning + serialization + external sync
+- ✅ F17: Multi-plot shared DataStore/DataView + SharedDataExample
+- ✅ F18: External integration adapter contracts + mock implementations + README guide
+
+**Phase 3 (Engine Features + Seismography) — ACTIVE**
+- ⏳ F19: Cascading ROI Update + Conditional Child Versioning
+- ⏳ F20: LineROI (Vertical/Horizontal + Half Variants + Labels)
+- ⏳ F21: Axis Drag Scaling (Midpoint Zoom)
+- ⏳ EX4: Scatter Performance Dropdown (10k–10M points)
+- ⏳ EX5: Geophysics / Seismography Example
 
