@@ -2,12 +2,20 @@
  * SeismographyExample — EX5: 10 stacked seismograph channels.
  *
  * Architecture:
- *   10 PlotControllers, each backed by its own DataStore and independent Y-axis.
+ *   10 LinePlotControllers, each with its own independent Y-axis.
  *   X-axis domain is shared: panning/zooming on any channel propagates to all
- *   others via domainChanged → xAxis.setDomain() (no engine changes required).
+ *   others via zoomChanged/panChanged → xAxis.setDomain() (no syncingRef needed;
+ *   these events only fire from user interaction, not from programmatic setDomain).
  *
  *   Each channel has a pre-seeded vline-half-bottom LineROI representing a
  *   P-wave pick.  Picks are draggable and labelled on the canvas overlay.
+ *
+ *   A separate ROIController is created per channel and attached to the same
+ *   webgl canvas.  LinePlotController._onMouseDown is patched to yield to ROI
+ *   hit-tests so that clicking on a pick drags it instead of panning the plot.
+ *
+ *   AxisRenderer.render() is monkey-patched to forward ROIs so LineROI labels
+ *   are drawn on the 2D canvas overlay.
  *
  * Sidebar table (React):
  *   Columns: Station | Label | Pos (s)
@@ -22,21 +30,97 @@
  */
 
 import { useRef, useEffect, useState } from 'react';
-import PlotCanvas from '../src/components/PlotCanvas.jsx';
-import { DataStore } from '../src/plot/DataStore.js';
-import { LineROI } from '../src/plot/ROI/LineROI.js';
+import { LinePlotController } from '../src/plot/LinePlotController.js';
+import { ROIController }      from '../src/plot/ROI/ROIController.js';
+import { LineROI }            from '../src/plot/ROI/LineROI.js';
+
+// ── ROI canvas renderer ───────────────────────────────────────────────────────
+//
+// LinePlotController has no ROILayer — it only renders PathLayer signal data.
+// We draw ROI geometry on the 2D axis canvas overlay instead, in three passes:
+//   1. origRender([])  — clear + ticks/border, no labels
+//   2. _drawROILines   — colored line + selection handle
+//   3. _renderLineROILabels — text label on top of the line
+//
+// Passing [] to origRender suppresses label drawing so labels can be re-drawn
+// after the lines, keeping the correct z-order.
+
+function _drawROILines(ctx, rois, viewport) {
+  const pa = viewport.plotArea;
+
+  for (const roi of rois) {
+    if (!roi.flags.visible) continue;
+    if (roi.type !== 'lineROI') continue;
+
+    ctx.save();
+    const alpha = roi.selected ? 0.94 : 0.70;
+    ctx.strokeStyle = `rgba(255,80,80,${alpha})`;
+    ctx.lineWidth   = roi.selected ? 2 : 1.5;
+    ctx.beginPath();
+
+    if (roi.orientation === 'vertical') {
+      const sx = viewport.dataXToScreen(roi.position);
+      if (sx < pa.x || sx > pa.x + pa.width) { ctx.restore(); continue; }
+      const midY = pa.y + pa.height / 2;
+
+      if (roi.mode === 'vline-half-top') {
+        ctx.moveTo(sx, midY); ctx.lineTo(sx, pa.y);
+      } else if (roi.mode === 'vline-half-bottom') {
+        ctx.moveTo(sx, pa.y + pa.height); ctx.lineTo(sx, midY);
+      } else {
+        ctx.moveTo(sx, pa.y); ctx.lineTo(sx, pa.y + pa.height);
+      }
+    } else {
+      const sy = viewport.dataYToScreen(roi.position);
+      if (sy < pa.y || sy > pa.y + pa.height) { ctx.restore(); continue; }
+      const midX = pa.x + pa.width / 2;
+
+      if (roi.mode === 'hline-half-left') {
+        ctx.moveTo(pa.x, sy); ctx.lineTo(midX, sy);
+      } else if (roi.mode === 'hline-half-right') {
+        ctx.moveTo(midX, sy); ctx.lineTo(pa.x + pa.width, sy);
+      } else {
+        ctx.moveTo(pa.x, sy); ctx.lineTo(pa.x + pa.width, sy);
+      }
+    }
+    ctx.stroke();
+
+    // Selection handle: midpoint dot
+    if (roi.selected) {
+      const hx = roi.orientation === 'vertical'
+        ? viewport.dataXToScreen(roi.position)
+        : pa.x + pa.width / 2;
+      const hy = roi.orientation === 'vertical'
+        ? pa.y + pa.height / 2
+        : viewport.dataYToScreen(roi.position);
+
+      ctx.fillStyle   = 'rgba(255,255,255,0.87)';
+      ctx.lineWidth   = 1;
+      ctx.strokeStyle = 'rgba(0,0,0,1)';
+      ctx.beginPath();
+      ctx.arc(hx, hy, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+}
 
 // ── Config ─────────────────────────────────────────────────────────────────────
 
-const NUM_PLOTS      = 10;
-const NUM_POINTS     = 2000;
-const T_MAX          = 10;          // seconds
-const Y_DOMAIN       = [-1.5, 1.5]; // each channel independent, fixed amplitude
+const NUM_PLOTS      = 50;
+const SAMPLE_RATE    = 40;
+const T_MAX          = 300;
+const NUM_POINTS     = T_MAX * SAMPLE_RATE;
+const Y_DOMAIN       = [-1.5, 1.5];
 
-const STATION_NAMES = ['ST01','ST02','ST03','ST04','ST05','ST06','ST07','ST08','ST09','ST10'];
+const STATION_NAMES = Array.from({length: NUM_PLOTS},(_, i) =>'ST'+String(i).padStart(3,'0'));
+
 
 // Distinct frequency per channel (Hz)
-const FREQS  = [0.50, 0.65, 0.80, 0.95, 1.10, 1.25, 1.40, 1.55, 1.70, 1.85];
+const FREQS  = Array.from({length: NUM_PLOTS},(_, i) => 0.5+i*.0015);
+
 // Phase offset per channel (radians)
 const PHASES = Array.from({ length: NUM_PLOTS }, (_, i) => i * (Math.PI / 5));
 
@@ -54,77 +138,38 @@ const COLORS = [
   [140,  80, 240],
 ];
 
-// ── Data generation ────────────────────────────────────────────────────────────
-
-function generateSignal(i) {
-  const dt    = T_MAX / NUM_POINTS;
-  const freq  = FREQS[i];
-  const phase = PHASES[i];
-  const [r, g, b] = COLORS[i];
-
-  const x     = new Float32Array(NUM_POINTS);
-  const y     = new Float32Array(NUM_POINTS);
-  const size  = new Float32Array(NUM_POINTS);
-  const color = new Uint8Array(NUM_POINTS * 4);
-
-  for (let j = 0; j < NUM_POINTS; j++) {
-    const t = j * dt;
-    x[j]          = t;
-    y[j]          = Math.sin(2 * Math.PI * freq * t + phase);
-    size[j]       = 1.5;
-    color[j * 4]     = r;
-    color[j * 4 + 1] = g;
-    color[j * 4 + 2] = b;
-    color[j * 4 + 3] = 220;
-  }
-
-  return { x, y, size, color };
-}
-
-// ── Module-level DataStores (survive React re-renders; reset on unmount) ───────
-
-let _stores = null;
-
-function getStores() {
-  if (!_stores) {
-    _stores = Array.from({ length: NUM_PLOTS }, (_, i) => {
-      const store = new DataStore();
-      store.appendData(generateSignal(i));
-      return store;
-    });
-  }
-  return _stores;
-}
-
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function SeismographyExample() {
-  // Controller refs — never held in React state (no geometry in React)
-  const ctrlsRef   = useRef(new Array(NUM_PLOTS).fill(null));
-  const initCount  = useRef(0);
-  const syncingRef = useRef(false);
+  // Canvas refs — filled by callback refs in JSX
+  const webglRefs   = useRef(new Array(NUM_PLOTS).fill(null));
+  const axisRefs    = useRef(new Array(NUM_PLOTS).fill(null));
+
+  // Controller refs — never held in React state
+  const linCtrlsRef = useRef(new Array(NUM_PLOTS).fill(null));
+  const roiCtrlsRef = useRef(new Array(NUM_PLOTS).fill(null));
 
   // React table state — lightweight display cache; geometry lives in ROI objects
   const [tableRows, setTableRows] = useState([]);
 
-  const stores = getStores();
-
-  // ── Post-init: seed LineROIs once all 10 controllers are ready ──────────────
+  // ── Post-init: seed LineROIs once all controllers are ready ──────────────────
 
   function _onAllReady() {
     const initialRows = [];
 
-    ctrlsRef.current.forEach((ctrl, j) => {
+    roiCtrlsRef.current.forEach((roiCtrl, j) => {
+      if (!roiCtrl) return;
+
       const roi = new LineROI({
         orientation: 'vertical',
         mode:        'vline-half-bottom',
-        position:    T_MAX / 2,       // start at midpoint
+        position:    T_MAX / 2,
         label:       STATION_NAMES[j],
       });
       roi.bumpVersion();
-      ctrl.roiController.addROI(roi);
+      roiCtrl.addROI(roi);
       roi.onCreate();
-      ctrl.roiController.emit('roisChanged', { rois: ctrl.roiController.getAllROIs() });
+      roiCtrl.emit('roisChanged', { rois: roiCtrl.getAllROIs() });
 
       initialRows.push({
         plotIndex: j,
@@ -138,58 +183,137 @@ export default function SeismographyExample() {
     setTableRows(initialRows);
   }
 
-  // ── Stable onInit callbacks (created once; each closes over its index i) ────
-  //
-  // PlotCanvas calls onInit exactly once (inside useEffect with [] deps).
-  // We create these before any render so they reference stable refs.
+  // ── Initialization ────────────────────────────────────────────────────────────
 
-  const onInitFns = useRef(null);
-  if (!onInitFns.current) {
-    onInitFns.current = Array.from({ length: NUM_PLOTS }, (_, i) => (ctrl) => {
-      ctrlsRef.current[i] = ctrl;
+  useEffect(() => {
+    let rafId;
 
-      // ── Shared X-domain: propagate domainChanged to all other controllers ──
-      // AxisController.setDomain() → PlotController's wired listener runs
-      // _updateScales() + _dirty=true automatically.
-      ctrl.on('domainChanged', ({ xDomain }) => {
-        if (syncingRef.current || !xDomain) return;
-        syncingRef.current = true;
-        ctrlsRef.current.forEach((other, j) => {
-          if (j === i || !other) return;
-          other.xAxis.setDomain(xDomain);
+    function initAll() {
+      for (let i = 0; i < NUM_PLOTS; i++) {
+        const wc = webglRefs.current[i];
+        const ac = axisRefs.current[i];
+        if (!wc || !ac) continue;
+
+        // Size canvases to match their layout dimensions
+        wc.width  = wc.offsetWidth  || 800;
+        wc.height = wc.offsetHeight || 160;
+        ac.width  = wc.width;
+        ac.height = wc.height;
+
+        const [r, g, b] = COLORS[1];
+
+        // LinePlotController — renders connected PathLayer lines
+        const ctrl = new LinePlotController({
+          xDomain: [0, T_MAX],
+          yDomain: Y_DOMAIN,
+          xLabel:  i === NUM_PLOTS - 1 ? 'Time (s)' : '',
+          yLabel:  '',
         });
-        syncingRef.current = false;
-      });
 
-      // ── Table refresh on user drag commit ──────────────────────────────────
-      ctrl.roiController.on('roiFinalized', ({ roi }) => {
-        if (roi.type !== 'lineROI') return;
-        setTableRows(prev => prev.map(row =>
-          row.plotIndex === i
-            ? { ...row, label: roi.label ?? '', position: roi.position, version: roi.version }
-            : row
-        ));
-      });
+        ctrl.addSignal('s', [r, g, b, 220]);
 
-      initCount.current += 1;
-      if (initCount.current === NUM_PLOTS) {
-        _onAllReady();
+        // Build signal path directly (x = fractional seconds, not integer indices).
+        // appendSignalData uses xBase+i which would give integer x; building the
+        // path directly gives exact time coordinates.
+        const sig = ctrl._signals.get('s');
+        const dt  = 1 / SAMPLE_RATE;
+        for (let j = 0; j < NUM_POINTS; j++) {
+          const t = j * dt;
+          sig.path.push([t, Math.sin(2 * Math.PI * FREQS[i] * t + PHASES[i]), 0]);
+        }
+        sig.layerData = [{ path: sig.path, color: sig.color }];
+        sig.version++;
+
+        ctrl.init(wc, ac);
+
+        // ROIController — shares the same webgl canvas as LinePlotController
+        const roiCtrl = new ROIController(ctrl._viewport);
+        roiCtrl.init(wc);
+
+        // Patch LinePlotController._onMouseDown to yield to ROI hit-tests.
+        // Without this patch, clicking on a pick would simultaneously start a
+        // pan on the plot.  We remove the original listener, update the stored
+        // reference (so destroy() removes the right handler), and re-add.
+        wc.removeEventListener('mousedown', ctrl._onMouseDown);
+        const origDown = ctrl._onMouseDown;
+        ctrl._onMouseDown = (e) => {
+          if (e.button === 0) {
+            if (roiCtrl._mode !== 'idle') return;  // ROI creation takes priority
+            const pos = ctrl._viewport.getCanvasPosition(e, wc);
+            if (ctrl._viewport.isInPlotArea(pos.x, pos.y) &&
+                roiCtrl._hitTest(pos.x, pos.y)) return;  // ROI drag takes priority
+          }
+          origDown(e);
+        };
+        wc.addEventListener('mousedown', ctrl._onMouseDown);
+
+        // Patch AxisRenderer.render() to draw ROI lines + labels on the 2D canvas.
+        // Three-pass order: ticks/border → ROI lines → ROI labels (correct z-order).
+        // origRender([]) draws ticks without labels; we then draw lines, then labels.
+        const ar = ctrl._axisRenderer;
+        const origRender = ar.render.bind(ar);
+        ar.render = () => {
+          const rois = roiCtrl.getAllROIs();
+          origRender([]);                                          // clear + ticks, no labels
+          _drawROILines(ar._ctx, rois, ar._viewport);             // colored lines + handles
+          ar._renderLineROILabels(ar._ctx, rois, ar._viewport.plotArea); // labels on top
+        };
+
+        // ROI geometry change → schedule WebGL re-render
+        roiCtrl.on('roisChanged', () => { ctrl._dirty = true; });
+
+        // Shared X-domain: propagate user-driven zoom/pan to all other channels.
+        // zoomChanged/panChanged only fire from user wheel/drag interaction,
+        // never from programmatic setDomain() calls — no infinite loop risk.
+        const syncX = () => {
+          const xd = ctrl._xAxis.getDomain();
+          linCtrlsRef.current.forEach((other, j) => {
+            if (j !== i && other) other._xAxis.setDomain(xd);
+          });
+        };
+        ctrl.on('zoomChanged', syncX);
+        ctrl.on('panChanged',  syncX);
+
+        // Table refresh on user drag commit
+        roiCtrl.on('roiFinalized', ({ roi }) => {
+          if (roi.type !== 'lineROI') return;
+          setTableRows(prev => prev.map(row =>
+            row.plotIndex === i
+              ? { ...row, label: roi.label ?? '', position: roi.position, version: roi.version }
+              : row
+          ));
+        });
+
+        linCtrlsRef.current[i] = ctrl;
+        roiCtrlsRef.current[i] = roiCtrl;
       }
-    });
-  }
+
+      _onAllReady();
+    }
+
+    rafId = requestAnimationFrame(initAll);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      linCtrlsRef.current.forEach(ctrl => ctrl?.destroy());
+      roiCtrlsRef.current.forEach(rc   => rc?.destroy());
+      linCtrlsRef.current.fill(null);
+      roiCtrlsRef.current.fill(null);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Edit handlers ────────────────────────────────────────────────────────────
 
   function handleLabelCommit(plotIndex, newLabel) {
-    const ctrl = ctrlsRef.current[plotIndex];
-    if (!ctrl) return;
+    const roiCtrl = roiCtrlsRef.current[plotIndex];
+    if (!roiCtrl) return;
     const row = tableRows.find(r => r.plotIndex === plotIndex);
     if (!row) return;
-    const roi = ctrl.roiController.getROI(row.roiId);
+    const roi = roiCtrl.getROI(row.roiId);
     if (!roi) return;
 
     const truncated = String(newLabel).slice(0, 25);
-    const accepted  = ctrl.roiController.updateFromExternal({
+    const accepted  = roiCtrl.updateFromExternal({
       ...roi.serialize(),
       label:     truncated,
       version:   roi.version + 1,
@@ -204,18 +328,18 @@ export default function SeismographyExample() {
   }
 
   function handlePositionCommit(plotIndex, newPosStr) {
-    const ctrl = ctrlsRef.current[plotIndex];
-    if (!ctrl) return;
+    const roiCtrl = roiCtrlsRef.current[plotIndex];
+    if (!roiCtrl) return;
     const row = tableRows.find(r => r.plotIndex === plotIndex);
     if (!row) return;
-    const roi = ctrl.roiController.getROI(row.roiId);
+    const roi = roiCtrl.getROI(row.roiId);
     if (!roi) return;
 
     const newPos  = parseFloat(newPosStr);
     if (isNaN(newPos)) return;
     const clamped = Math.max(0, Math.min(T_MAX, newPos));
 
-    const accepted = ctrl.roiController.updateFromExternal({
+    const accepted = roiCtrl.updateFromExternal({
       ...roi.serialize(),
       position:  clamped,
       domain:    { x: [clamped, clamped] },
@@ -229,17 +353,6 @@ export default function SeismographyExample() {
       ));
     }
   }
-
-  // ── Cleanup ───────────────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    return () => {
-      _stores = null;
-      initCount.current = 0;
-      ctrlsRef.current.fill(null);
-      onInitFns.current = null;
-    };
-  }, []);
 
   // ── Styles ────────────────────────────────────────────────────────────────────
 
@@ -257,11 +370,12 @@ export default function SeismographyExample() {
     title: { fontSize: 14, fontWeight: 700, color: '#7df' },
     hint:  { fontSize: 11, color: '#555' },
     body:  { display: 'flex', flex: 1, overflow: 'hidden' },
-    plots: { flex: 1, display: 'flex', flexDirection: 'column' },
+    plots: { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' },
     plotWrap: {
-      flex: 1, position: 'relative', minHeight: 0,
+      flexShrink: 0, position: 'relative', height: 160,
       borderBottom: '1px solid #161616',
     },
+    canvas: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' },
     stationTag: {
       position: 'absolute', top: 2, left: 8, zIndex: 10,
       fontSize: 10, pointerEvents: 'none',
@@ -309,32 +423,30 @@ export default function SeismographyExample() {
       <div style={S.header}>
         <span style={S.title}>Seismography</span>
         <span style={S.hint}>
-          10 stacked channels · shared X-axis · V = add vline · drag pick to move
+          50 stacked channels · shared X-axis · V = add vline · drag pick to move
         </span>
         <span style={{ marginLeft: 'auto', ...S.hint }}>
-          scroll=zoom&nbsp;&nbsp;drag=pan&nbsp;&nbsp;right-drag=zoom
+          scroll=zoom&nbsp;&nbsp;drag=pan
         </span>
       </div>
 
       {/* ── Body: stacked plots + sidebar table ── */}
       <div style={S.body}>
 
-        {/* 10 stacked PlotCanvas instances */}
+        {/* 10 stacked LinePlotController instances */}
         <div style={S.plots}>
           {Array.from({ length: NUM_PLOTS }, (_, i) => (
             <div key={i} style={S.plotWrap}>
-              <div style={{ ...S.stationTag, color: `rgb(${COLORS[i].join(',')})` }}>
+              <div style={{ ...S.stationTag, color: `rgb(${COLORS[0].join(',')})` }}>
                 {STATION_NAMES[i]}
               </div>
-              <PlotCanvas
-                width="100%"
-                height="100%"
-                xDomain={[0, T_MAX]}
-                yDomain={Y_DOMAIN}
-                xLabel={i === NUM_PLOTS - 1 ? 'Time (s)' : ''}
-                yLabel=""
-                dataStore={stores[i]}
-                onInit={onInitFns.current[i]}
+              <canvas
+                ref={el => { webglRefs.current[i] = el; }}
+                style={S.canvas}
+              />
+              <canvas
+                ref={el => { axisRefs.current[i] = el; }}
+                style={{ ...S.canvas, pointerEvents: 'none' }}
               />
             </div>
           ))}
@@ -357,7 +469,7 @@ export default function SeismographyExample() {
                   // key includes version so inputs re-mount with fresh defaultValue
                   // when the user drags the pick on the plot
                   <tr key={`${row.plotIndex}-${row.version}`}>
-                    <td style={{ ...S.td, color: `rgb(${COLORS[row.plotIndex].join(',')})`, fontWeight: 700 }}>
+                    <td style={{ ...S.td, color: `rgb(${COLORS[0].join(',')})`, fontWeight: 700 }}>
                       {STATION_NAMES[row.plotIndex]}
                     </td>
                     <td style={S.td}>

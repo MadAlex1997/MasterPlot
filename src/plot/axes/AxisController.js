@@ -140,6 +140,35 @@ export class AxisController extends EventEmitter {
   }
 
   /**
+   * Zoom the domain centered on its midpoint.
+   * factor > 1 = zoom in (domain shrinks), factor < 1 = zoom out.
+   *
+   * Used by axis drag scaling (F21): user drags on the axis gutter rather
+   * than inside the plot, so there is no meaningful focal data point —
+   * the midpoint is the natural anchor.
+   *
+   * @param {number} factor
+   */
+  scaleDomainFromMidpoint(factor) {
+    const [min, max] = this._domain;
+
+    if (this.scaleType === 'log') {
+      const logMin  = Math.log10(Math.max(min, 1e-10));
+      const logMax  = Math.log10(Math.max(max, 1e-10));
+      const logMid  = (logMin + logMax) / 2;
+      const newHalf = (logMax - logMin) / (2 * factor);
+      this.setDomain([
+        Math.pow(10, logMid - newHalf),
+        Math.pow(10, logMid + newHalf),
+      ]);
+    } else {
+      const mid     = (min + max) / 2;
+      const newHalf = (max - min) / (2 * factor);
+      this.setDomain([mid - newHalf, mid + newHalf]);
+    }
+  }
+
+  /**
    * Shift the domain by a pixel delta (pan).
    * @param {number} pixelDelta — positive = right/down
    */

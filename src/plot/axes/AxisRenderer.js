@@ -95,6 +95,34 @@ export class AxisRenderer {
     ctx.restore();
   }
 
+  // ─── Axis hit-test (F21) ─────────────────────────────────────────────────────
+
+  /**
+   * Determine whether a canvas pixel position falls inside an axis gutter.
+   *
+   * X-axis gutter: below the plot bottom edge, within the plot's x extent.
+   * Y-axis gutter: left of the plot left edge, within the plot's y extent.
+   *
+   * @param {number} px — canvas pixel x
+   * @param {number} py — canvas pixel y
+   * @returns {'x'|'y'|null}
+   */
+  getAxisHit(px, py) {
+    const { plotArea: pa } = this._viewport;
+
+    // X-axis gutter — below plot area, horizontally within plot
+    if (py > pa.y + pa.height && px >= pa.x && px <= pa.x + pa.width) {
+      return 'x';
+    }
+
+    // Y-axis gutter — left of plot area, vertically within plot
+    if (px < pa.x && py >= pa.y && py <= pa.y + pa.height) {
+      return 'y';
+    }
+
+    return null;
+  }
+
   // ─── Private ─────────────────────────────────────────────────────────────────
 
   _clear() {

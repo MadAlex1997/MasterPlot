@@ -111,6 +111,11 @@ export class PlotController extends EventEmitter {
     this._rightDragStart  = null;  // { x, y, xDomain, yDomain }
     this._onContextMenu   = e => e.preventDefault();
 
+    // F21: axis drag zoom state
+    this._isAxisDragging = false;
+    this._axisDragAxis   = null;   // 'x' | 'y'
+    this._axisDragStart  = null;   // { x, y, xDomain, yDomain }
+
     // Bound event handlers for cleanup
     this._onWheel      = this._onWheel.bind(this);
     this._onMouseDown  = this._onMouseDown.bind(this);
@@ -532,14 +537,32 @@ export class PlotController extends EventEmitter {
     if (e.button === 2) { this._handleRightDown(e); return; }
 
     if (e.button !== 0) return;
+
+    const pos = this._viewport.getCanvasPosition(e, this._webglCanvas);
+
+    // F21: axis drag — must be checked before ROI / plot-area guards because
+    // axis gutters are outside the plot area.
+    if (this._axisRenderer && this._roiController._mode === 'idle') {
+      const axisHit = this._axisRenderer.getAxisHit(pos.x, pos.y);
+      if (axisHit) {
+        this._isAxisDragging = true;
+        this._axisDragAxis   = axisHit;
+        this._axisDragStart  = {
+          x: pos.x, y: pos.y,
+          xDomain: this._xAxis.getDomain(),
+          yDomain: this._yAxis.getDomain(),
+        };
+        return;
+      }
+    }
+
     if (this._roiController._mode !== 'idle') return; // ROI creation takes priority
     if (this._roiController._hitTest) {
       // Check if ROIController will handle this event
-      const { x: screenX, y: screenY } = this._viewport.getCanvasPosition(e, this._webglCanvas);
+      const { x: screenX, y: screenY } = { x: pos.x, y: pos.y };
       if (this._roiController._hitTest(screenX, screenY)) return;
     }
 
-    const pos = this._viewport.getCanvasPosition(e, this._webglCanvas);
     if (!this._viewport.isInPlotArea(pos.x, pos.y)) return;
 
     this._isPanning = true;
@@ -556,6 +579,9 @@ export class PlotController extends EventEmitter {
   _onMouseMove(e) {
     // F6: handle right-click drag zoom (independent of left-click pan)
     if (this._isRightDragging) { this._handleRightMove(e); }
+
+    // F21: axis drag zoom — mutually exclusive with plot pan
+    if (this._isAxisDragging) { this._handleAxisDragMove(e); return; }
 
     if (!this._isPanning || !this._panStart) return;
 
@@ -583,6 +609,12 @@ export class PlotController extends EventEmitter {
     if (e.button === 2 && this._isRightDragging) {
       this._isRightDragging = false;
       this._rightDragStart  = null;
+    }
+    // F21: clear axis drag zoom state
+    if (this._isAxisDragging) {
+      this._isAxisDragging = false;
+      this._axisDragAxis   = null;
+      this._axisDragStart  = null;
     }
     if (this._isPanning) {
       this._isPanning     = false;
@@ -622,6 +654,38 @@ export class PlotController extends EventEmitter {
     this._updateScales();
     this._dirty = true;
     this.emit('zoomChanged', { factor, focalDataX, focalDataY });
+  }
+
+  // F21: axis drag — zoom axis domain centered on its midpoint
+  _handleAxisDragMove(e) {
+    if (!this._axisDragStart || !this._axisDragAxis) return;
+
+    const pos = this._viewport.getCanvasPosition(e, this._webglCanvas);
+    const dx  = pos.x - this._axisDragStart.x;
+    const dy  = pos.y - this._axisDragStart.y;
+
+    // Sign convention (matches spec table):
+    //   X axis — drag left  (dx < 0) → zoom in  (factor > 1)
+    //   Y axis — drag down  (dy > 0) → zoom in  (factor > 1)
+    const SENSITIVITY = 0.01;
+    const axis        = this._axisDragAxis;
+    const delta       = axis === 'x' ? -dx : dy;
+    const zoomFactor  = Math.exp(delta * SENSITIVITY);
+
+    // Restore initial domains before re-applying to prevent float drift
+    this._xAxis.setDomain(this._axisDragStart.xDomain);
+    this._yAxis.setDomain(this._axisDragStart.yDomain);
+    this._updateScales();
+
+    if (axis === 'x') {
+      this._xAxis.scaleDomainFromMidpoint(zoomFactor);
+    } else {
+      this._yAxis.scaleDomainFromMidpoint(zoomFactor);
+    }
+
+    this._updateScales();
+    this._dirty = true;
+    this.emit('zoomChanged', { factor: zoomFactor, axis });
   }
 
   _onResize() {
