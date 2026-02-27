@@ -104,14 +104,75 @@ export default function ExampleApp() {
     }
   }, []); // stable: reads only from refs
 
+  // ── EX6: ROI clicked on plot → sync table selection ─────────────────────────
+  const handleROISelectedOnPlot = useCallback(({ roi }) => {
+    if (!roi) return;
+    const rc = roiControllerRef.current;
+
+    if (roi.type === 'linearRegion') {
+      selectedLinearIdRef.current = roi.id;
+      setSelectedLinearId(roi.id);
+      plotSelectedLinearIdRef.current = roi.id;
+      setPlotSelectedLinearId(roi.id);
+      plotSelectedRectIdRef.current = null;
+      setPlotSelectedRectId(null);
+      if (rc) {
+        const all = rc.serializeAll();
+        const sel = all.find(l => l.id === roi.id);
+        if (sel) setChildRects(all.filter(r => r.type === 'rect' && xOverlaps(r.domain.x, sel.domain.x)));
+      }
+    } else if (roi.type === 'rect') {
+      const parentId = roi.parent?.id ?? null;
+      plotSelectedRectIdRef.current = roi.id;
+      setPlotSelectedRectId(roi.id);
+      plotSelectedLinearIdRef.current = parentId;
+      setPlotSelectedLinearId(parentId);
+      if (parentId) {
+        selectedLinearIdRef.current = parentId;
+        setSelectedLinearId(parentId);
+        if (rc) {
+          const all = rc.serializeAll();
+          const parentSer = all.find(l => l.id === parentId);
+          if (parentSer) setChildRects(all.filter(r => r.type === 'rect' && xOverlaps(r.domain.x, parentSer.domain.x)));
+        }
+      }
+    } else if (roi.type === 'lineROI') {
+      // Highlight parent LinearRegion in table if present
+      const parentId = roi.parent?.id ?? null;
+      plotSelectedLinearIdRef.current = parentId;
+      setPlotSelectedLinearId(parentId);
+      plotSelectedRectIdRef.current = null;
+      setPlotSelectedRectId(null);
+      if (parentId) {
+        selectedLinearIdRef.current = parentId;
+        setSelectedLinearId(parentId);
+        if (rc) {
+          const all = rc.serializeAll();
+          const parentSer = all.find(l => l.id === parentId);
+          if (parentSer) setChildRects(all.filter(r => r.type === 'rect' && xOverlaps(r.domain.x, parentSer.domain.x)));
+        }
+      }
+    }
+  }, []); // stable: reads only refs + stable setters
+
+  // ── EX6: click empty space on plot → clear plot-selection highlights ─────────
+  const handleROIDeselectedOnPlot = useCallback(() => {
+    plotSelectedLinearIdRef.current = null;
+    setPlotSelectedLinearId(null);
+    plotSelectedRectIdRef.current = null;
+    setPlotSelectedRectId(null);
+  }, []);
+
   // ── EX1: onInit — subscribe to roiController after controller is ready ──────
   const handlePlotInit = useCallback((controller) => {
     roiControllerRef.current = controller.roiController;
     const rc = controller.roiController;
-    rc.on('roiCreated',  refreshROITables);
+    rc.on('roiCreated',   refreshROITables);
     rc.on('roiFinalized', refreshROITables);
-    rc.on('roiDeleted',  refreshROITables);
-  }, [refreshROITables]);
+    rc.on('roiDeleted',   refreshROITables);
+    rc.on('roiSelected',   handleROISelectedOnPlot);
+    rc.on('roiDeselected', handleROIDeselectedOnPlot);
+  }, [refreshROITables, handleROISelectedOnPlot, handleROIDeselectedOnPlot]);
 
   // ── EX1: select/deselect a linear region row ─────────────────────────────────
   const handleSelectLinear = (id) => {
