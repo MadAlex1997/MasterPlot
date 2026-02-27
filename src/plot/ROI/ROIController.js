@@ -135,12 +135,14 @@ export class ROIController extends EventEmitter {
    * @returns {{ id, type, version, updatedAt, domain, metadata }[]}
    */
   serializeAll() {
-    return this.getAllROIs().map(roi =>
-      typeof roi.serialize === 'function'
+    return this.getAllROIs().map(roi => {
+      const s = typeof roi.serialize === 'function'
         ? roi.serialize()
         : { id: roi.id, type: roi.type, version: roi.version,
-            updatedAt: roi.updatedAt, domain: roi.domain, metadata: roi.metadata }
-    );
+            updatedAt: roi.updatedAt, domain: roi.domain, metadata: roi.metadata };
+      s.parentId = roi.parent?.id ?? null;
+      return s;
+    });
   }
 
   /**

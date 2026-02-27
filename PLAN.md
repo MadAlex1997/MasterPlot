@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 4.2
-**Last Updated:** 2026-02-25
-**Status:** All Phase 1, Phase 2, example improvements (EX1–EX3), F19/F20/F21, and EX5 done. EX4 pending.
+**Plan Version:** 4.4
+**Last Updated:** 2026-02-26
+**Status:** All Phase 1, Phase 2, Phase 3 complete. F19/F20/F21/EX4/EX5/EX6 all done.
 
 ---
 
@@ -77,6 +77,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | F21 | Axis Drag Scaling (Midpoint Zoom) | ✅ COMPLETED | feature/F20 | 2026-02-24 |
 | EX4 | Scatter Performance Dropdown | ⏳ PENDING | — | — |
 | EX5 | Geophysics / Seismography Example | ✅ COMPLETED | feature/EX5 | 2026-02-25 |
+| EX6 | ROI Table Double-Click Selection | ✅ COMPLETED | feature/EX6 | 2026-02-26 |
 
 ---
 
@@ -246,6 +247,8 @@ Full spec: [docs/plan-archive.md#f18](docs/plan-archive.md#f18)
 - **2026-02-24 [Claude]**: F20 completed (v4.0) — `LineROI` (6 modes, optional label, half-variant canvas labels, auto-parent to LinearRegion); V/H keys; `_syncPosition` hook in ConstraintEngine; `ROILayer` LineROI rendering via PathLayer + plotXMin/plotXMax props; `AxisRenderer.render(rois)` + `_renderLineROILabels`; `PlotController` passes rois to axisRenderer and xMin/xMax to ROILayer; `ROIController.serializeAll` calls `roi.serialize()`; `updateFromExternal` handles LineROI. Next: F21.
 - **2026-02-24 [Claude]**: F21 completed (v4.1) — `AxisController.scaleDomainFromMidpoint(factor)` (linear+log); `AxisRenderer.getAxisHit(px,py)`; `PlotController` axis drag state + `_handleAxisDragMove` (restore-and-reapply, sensitivity=0.01, X:left=zoom-in, Y:down=zoom-in); emits `zoomChanged`. Next: EX4.
 - **2026-02-25 [Claude]**: EX5 completed (v4.2) — `SeismographyExample.jsx` (10 stacked PlotCanvas, shared X via domainChanged cross-propagation, one vline-half-bottom LineROI per channel, React table with version-gated label/position edits); webpack + HubPage + README updated. EX4 still pending.
+- **2026-02-26 [Claude]**: EX6 added as PENDING (v4.3) — ROI Table Double-Click Selection; ExampleApp.jsx only; adds `onDoubleClick` to `<tr>` rows to programmatically select ROIs on plot + auto-select parent LinearRegion from RectROI row; requires adding `parentId` to `serializeAll()` output. No engine changes otherwise.
+- **2026-02-26 [Claude]**: EX6 completed (v4.4) — `serializeAll()` enriched with `parentId`; `ExampleApp.jsx` gains double-click handlers + `plotSelectedLinearId`/`plotSelectedRectId` state; green outline on double-clicked LinearRegion rows, red outline on double-clicked RectROI rows; single-click filter unchanged. All Phase 3 features now complete.
 
 ---
 
@@ -348,3 +351,10 @@ No engine changes allowed.
 **Completed:** 2026-02-25 | **Branch:** feature/EX5
 10 stacked channels with shared X-axis (domainChanged cross-propagation), independent Y-axes, one vline-half-bottom LineROI per channel seeded after all 10 controllers are ready, and a React sidebar table with version-gated label/position edits via `updateFromExternal()`.
 Full spec: [docs/plan-archive.md#ex5](docs/plan-archive.md#ex5)
+
+---
+
+### EX6 [COMPLETED] ROI Table Double-Click Selection
+**Completed:** 2026-02-26 | **Branch:** feature/EX6
+`serializeAll()` enriched with `parentId`; `ExampleApp.jsx` gains `handleDoubleClickLinear` + `handleDoubleClickRect` handlers; double-clicking a LinearRegion row sets it as filter AND calls `rc._selectOnly(roi)` + emits `roisChanged` for a plot highlight (green outline on table row); double-clicking a RectROI row selects the rect on plot (red outline), auto-selects its parent LinearRegion in the filter, and highlights both rows.
+Full spec: [docs/plan-archive.md#ex6](docs/plan-archive.md#ex6)
