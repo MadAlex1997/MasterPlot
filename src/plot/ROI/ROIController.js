@@ -259,11 +259,13 @@ export class ROIController extends EventEmitter {
       case 'h':
         this.enterCreateMode('hline');
         break;
-      case 'd':
-        if (this._activeROI) {
-          this.deleteROI(this._activeROI.id);
-        }
+      case 'd': {
+        const target = this._activeROI
+          ?? [...this._rois.values()].find(r => r.selected)
+          ?? null;
+        if (target) this.deleteROI(target.id);
         break;
+      }
       case 'escape':
         this.cancelCreateMode();
         break;
