@@ -55,9 +55,15 @@ export default function ExampleApp() {
   const [selectedLinearId, setSelectedLinearId] = useState(null);
   const [childRects,      setChildRects]      = useState([]);
 
+  // ── EX6: plot-selection state (double-click highlights on plot) ─────────────
+  const [plotSelectedLinearId, setPlotSelectedLinearId] = useState(null);
+  const [plotSelectedRectId,   setPlotSelectedRectId]   = useState(null);
+
   // Refs to avoid stale closures in event handler callbacks
-  const roiControllerRef    = useRef(null);
-  const selectedLinearIdRef = useRef(null);
+  const roiControllerRef       = useRef(null);
+  const selectedLinearIdRef    = useRef(null);
+  const plotSelectedLinearIdRef = useRef(null);
+  const plotSelectedRectIdRef   = useRef(null);
 
   const addLog = (msg) => {
     setLog(prev => [msg, ...prev].slice(0, 20));
@@ -76,25 +82,97 @@ export default function ExampleApp() {
       const sel = linears.find(l => l.id === selId);
       if (sel) {
         setChildRects(all.filter(r => r.type === 'rect' && xOverlaps(r.domain.x, sel.domain.x)));
+        // EX6: clear plotSelectedRect if the rect was deleted
+        const pRectId = plotSelectedRectIdRef.current;
+        if (pRectId && !all.find(r => r.id === pRectId)) {
+          plotSelectedRectIdRef.current = null;
+          setPlotSelectedRectId(null);
+        }
       } else {
         // Selected linear was deleted — clear selection
         selectedLinearIdRef.current = null;
         setSelectedLinearId(null);
         setChildRects([]);
+        // EX6: clear plot-selected state if it pointed to the deleted linear
+        if (plotSelectedLinearIdRef.current === selId) {
+          plotSelectedLinearIdRef.current = null;
+          setPlotSelectedLinearId(null);
+        }
       }
     } else {
       setChildRects([]);
     }
   }, []); // stable: reads only from refs
 
+  // ── EX6: ROI clicked on plot → sync table selection ─────────────────────────
+  const handleROISelectedOnPlot = useCallback(({ roi }) => {
+    if (!roi) return;
+    const rc = roiControllerRef.current;
+
+    if (roi.type === 'linearRegion') {
+      selectedLinearIdRef.current = roi.id;
+      setSelectedLinearId(roi.id);
+      plotSelectedLinearIdRef.current = roi.id;
+      setPlotSelectedLinearId(roi.id);
+      plotSelectedRectIdRef.current = null;
+      setPlotSelectedRectId(null);
+      if (rc) {
+        const all = rc.serializeAll();
+        const sel = all.find(l => l.id === roi.id);
+        if (sel) setChildRects(all.filter(r => r.type === 'rect' && xOverlaps(r.domain.x, sel.domain.x)));
+      }
+    } else if (roi.type === 'rect') {
+      const parentId = roi.parent?.id ?? null;
+      plotSelectedRectIdRef.current = roi.id;
+      setPlotSelectedRectId(roi.id);
+      plotSelectedLinearIdRef.current = parentId;
+      setPlotSelectedLinearId(parentId);
+      if (parentId) {
+        selectedLinearIdRef.current = parentId;
+        setSelectedLinearId(parentId);
+        if (rc) {
+          const all = rc.serializeAll();
+          const parentSer = all.find(l => l.id === parentId);
+          if (parentSer) setChildRects(all.filter(r => r.type === 'rect' && xOverlaps(r.domain.x, parentSer.domain.x)));
+        }
+      }
+    } else if (roi.type === 'lineROI') {
+      // Highlight parent LinearRegion in table if present
+      const parentId = roi.parent?.id ?? null;
+      plotSelectedLinearIdRef.current = parentId;
+      setPlotSelectedLinearId(parentId);
+      plotSelectedRectIdRef.current = null;
+      setPlotSelectedRectId(null);
+      if (parentId) {
+        selectedLinearIdRef.current = parentId;
+        setSelectedLinearId(parentId);
+        if (rc) {
+          const all = rc.serializeAll();
+          const parentSer = all.find(l => l.id === parentId);
+          if (parentSer) setChildRects(all.filter(r => r.type === 'rect' && xOverlaps(r.domain.x, parentSer.domain.x)));
+        }
+      }
+    }
+  }, []); // stable: reads only refs + stable setters
+
+  // ── EX6: click empty space on plot → clear plot-selection highlights ─────────
+  const handleROIDeselectedOnPlot = useCallback(() => {
+    plotSelectedLinearIdRef.current = null;
+    setPlotSelectedLinearId(null);
+    plotSelectedRectIdRef.current = null;
+    setPlotSelectedRectId(null);
+  }, []);
+
   // ── EX1: onInit — subscribe to roiController after controller is ready ──────
   const handlePlotInit = useCallback((controller) => {
     roiControllerRef.current = controller.roiController;
     const rc = controller.roiController;
-    rc.on('roiCreated',  refreshROITables);
+    rc.on('roiCreated',   refreshROITables);
     rc.on('roiFinalized', refreshROITables);
-    rc.on('roiDeleted',  refreshROITables);
-  }, [refreshROITables]);
+    rc.on('roiDeleted',   refreshROITables);
+    rc.on('roiSelected',   handleROISelectedOnPlot);
+    rc.on('roiDeselected', handleROIDeselectedOnPlot);
+  }, [refreshROITables, handleROISelectedOnPlot, handleROIDeselectedOnPlot]);
 
   // ── EX1: select/deselect a linear region row ─────────────────────────────────
   const handleSelectLinear = (id) => {
@@ -114,6 +192,64 @@ export default function ExampleApp() {
       }
     }
     setChildRects([]);
+  };
+
+  // ── EX6: double-click a LinearRegion row → filter + highlight on plot ───────
+  const handleDoubleClickLinear = (id) => {
+    // Always set as active filter (never toggle on double-click)
+    selectedLinearIdRef.current = id;
+    setSelectedLinearId(id);
+
+    const rc = roiControllerRef.current;
+    if (!rc) return;
+    const all = rc.serializeAll();
+    const sel = all.find(l => l.id === id);
+    if (sel) {
+      setChildRects(all.filter(r => r.type === 'rect' && xOverlaps(r.domain.x, sel.domain.x)));
+    }
+
+    // Programmatically select on plot
+    const roi = rc.getROI(id);
+    if (roi) {
+      rc._selectOnly(roi);
+      rc.emit('roisChanged', { rois: rc.getAllROIs() });
+    }
+
+    // Update double-click highlight state
+    plotSelectedLinearIdRef.current = id;
+    setPlotSelectedLinearId(id);
+    plotSelectedRectIdRef.current = null;
+    setPlotSelectedRectId(null);
+  };
+
+  // ── EX6: double-click a RectROI row → highlight rect + auto-select parent ──
+  const handleDoubleClickRect = (id, parentId) => {
+    const rc = roiControllerRef.current;
+    if (!rc) return;
+
+    // Programmatically select the rect on plot
+    const roi = rc.getROI(id);
+    if (roi) {
+      rc._selectOnly(roi);
+      rc.emit('roisChanged', { rois: rc.getAllROIs() });
+    }
+
+    // Update double-click highlight state
+    plotSelectedRectIdRef.current = id;
+    setPlotSelectedRectId(id);
+    plotSelectedLinearIdRef.current = parentId ?? null;
+    setPlotSelectedLinearId(parentId ?? null);
+
+    // Auto-select parent linear in the table filter
+    if (parentId && parentId !== selectedLinearIdRef.current) {
+      selectedLinearIdRef.current = parentId;
+      setSelectedLinearId(parentId);
+      const all = rc.serializeAll();
+      const parentSer = all.find(l => l.id === parentId);
+      if (parentSer) {
+        setChildRects(all.filter(r => r.type === 'rect' && xOverlaps(r.domain.x, parentSer.domain.x)));
+      }
+    }
   };
 
   // Handle events from PlotController
@@ -425,7 +561,7 @@ export default function ExampleApp() {
           <div style={{ color: '#888', fontSize: 11, marginBottom: 4 }}>
             LinearRegions
             <span style={{ color: '#444', marginLeft: 8 }}>
-              {linearROIs.length === 0 ? '(none — press L to draw)' : `${linearROIs.length} total · click row to filter rects`}
+              {linearROIs.length === 0 ? '(none — press L to draw)' : `${linearROIs.length} total · click to filter · dbl-click to select on plot`}
             </span>
           </div>
           <table style={tableStyle}>
@@ -439,14 +575,18 @@ export default function ExampleApp() {
             </thead>
             <tbody>
               {linearROIs.map(r => {
-                const isSelected = r.id === selectedLinearId;
+                const isSelected     = r.id === selectedLinearId;
+                const isPlotSelected = r.id === plotSelectedLinearId;
                 return (
                   <tr
                     key={r.id}
                     onClick={() => handleSelectLinear(r.id)}
+                    onDoubleClick={() => handleDoubleClickLinear(r.id)}
                     style={{
-                      cursor:     'pointer',
-                      background: isSelected ? '#1a2a1a' : 'transparent',
+                      cursor:        'pointer',
+                      background:    isSelected ? '#1a2a1a' : 'transparent',
+                      outline:       isPlotSelected ? '1px solid #4f4' : 'none',
+                      outlineOffset: '-1px',
                     }}
                   >
                     <td style={{ padding: '2px 6px', color: isSelected ? '#8f8' : '#88b', fontSize: 10 }}>
@@ -477,7 +617,7 @@ export default function ExampleApp() {
                 ? '(select a LinearRegion row)'
                 : childRects.length === 0
                   ? '(none — press R inside a LinearRegion)'
-                  : `${childRects.length} rect${childRects.length !== 1 ? 's' : ''}`}
+                  : `${childRects.length} rect${childRects.length !== 1 ? 's' : ''} · dbl-click to select on plot`}
             </span>
           </div>
           <table style={tableStyle}>
@@ -492,8 +632,19 @@ export default function ExampleApp() {
               </tr>
             </thead>
             <tbody>
-              {childRects.map(r => (
-                <tr key={r.id}>
+              {childRects.map(r => {
+                const isPlotSelected = r.id === plotSelectedRectId;
+                return (
+                <tr
+                  key={r.id}
+                  onDoubleClick={() => handleDoubleClickRect(r.id, r.parentId)}
+                  style={{
+                    cursor:        'pointer',
+                    background:    isPlotSelected ? '#2a1a1a' : 'transparent',
+                    outline:       isPlotSelected ? '1px solid #f88' : 'none',
+                    outlineOffset: '-1px',
+                  }}
+                >
                   <td style={{ padding: '2px 6px', color: '#b88', fontSize: 10 }}>
                     {r.id.slice(0, 8)}
                   </td>
@@ -513,7 +664,8 @@ export default function ExampleApp() {
                     {r.version}
                   </td>
                 </tr>
-              ))}
+              );
+              })}
             </tbody>
           </table>
         </div>

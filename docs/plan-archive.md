@@ -2961,3 +2961,36 @@ shared X-axis and per-channel P-wave picks managed through a React table.
 - Table edits sync correctly ✅
 - Version increments correct ✅
 - No performance regression ✅
+
+---
+
+## EX6 [COMPLETED] ROI Table Double-Click Selection
+
+**Branch:** `feature/EX6`
+**Completed:** 2026-02-26
+**Type:** Example Only (`examples/ExampleApp.jsx`)
+
+### Problem
+
+The LinearRegion table required a single-click to filter the RectROI table, with no way to highlight an ROI on the plot from the table.
+
+### Solution
+
+#### Engine change (minimal)
+- `ROIController.serializeAll()` — enriched each entry with `parentId: roi.parent?.id ?? null` so RectROI rows know their parent without a secondary lookup.
+
+#### ExampleApp.jsx additions
+- **New state:** `plotSelectedLinearId`, `plotSelectedRectId` (+ matching refs `plotSelectedLinearIdRef`, `plotSelectedRectIdRef`) to track which rows carry the "plot-selected" double-click highlight independently from the single-click filter state.
+- **`handleDoubleClickLinear(id)`** — always sets the filter to `id` (never toggles), calls `rc._selectOnly(roi)` + `rc.emit('roisChanged', ...)` to highlight on plot, sets `plotSelectedLinearId = id`.
+- **`handleDoubleClickRect(id, parentId)`** — calls `rc._selectOnly(roi)` + `rc.emit('roisChanged', ...)` for the rect; sets `plotSelectedRectId = id`; auto-sets `selectedLinearId = parentId` (with child rect recompute) so the parent row is highlighted in the filter table too.
+- **`refreshROITables`** — clears stale `plotSelectedRectId` on deletion; clears `plotSelectedLinearId` when its linear is deleted.
+- **LinearRegion row:** `onDoubleClick` handler; `outline: '1px solid #4f4'` when `isPlotSelected`.
+- **RectROI row:** `onDoubleClick` handler; `background: '#2a1a1a'` + `outline: '1px solid #f88'` when `isPlotSelected`; `cursor: 'pointer'`.
+- Header hints updated: "click to filter · dbl-click to select on plot" / "dbl-click to select on plot".
+
+### Acceptance Criteria — verified
+- ✅ Double-clicking a LinearRegion row selects as filter AND highlights on plot (green outline)
+- ✅ Double-clicking a RectROI row selects the rect on plot (red outline) AND auto-selects parent linear in filter table
+- ✅ Single-click on LinearRegion rows continues to filter rect table unchanged
+- ✅ No engine changes beyond adding `parentId` to `serializeAll()`
+- ✅ No stale-closure issues (all cross-render state read via refs)

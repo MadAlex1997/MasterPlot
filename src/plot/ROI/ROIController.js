@@ -135,12 +135,14 @@ export class ROIController extends EventEmitter {
    * @returns {{ id, type, version, updatedAt, domain, metadata }[]}
    */
   serializeAll() {
-    return this.getAllROIs().map(roi =>
-      typeof roi.serialize === 'function'
+    return this.getAllROIs().map(roi => {
+      const s = typeof roi.serialize === 'function'
         ? roi.serialize()
         : { id: roi.id, type: roi.type, version: roi.version,
-            updatedAt: roi.updatedAt, domain: roi.domain, metadata: roi.metadata }
-    );
+            updatedAt: roi.updatedAt, domain: roi.domain, metadata: roi.metadata };
+      s.parentId = roi.parent?.id ?? null;
+      return s;
+    });
   }
 
   /**
@@ -240,7 +242,17 @@ export class ROIController extends EventEmitter {
   // ─── Event handlers ───────────────────────────────────────────────────────────
 
   _onKeyDown(e) {
-    // Only process keybinds when the mouse is over this plot's canvas,
+    // D key: delete active/selected ROI regardless of whether the mouse is
+    // over this canvas — allows deletion after selecting from a table row.
+    if (e.key.toLowerCase() === 'd') {
+      const target = this._activeROI
+        ?? [...this._rois.values()].find(r => r.selected)
+        ?? null;
+      if (target) this.deleteROI(target.id);
+      return;
+    }
+
+    // All other keybinds only fire when the mouse is over this plot's canvas,
     // so multiple plots on the same page don't all activate simultaneously.
     if (!this._mouseIsOver) return;
 
@@ -256,11 +268,6 @@ export class ROIController extends EventEmitter {
         break;
       case 'h':
         this.enterCreateMode('hline');
-        break;
-      case 'd':
-        if (this._activeROI) {
-          this.deleteROI(this._activeROI.id);
-        }
         break;
       case 'escape':
         this.cancelCreateMode();

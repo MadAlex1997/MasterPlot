@@ -80,15 +80,9 @@ All MVP features are complete (F1–F13, B1–B8). Implemented:
 
 All Phase 2 features done: F16 (rolling DataStore), F15 (lazy DataView), F14 (ROI versioning), F17 (shared data), F18 (external adapters).
 
-## Phase 3 — ACTIVE (see PLAN.md for specs)
+## Phase 3 — COMPLETE ✅
 
-Implement in order: **F19 → F20 → F21 → EX4 → EX5**
-
-- **F19** Cascading ROI Update + Conditional Child Versioning (Engine Fix — Critical)
-- **F20** LineROI (Vertical/Horizontal + Half Variants + Labels)
-- **F21** Axis Drag Scaling (Midpoint Zoom) on X and Y axes
-- **EX4** Scatter Performance Dropdown (10k–10M points)
-- **EX5** Geophysics / Seismography Example (10 stacked plots, shared X, vline ROIs)
+All Phase 3 features done: F19 (cascading ROI), F20 (LineROI), F21 (axis drag zoom), EX4 (scatter perf dropdown), EX5 (seismography), EX6 (ROI table double-click selection).
 
 Later (unscheduled):
 - Full nested RectROI nesting (multiple levels)
@@ -513,10 +507,11 @@ Provide a complete example demonstrating:
 - ✅ F17: Multi-plot shared DataStore/DataView + SharedDataExample
 - ✅ F18: External integration adapter contracts + mock implementations + README guide
 
-**Phase 3 (Engine Features + Seismography) — ACTIVE**
-- ⏳ F19: Cascading ROI Update + Conditional Child Versioning
-- ⏳ F20: LineROI (Vertical/Horizontal + Half Variants + Labels)
-- ⏳ F21: Axis Drag Scaling (Midpoint Zoom)
-- ⏳ EX4: Scatter Performance Dropdown (10k–10M points)
-- ⏳ EX5: Geophysics / Seismography Example
+**Phase 3 (Engine Features + Seismography) — COMPLETE ✅**
+- ✅ F19: Cascading ROI Update + Conditional Child Versioning
+- ✅ F20: LineROI (Vertical/Horizontal + Half Variants + Labels)
+- ✅ F21: Axis Drag Scaling (Midpoint Zoom)
+- ✅ EX4: Scatter Performance Dropdown (10k–10M points)
+- ✅ EX5: Geophysics / Seismography Example
+- ✅ EX6: ROI Table Double-Click Selection (ExampleApp.jsx only)
 
