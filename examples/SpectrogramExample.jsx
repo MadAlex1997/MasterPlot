@@ -872,7 +872,7 @@ export default function SpectrogramExample() {
         <label style={checkboxLabelStyle}>
           Window
           <select value={windowSize} onChange={handleWindowSizeChange} style={selectStyle}>
-            {[256, 512, 1024, 2048].map(v => (
+            {[256, 512, 1024, 2048, 2048*2, 2048*4].map(v => (
               <option key={v} value={v}>{v}</option>
             ))}
           </select>
@@ -1025,7 +1025,7 @@ export default function SpectrogramExample() {
             </div>
 
             {/* DSP FilterPanel (moved from spectrogram sidebar) */}
-            <div style={{ flex: 1, overflow: 'hidden' }}>
+            <div style={{ flex: 1, overflow: 'scroll', }}>
               <FilterPanel
                 controller={filterControllerRef.current}
                 sampleRate={filterSampleRate}
