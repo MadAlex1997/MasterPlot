@@ -3210,3 +3210,32 @@ ctrl.yAxis.setDomain(yDomain);
 - ✅ `RollingLineExample` — 30s wall-clock rolling window, pause/resume, expiry log
 - ✅ `SeismographyExample` — 50 stacked channels, shared X-axis sync, P-wave LineROI picks draggable, table editable via `updateFromExternal()`
 - ✅ `LinePlotController.js` deleted; no runtime imports remain
+
+---
+
+## ARCH-B [COMPLETED] PlotLayer CompositeLayer
+
+**Branch:** `feature/ARCH-B`
+**Completed:** 2026-03-01
+
+### Goal
+
+Wrap all registered data layers and the ROILayer in a single `PlotLayer` CompositeLayer so the deck.gl layer list is a single composable unit. Gated behind `opts.usePlotLayer` so existing examples are unaffected.
+
+### Files Changed
+
+- `src/plot/layers/PlotLayer.js` (new, ~25 lines)
+- `src/plot/PlotController.js` — import `PlotLayer`; `_render()` branches on `this._opts.usePlotLayer`
+
+### Implementation Notes
+
+- `PlotLayer extends CompositeLayer` with `renderLayers()` returning `[...dataLayers, roiLayer]`.
+- `defaultProps` uses deck.gl typed descriptor objects (`{ type: 'array', value: [] }`, `{ type: 'object', value: null, optional: true }`).
+- `_render()` builds `roiLayer` first, then either wraps in `PlotLayer` (flag on) or spreads flat (flag off — default).
+- SubLayer id namespacing: CompositeLayer prefixes sublayer ids with the parent id. No consumer code inspects layer ids by string, so this is safe.
+
+### Acceptance Criteria
+
+- ✅ Build passes zero errors
+- ✅ All examples render correctly with default flag-off path (flat layer array unchanged)
+- ✅ `opts.usePlotLayer: true` produces a single-element `layers` array wrapping all content

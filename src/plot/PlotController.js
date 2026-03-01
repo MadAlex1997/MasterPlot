@@ -33,6 +33,7 @@ import { AxisRenderer }       from './axes/AxisRenderer.js';
 import { ROIController }      from './ROI/ROIController.js';
 import { buildScatterLayer }  from './layers/ScatterLayer.js';
 import { ROILayer }           from './layers/ROILayer.js';
+import { PlotLayer }          from './layers/PlotLayer.js';
 
 /**
  * @typedef {object} DataLayerDef
@@ -432,8 +433,7 @@ export class PlotController extends EventEmitter {
       else layers.push(result);
     }
 
-    // ROILayer always last
-    layers.push(new ROILayer({
+    const roiLayer = new ROILayer({
       id:       'roi-layer',
       rois,
       plotXMin: xMin,
@@ -442,11 +442,16 @@ export class PlotController extends EventEmitter {
       plotYMax: yMax,
       xIsLog,
       yIsLog,
-    }));
+    });
+
+    // ARCH-B: when opts.usePlotLayer is set, wrap everything in a single CompositeLayer
+    const deckLayers = this._opts.usePlotLayer
+      ? [new PlotLayer({ id: 'plot-layer', dataLayers: layers, roiLayer })]
+      : [...layers, roiLayer];
 
     this._deck.setProps({
       viewState: this._buildViewState(),
-      layers,
+      layers: deckLayers,
     });
 
     // Render axis overlay (pass rois so LineROI labels are drawn on canvas)

@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 4.8
+**Plan Version:** 4.9
 **Last Updated:** 2026-03-01
-**Status:** All Phase 1, Phase 2, Phase 3 complete. ARCH-C/A/D done. ARCH-B pending.
+**Status:** All Phase 1, Phase 2, Phase 3 complete. All ARCH tracks (C/A/D/B) complete.
 
 ---
 
@@ -81,7 +81,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | ARCH-C | ROILayer Internal Decomposition | ✅ COMPLETED | feature/ARCH-C | 2026-03-01 |
 | ARCH-A | PlotController Pluggable Data Layers | ✅ COMPLETED | feature/ARCH-A | 2026-03-01 |
 | ARCH-D | SignalDataLayer Extraction | ✅ COMPLETED | feature/ARCH-D | 2026-03-01 |
-| ARCH-B | PlotLayer CompositeLayer | ⏳ PENDING | — | — |
+| ARCH-B | PlotLayer CompositeLayer | ✅ COMPLETED | feature/ARCH-B | 2026-03-01 |
 
 ---
 
@@ -257,6 +257,7 @@ Full spec: [docs/plan-archive.md#f18](docs/plan-archive.md#f18)
 - **2026-03-01 [Claude]**: ARCH-A completed (v4.7) — `PlotController` gains `DataLayerDef`/`RenderContext` JSDoc typedefs, `_dataLayerDefs` Map, default scatter auto-registration, `registerDataLayer()`/`unregisterDataLayer()`/`updateDataLayerProps()` public API, and a registry-driven `_render()` loop; build verified. Next: ARCH-D.
 - **2026-03-01 [Claude]**: ARCH-D completed (v4.8) — `SignalStore` + `buildSignalLayers()` in `src/plot/layers/SignalDataLayer.js`; `LinePlotController.js` deleted; `LineExample.jsx`, `RollingLineExample.jsx`, `SeismographyExample.jsx` migrated to `PlotController` + `SignalStore`; seismography X-sync via `domainChanged` + syncingRef; ROI via built-in `ctrl.roiController`; no monkey-patching; build passes zero errors. Next: ARCH-B.
 - **2026-03-01 [Claude]**: Architecture refactor added as PENDING (v4.5) — ARCH-C/A/D/B tracks. Goal: pluggable data layer registration in PlotController, ROILayer internal decomposition, SignalStore + SignalDataLayer replacing LinePlotController, and PlotLayer CompositeLayer. Examples may be refactored; demonstrated features must be preserved. LinePlotController to be deleted after ARCH-D migration of LineExample + SeismographyExample.
+- **2026-03-01 [Claude]**: ARCH-B completed (v4.9) — `PlotLayer extends CompositeLayer` created in `src/plot/layers/PlotLayer.js`; `PlotController._render()` gates on `opts.usePlotLayer` to wrap all data layers + ROILayer into a single CompositeLayer; default (flag off) keeps existing flat-array path unchanged; build passes zero errors. All ARCH tracks complete.
 
 ---
 
@@ -405,50 +406,7 @@ Full spec: [docs/plan-archive.md#arch-d](docs/plan-archive.md#arch-d)
 
 ---
 
-### ARCH-B [PENDING] PlotLayer CompositeLayer
-
-**Files changed:**
-- `src/plot/layers/PlotLayer.js` (new, ~30 lines)
-- `src/plot/PlotController.js` (`_render()` uses PlotLayer; gated by `opts.usePlotLayer`)
-
-**What to build:**
-
-**New file `src/plot/layers/PlotLayer.js`:**
-```js
-import { CompositeLayer } from '@deck.gl/core';
-
-/**
- * PlotLayer — CompositeLayer that aggregates all registered data layers
- * and the ROILayer into a single composable unit for deck.gl.
- *
- * Props:
- *   dataLayers  {Layer[]}  — ordered array of data layers (scatter, line, spectrogram, etc.)
- *   roiLayer    {Layer}    — ROILayer instance (always rendered last / on top)
- */
-export class PlotLayer extends CompositeLayer {
-  static get layerName() { return 'PlotLayer'; }
-
-  renderLayers() {
-    const { dataLayers = [], roiLayer } = this.props;
-    return roiLayer ? [...dataLayers, roiLayer] : dataLayers;
-  }
-}
-
-PlotLayer.defaultProps = {
-  dataLayers: { type: 'array', value: [] },
-  roiLayer:   { type: 'object', value: null, optional: true },
-};
-```
-
-**Modified `PlotController._render()`:**
-```js
-const roiLayer = new ROILayer({ id: 'roi-layer', rois, plotXMin: xMin, plotXMax: xMax, plotYMin: yMin, plotYMax: yMax, xIsLog, yIsLog });
-this._deck.setProps({
-  viewState: this._buildViewState(),
-  layers: [new PlotLayer({ id: 'plot-layer', dataLayers, roiLayer })],
-});
-```
-
-**Note on sublayer id namespacing:** CompositeLayer wrapping prefixes sublayer ids (e.g., `roi-layer-${roi.id}-fill` becomes `plot-layer-roi-layer-${roi.id}-fill`). No consumer code inspects deck.gl layer ids by string, so this is safe. Verify ROI picking and drag still work after the change.
-
-**Verification:** All examples — render correctly; ROI drag/resize works; no picking regressions.
+### ARCH-B [COMPLETED] PlotLayer CompositeLayer
+**Completed:** 2026-03-01 | **Branch:** feature/ARCH-B
+New `PlotLayer extends CompositeLayer` in `src/plot/layers/PlotLayer.js`; `PlotController._render()` branches on `opts.usePlotLayer` to wrap all data layers + ROILayer in a single CompositeLayer (default off — flat array unchanged); build passes zero errors.
+Full spec: [docs/plan-archive.md#arch-b](docs/plan-archive.md#arch-b)
