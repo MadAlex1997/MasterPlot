@@ -3366,3 +3366,47 @@ new TraceGroup({
 - ✅ Zoom/pan works normally
 - ✅ HubPage card links to `multi-sensor.html`
 - ✅ README documents TraceGroup constructor + public API
+
+---
+
+## EX8
+
+### EX8 [COMPLETED] Live Signal Analysis (Merge Line Examples)
+
+**Completed:** 2026-03-01 | **Branch:** feature/EX8
+
+**Goal:** Replace the redundant `LineExample` and `RollingLineExample` (near-identical 3-signal demos, neither with ROI) with a single unified **Live Signal Analysis** page.
+
+**Files deleted:**
+- `examples/LineExample.jsx`, `examples/RollingLineExample.jsx`
+- `src/line.js`, `src/rolling-line.js`
+- `public/line.html`, `public/rolling-line.html`
+
+**Files created:**
+- `examples/LiveSignalsExample.jsx` — unified replacement
+- `src/live-signals.js` — entry point
+- `public/live-signals.html` — shell (title: `MasterPlot — Live Signal Analysis`)
+
+**Files modified:** `webpack.config.js`, `examples/HubPage.jsx`, `README.md`
+
+**Implementation notes:**
+- Layout: header / (plot canvas flex:1 + 220 px stats sidebar) / event log (last 25 entries)
+- Wall-clock X-axis; three deterministic sin/cos signals (A/B/C); `windowSecsRef` mirrors state so dropdown changes take effect without re-mount
+- Rolling trim via `signals.trimBefore(xWindowMin)` each tick
+- ROI stats computed by filtering `signals.getSignal(id).path` for points with `x ∈ [roi.x1, roi.x2]`; mean, RMS (√(Σy²/n)), peak-to-peak (max−min), count; `—` when count = 0
+- `roiUpdated` debounced 100 ms inline with `setTimeout`; `roiDeleted` clears sidebar only when no LinearRegion remains
+- Stats re-run at end of each tick while a LinearRegion exists
+- **Bug fix:** ROI bounds live directly on the object as `roi.x1`/`roi.x2` — not on a `roi.bounds` sub-object (ROIBase stores them as top-level properties)
+- No engine files modified
+
+**Acceptance criteria verified:**
+1. `npm run build` passes zero errors ✅
+2. `live-signals.html` emitted; three signals scroll on wall-clock X-axis ✅
+3. Window dropdown changes rolling window without page reload ✅
+4. L key → LinearRegion; stats sidebar populates immediately ✅
+5. Stats update live each tick while ROI is active ✅
+6. D key → ROI removed; stats panel reverts to placeholder ✅
+7. Pause/Resume toggles append ✅
+8. `dist/line.html` and `dist/rolling-line.html` absent from build output ✅
+9. HubPage: new card present, old cards gone ✅
+10. README updated ✅

@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 5.0
+**Plan Version:** 5.1
 **Last Updated:** 2026-03-01
-**Status:** All Phase 1, Phase 2, Phase 3 complete. All ARCH tracks (C/A/D/B) complete. F22 + EX7 complete.
+**Status:** All Phase 1, Phase 2, Phase 3 complete. All ARCH tracks (C/A/D/B) complete. F22 + EX7 + EX8 complete. EX4 still pending.
 
 ---
 
@@ -84,6 +84,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | ARCH-B | PlotLayer CompositeLayer | ✅ COMPLETED | feature/ARCH-B | 2026-03-01 |
 | F22 | TraceGroup Abstraction | ✅ COMPLETED | feature/F22-EX7 | 2026-03-01 |
 | EX7 | Multi-Sensor Scatter Example | ✅ COMPLETED | feature/F22-EX7 | 2026-03-01 |
+| EX8 | Live Signal Analysis (Merge Line Examples) | ✅ COMPLETED | feature/EX8 | 2026-03-01 |
 
 ---
 
@@ -261,6 +262,8 @@ Full spec: [docs/plan-archive.md#f18](docs/plan-archive.md#f18)
 - **2026-03-01 [Claude]**: Architecture refactor added as PENDING (v4.5) — ARCH-C/A/D/B tracks. Goal: pluggable data layer registration in PlotController, ROILayer internal decomposition, SignalStore + SignalDataLayer replacing LinePlotController, and PlotLayer CompositeLayer. Examples may be refactored; demonstrated features must be preserved. LinePlotController to be deleted after ARCH-D migration of LineExample + SeismographyExample.
 - **2026-03-01 [Claude]**: ARCH-B completed (v4.9) — `PlotLayer extends CompositeLayer` created in `src/plot/layers/PlotLayer.js`; `PlotController._render()` gates on `opts.usePlotLayer` to wrap all data layers + ROILayer into a single CompositeLayer; default (flag off) keeps existing flat-array path unchanged; build passes zero errors. All ARCH tracks complete.
 - **2026-03-01 [Claude]**: F22 + EX7 completed (v5.0) — `TraceGroup` created in `src/plot/layers/TraceGroup.js`; O(n) bulk partition, doubling buffer growth, palette cycling, per-tag attr overrides, `toLayerDef()` for `registerDataLayer`; `MultiSensorExample.jsx` (50 sensors × 10k pts, 500k total, scrollable sidebar, 25-color palette cycling, React owns zero arrays); webpack entry + HTML + HubPage card + README TraceGroup API section; build passes zero errors. EX4 still PENDING.
+- **2026-03-01 [Claude]**: EX8 added as PENDING (v5.1) — Live Signal Analysis replaces redundant LineExample + RollingLineExample. Merges wall-clock time X-axis, configurable 10s/30s/60s rolling window, and new LinearRegion ROI stats sidebar (mean/RMS/peak-to-peak per signal). No engine changes; example-only. Next agent: implement EX8.
+- **2026-03-01 [Claude]**: EX8 completed (v5.1) — `LiveSignalsExample.jsx` created; six old files deleted; webpack/HubPage/README updated; build passes zero errors. Bug fix applied during implementation: ROI bounds accessed as `roi.x1`/`roi.x2` (not `roi.bounds`). EX4 still PENDING.
 
 ---
 
@@ -427,3 +430,10 @@ Full spec: [docs/plan-archive.md#f22](docs/plan-archive.md#f22)
 **Completed:** 2026-03-01 | **Branch:** feature/F22-EX7
 `MultiSensorExample.jsx` created: 50 sensors × 10k pts (500k total) via `TraceGroup`; 25-color OKLAB-derived palette cycles at sensor_25; scrollable sidebar with per-sensor checkboxes + swatches + Show All / Hide All; React owns zero arrays; `src/multi-sensor.js`, `public/multi-sensor.html`, webpack entry + HtmlWebpackPlugin, HubPage card, README TraceGroup API section all added; build passes zero errors.
 Full spec: [docs/plan-archive.md#ex7](docs/plan-archive.md#ex7)
+
+---
+
+### EX8 [COMPLETED] Live Signal Analysis (Merge Line Examples)
+**Completed:** 2026-03-01 | **Branch:** feature/EX8
+Replaced `LineExample`/`RollingLineExample` with `LiveSignalsExample.jsx`: three live sin/cos signals on a configurable rolling window (10 s/30 s/60 s), wall-clock X-axis, and a 220 px stats sidebar showing mean/RMS/peak-to-peak per signal inside a drawn LinearRegion ROI (updated live each tick); old six files deleted; webpack/HubPage/README updated; bug fix: ROI bounds accessed as `roi.x1`/`roi.x2` (not `roi.bounds`).
+Full spec: [docs/plan-archive.md#ex8](docs/plan-archive.md#ex8)

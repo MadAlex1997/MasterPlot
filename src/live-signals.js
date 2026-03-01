@@ -1,6 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import RollingLineExample from '../examples/RollingLineExample';
+import LiveSignalsExample from '../examples/LiveSignalsExample';
 
 const root = createRoot(document.getElementById('root'));
-root.render(<RollingLineExample />);
+root.render(<LiveSignalsExample />);

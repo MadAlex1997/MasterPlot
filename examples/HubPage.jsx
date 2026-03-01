@@ -6,19 +6,14 @@ export default function HubPage() {
       desc: '1M points + live append every 2 s. ROI creation: L (LinearRegion), R (RectROI), V (vertical LineROI), H (horizontal LineROI). LinearRegion constraint propagation + cascading child versioning (F19). LineROI (F20): full/half variants with canvas-overlay labels, draggable, version-gated sync. ROIs carry monotonic version numbers; serializeAll/updateFromExternal enable persistence. DataStore supports rolling ring buffer; PlotDataView provides lazy filtered views.',
     },
     {
-      href: 'line.html',
-      title: 'Line Plot',
-      desc: '1M points rendered via WebGL. Zoom, pan, ROI selection.',
+      href: 'live-signals.html',
+      title: 'Live Signal Analysis',
+      desc: 'Three live sin/cos signals on a configurable rolling window (10 s / 30 s / 60 s). Draw a LinearRegion ROI (L key) to see per-signal statistics — mean, RMS, and peak-to-peak amplitude — updated live as the window scrolls. Pause/Resume, live point count, and rolling expiry events.',
     },
     {
       href: 'spectrogram.html',
       title: 'Spectrogram',
       desc: 'Real-time STFT spectrogram with audio file loading, HistogramLUT, playback, and biquad filters.',
-    },
-    {
-      href: 'rolling-line.html',
-      title: 'Rolling 30s Window',
-      desc: 'Three live signals on a scrolling 30-second window. Data older than 30 s is trimmed each tick — expiry events shown in the log.',
     },
     {
       href: 'shared-data.html',

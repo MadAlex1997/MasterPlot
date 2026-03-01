@@ -9,9 +9,8 @@ module.exports = (env, argv) => {
     entry: {
       main:            './src/index.js',
       example:         './src/example.js',
-      line:            './src/line.js',
       spectrogram:     './src/spectrogram.js',
-      'rolling-line':  './src/rolling-line.js',
+      'live-signals':  './src/live-signals.js',
       'shared-data':   './src/shared-data.js',
       seismography:    './src/seismography.js',
       'multi-sensor':  './src/multi-sensor.js',
@@ -52,19 +51,14 @@ module.exports = (env, argv) => {
         chunks:   ['example'],
       }),
       new HtmlWebpackPlugin({
-        template: './public/line.html',
-        filename: 'line.html',
-        chunks:   ['line'],
-      }),
-      new HtmlWebpackPlugin({
         template: './public/spectrogram.html',
         filename: 'spectrogram.html',
         chunks:   ['spectrogram'],
       }),
       new HtmlWebpackPlugin({
-        template: './public/rolling-line.html',
-        filename: 'rolling-line.html',
-        chunks:   ['rolling-line'],
+        template: './public/live-signals.html',
+        filename: 'live-signals.html',
+        chunks:   ['live-signals'],
       }),
       new HtmlWebpackPlugin({
         template: './public/shared-data.html',

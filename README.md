@@ -87,13 +87,18 @@ The main scatter demo (`ExampleApp`) includes two live ROI inspection tables bel
 
 Click any LinearRegion row to select it and populate the RectROI table. Click again to deselect. Tables never update during drag (`roiUpdated` is intentionally ignored), so there is no UI jitter while moving ROIs.
 
-### Line / Rolling-Window Examples (EX3)
-Both `LineExample` and `RollingLineExample` now use **deterministic sin/cos waves** instead of random walks:
+### Live Signal Analysis Example (EX8)
 
-- Signal A and C → `amplitude × sin(t) + offset`
-- Signal B → `amplitude × cos(t) + offset`
-- Vertical offset per signal (`i × (2 × amplitude + spacing)`) keeps all bands visually separated
-- Rolling expiration (`trimBefore`) removes the trailing edge of each wave as new data arrives, making the rolling window immediately obvious
+`LiveSignalsExample` replaces the former `LineExample` and `RollingLineExample` with a single unified page:
+
+| Feature | Details |
+|---|---|
+| **Three live signals** | Deterministic sin/cos waves (A, B, C) appended every 200 ms; vertical offsets keep all bands visually separated |
+| **Rolling window** | Configurable 10 s / 30 s / 60 s dropdown; `trimBefore()` evicts stale data each tick; left edge visibly advances |
+| **Wall-clock X-axis** | X values are seconds elapsed since mount; domain tracks `[now - windowSecs, now]` |
+| **ROI stats sidebar** | Press **L** to draw a `LinearRegion`; sidebar shows **mean**, **RMS**, and **peak-to-peak** per signal, updated live each tick and on every drag commit |
+| **Pause / Resume** | Freeze / unfreeze live append without destroying the controller |
+| **Event log** | Last 25 entries: zoom, pan, expiry, roi create/finalize/delete |
 
 ### Seismography Example (EX5)
 
@@ -543,8 +548,7 @@ src/
 examples/
   HubPage.jsx              — demo navigation hub
   ExampleApp.jsx           — scatter/ROI/live-append + ROI inspection tables (EX1)
-  LineExample.jsx          — deterministic sin/cos waves + 5k-sample rolling window (EX3)
-  RollingLineExample.jsx   — deterministic sin/cos waves + 30s wall-clock rolling window (EX3)
+  LiveSignalsExample.jsx   — three live signals + rolling window + ROI stats sidebar (EX8)
   SpectrogramExample.jsx   — full audio analysis + frequency band inputs (EX2)
   SharedDataExample.jsx    — two-plot shared DataStore + filtered DataView demo (F17)
   SeismographyExample.jsx  — 10 stacked channels, shared X-axis, vline picks + table (EX5)
