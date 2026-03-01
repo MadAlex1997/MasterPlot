@@ -79,7 +79,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | EX5 | Geophysics / Seismography Example | ✅ COMPLETED | feature/EX5 | 2026-02-25 |
 | EX6 | ROI Table Double-Click Selection | ✅ COMPLETED | feature/EX6 | 2026-02-26 |
 | ARCH-C | ROILayer Internal Decomposition | ✅ COMPLETED | feature/ARCH-C | 2026-03-01 |
-| ARCH-A | PlotController Pluggable Data Layers | ⏳ PENDING | — | — |
+| ARCH-A | PlotController Pluggable Data Layers | ✅ COMPLETED | feature/ARCH-A | 2026-03-01 |
 | ARCH-D | SignalDataLayer Extraction | ⏳ PENDING | — | — |
 | ARCH-B | PlotLayer CompositeLayer | ⏳ PENDING | — | — |
 
@@ -254,6 +254,7 @@ Full spec: [docs/plan-archive.md#f18](docs/plan-archive.md#f18)
 - **2026-02-26 [Claude]**: EX6 added as PENDING (v4.3) — ROI Table Double-Click Selection; ExampleApp.jsx only; adds `onDoubleClick` to `<tr>` rows to programmatically select ROIs on plot + auto-select parent LinearRegion from RectROI row; requires adding `parentId` to `serializeAll()` output. No engine changes otherwise.
 - **2026-02-26 [Claude]**: EX6 completed (v4.4) — `serializeAll()` enriched with `parentId`; `ExampleApp.jsx` gains double-click handlers + `plotSelectedLinearId`/`plotSelectedRectId` state; green outline on double-clicked LinearRegion rows, red outline on double-clicked RectROI rows; single-click filter unchanged. All Phase 3 features now complete.
 - **2026-03-01 [Claude]**: ARCH-C completed (v4.6) — `ROILayer.renderLayers()` decomposed into `_buildCoordHelpers`, `_buildLinearRegionLayers`, `_buildLineROILayers`, `_buildRectROILayers`; zero API change; build passes. Next: ARCH-A.
+- **2026-03-01 [Claude]**: ARCH-A completed (v4.7) — `PlotController` gains `DataLayerDef`/`RenderContext` JSDoc typedefs, `_dataLayerDefs` Map, default scatter auto-registration, `registerDataLayer()`/`unregisterDataLayer()`/`updateDataLayerProps()` public API, and a registry-driven `_render()` loop; build verified. Next: ARCH-D.
 - **2026-03-01 [Claude]**: Architecture refactor added as PENDING (v4.5) — ARCH-C/A/D/B tracks. Goal: pluggable data layer registration in PlotController, ROILayer internal decomposition, SignalStore + SignalDataLayer replacing LinePlotController, and PlotLayer CompositeLayer. Examples may be refactored; demonstrated features must be preserved. LinePlotController to be deleted after ARCH-D migration of LineExample + SeismographyExample.
 
 ---
@@ -389,95 +390,10 @@ Full spec: [docs/plan-archive.md#arch-c](docs/plan-archive.md#arch-c)
 
 ---
 
-### ARCH-A [PENDING] PlotController Pluggable Data Layers
-
-**Files changed:** `src/plot/PlotController.js`
-
-**What to build:**
-
-#### DataLayerDef contract (JSDoc, no TS file)
-```js
-/**
- * @typedef {object} DataLayerDef
- * @property {string}   id
- * @property {function} build  — (ctx: RenderContext) => Layer | Layer[] | null
- * @property {object}   [props]  — static user props forwarded into ctx.props
- */
-
-/**
- * @typedef {object} RenderContext
- * @property {object}   gpuAttrs     — { x, y, color, size } typed arrays from DataStore/DataView
- * @property {number}   dataTrigger  — monotonically increasing counter
- * @property {boolean}  xIsLog
- * @property {boolean}  yIsLog
- * @property {number[]} xDomain      — [xMin, xMax]
- * @property {number[]} yDomain      — [yMin, yMax]
- * @property {object}   props        — the static props from the layer def
- */
-```
-
-#### Storage
-Add to constructor: `this._dataLayerDefs = new Map();` (insertion order = deck.gl layer stack order).
-
-#### Default scatter layer (backwards compat)
-```js
-// In constructor, after _dataLayerDefs init:
-if (!opts.disableDefaultDataLayer) {
-  this.registerDataLayer('default-scatter', (ctx) => {
-    if (ctx.gpuAttrs.x.length === 0) return null;
-    return buildScatterLayer(ctx.gpuAttrs, {
-      dataTrigger: ctx.dataTrigger,
-      xIsLog: ctx.xIsLog,
-      yIsLog: ctx.yIsLog,
-    });
-  });
-}
-```
-
-#### New public methods
-```js
-/** Register or replace a data layer factory. */
-registerDataLayer(id, buildFn, props = {}) {
-  this._dataLayerDefs.set(id, { build: buildFn, props });
-  this._dirty = true;
-}
-
-/** Remove a registered layer by id. No-op if not found. */
-unregisterDataLayer(id) {
-  if (this._dataLayerDefs.delete(id)) this._dirty = true;
-}
-
-/** Update static props for an already-registered layer. */
-updateDataLayerProps(id, props) {
-  const def = this._dataLayerDefs.get(id);
-  if (def) { def.props = props; this._dirty = true; }
-}
-```
-
-#### Modified `_render()`
-
-Replace the hardcoded `buildScatterLayer` block with:
-```js
-// Build registered data layers
-const layers = [];
-const context = {
-  gpuAttrs, dataTrigger: this._dataTrigger,
-  xIsLog, yIsLog, xDomain: [xMin, xMax], yDomain: [yMin, yMax],
-};
-for (const [, def] of this._dataLayerDefs) {
-  const result = def.build({ ...context, props: def.props });
-  if (result == null) continue;
-  if (Array.isArray(result)) layers.push(...result);
-  else layers.push(result);
-}
-// ROILayer always last
-layers.push(new ROILayer({ id: 'roi-layer', rois, plotXMin: xMin, plotXMax: xMax, plotYMin: yMin, plotYMax: yMax, xIsLog, yIsLog }));
-this._deck.setProps({ viewState: this._buildViewState(), layers });
-```
-
-**Net change:** ~50 lines added to a 750-line file. No existing method signatures change.
-
-**Verification:** ExampleApp + SharedDataExample — scatter renders, live append works, ROIs work. Confirm `disableDefaultDataLayer: true` produces an empty plot (only ROI layer).
+### ARCH-A [COMPLETED] PlotController Pluggable Data Layers
+**Completed:** 2026-03-01 | **Branch:** feature/ARCH-A
+Added `DataLayerDef`/`RenderContext` JSDoc typedefs; `this._dataLayerDefs = new Map()` with default scatter auto-registered (opt-out via `disableDefaultDataLayer`); `registerDataLayer()`, `unregisterDataLayer()`, `updateDataLayerProps()` public methods; `_render()` replaced hardcoded scatter block with registry loop; build passes zero errors.
+Full spec: [docs/plan-archive.md#arch-a](docs/plan-archive.md#arch-a)
 
 ---
 

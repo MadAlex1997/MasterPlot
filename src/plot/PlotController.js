@@ -34,6 +34,24 @@ import { ROIController }      from './ROI/ROIController.js';
 import { buildScatterLayer }  from './layers/ScatterLayer.js';
 import { ROILayer }           from './layers/ROILayer.js';
 
+/**
+ * @typedef {object} DataLayerDef
+ * @property {string}   id
+ * @property {function} build  — (ctx: RenderContext) => Layer | Layer[] | null
+ * @property {object}   [props]  — static user props forwarded into ctx.props
+ */
+
+/**
+ * @typedef {object} RenderContext
+ * @property {object}   gpuAttrs     — { x, y, color, size } typed arrays from DataStore/DataView
+ * @property {number}   dataTrigger  — monotonically increasing counter
+ * @property {boolean}  xIsLog
+ * @property {boolean}  yIsLog
+ * @property {number[]} xDomain      — [xMin, xMax]
+ * @property {number[]} yDomain      — [yMin, yMax]
+ * @property {object}   props        — the static props from the layer def
+ */
+
 export class PlotController extends EventEmitter {
   /**
    * @param {object} opts
@@ -41,6 +59,7 @@ export class PlotController extends EventEmitter {
    * @param {string}  [opts.yScaleType='linear']
    * @param {number[]} [opts.xDomain=[0,1]]
    * @param {number[]} [opts.yDomain=[0,100]]
+   * @param {boolean} [opts.disableDefaultDataLayer=false]
    */
   constructor(opts = {}) {
     super();
@@ -54,6 +73,19 @@ export class PlotController extends EventEmitter {
     this._dataView      = opts.dataView  || null;
     this._ownsDataView  = !opts.dataView;
     this._viewport      = new ViewportController();
+
+    // ARCH-A: pluggable data layer registry (insertion order = deck.gl stack order)
+    this._dataLayerDefs = new Map();
+    if (!opts.disableDefaultDataLayer) {
+      this.registerDataLayer('default-scatter', (ctx) => {
+        if (ctx.gpuAttrs.x.length === 0) return null;
+        return buildScatterLayer(ctx.gpuAttrs, {
+          dataTrigger: ctx.dataTrigger,
+          xIsLog:      ctx.xIsLog,
+          yIsLog:      ctx.yIsLog,
+        });
+      });
+    }
 
     // Bound handlers for DataView event cleanup
     this._onDataViewDirty      = () => { this._dirty = true; };
@@ -302,6 +334,25 @@ export class PlotController extends EventEmitter {
     this._dirty = true;
   }
 
+  // ─── ARCH-A: Data layer registration ──────────────────────────────────────
+
+  /** Register or replace a data layer factory. */
+  registerDataLayer(id, buildFn, props = {}) {
+    this._dataLayerDefs.set(id, { build: buildFn, props });
+    this._dirty = true;
+  }
+
+  /** Remove a registered layer by id. No-op if not found. */
+  unregisterDataLayer(id) {
+    if (this._dataLayerDefs.delete(id)) this._dirty = true;
+  }
+
+  /** Update static props for an already-registered layer. */
+  updateDataLayerProps(id, props) {
+    const def = this._dataLayerDefs.get(id);
+    if (def) { def.props = props; this._dirty = true; }
+  }
+
   // ─── Export placeholder (v2) ───────────────────────────────────────────────
 
   /**
@@ -364,12 +415,24 @@ export class PlotController extends EventEmitter {
     const xIsLog = this._xAxis.scaleType === 'log';
     const yIsLog = this._yAxis.scaleType === 'log';
 
+    // Build registered data layers (ARCH-A)
     const layers = [];
-
-    if (gpuAttrs.x.length > 0) {
-      layers.push(buildScatterLayer(gpuAttrs, { dataTrigger: this._dataTrigger, xIsLog, yIsLog }));
+    const context = {
+      gpuAttrs,
+      dataTrigger: this._dataTrigger,
+      xIsLog,
+      yIsLog,
+      xDomain: [xMin, xMax],
+      yDomain: [yMin, yMax],
+    };
+    for (const [, def] of this._dataLayerDefs) {
+      const result = def.build({ ...context, props: def.props });
+      if (result == null) continue;
+      if (Array.isArray(result)) layers.push(...result);
+      else layers.push(result);
     }
 
+    // ROILayer always last
     layers.push(new ROILayer({
       id:       'roi-layer',
       rois,

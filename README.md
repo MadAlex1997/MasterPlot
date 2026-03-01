@@ -14,11 +14,12 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 
 ---
 
-## Current Capabilities (F1–F21 + EX1–EX5 complete)
+## Current Capabilities (F1–F21 + EX1–EX5 + ARCH-A complete)
 
 ### Core Plotting Engine
 - **WebGL rendering** via deck.gl `OrthographicView` — no maps, no geospatial assumptions
 - **Scatter plots** with instanced rendering (`ScatterLayer`) — GPU typed array buffers, no per-point JS objects
+- **Pluggable data layer registry (ARCH-A)** — `PlotController.registerDataLayer(id, buildFn, props?)` replaces the hardcoded scatter layer with a user-extensible registry; `unregisterDataLayer(id)` and `updateDataLayerProps(id, props)` for runtime management; `disableDefaultDataLayer: true` constructor option to start with an empty canvas; scatter is registered by default for backwards compatibility
 - **Line plots** (`LineLayer`)
 - **Linear and log axes** via d3-scale; canvas 2D overlay for tick labels and grid
 - **Zoom** (mouse wheel, centered on cursor) and **pan** (drag) without touching data buffers

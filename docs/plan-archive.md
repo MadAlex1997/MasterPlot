@@ -3034,3 +3034,108 @@ renderLayers() {
 - ✅ Build succeeds with zero errors (`webpack 5 compiled with 3 warnings` — pre-existing size warnings only)
 - ✅ All sublayer ids are unchanged (embed `roi.id`), so no picking regressions
 - ✅ No consumer code changes required
+
+---
+
+## ARCH-A [COMPLETED] PlotController Pluggable Data Layers
+
+**Branch:** `feature/ARCH-A`
+**Completed:** 2026-03-01
+
+### Goal
+
+Replace the hardcoded `buildScatterLayer` call inside `PlotController._render()` with a user-extensible registry of data layer factories, while keeping backwards compatibility (scatter still renders by default).
+
+### Files Changed
+
+- `src/plot/PlotController.js`
+
+### What Was Built
+
+#### DataLayerDef / RenderContext JSDoc typedefs
+
+Added immediately before the `PlotController` class declaration:
+
+```js
+/**
+ * @typedef {object} DataLayerDef
+ * @property {string}   id
+ * @property {function} build  — (ctx: RenderContext) => Layer | Layer[] | null
+ * @property {object}   [props]  — static user props forwarded into ctx.props
+ */
+
+/**
+ * @typedef {object} RenderContext
+ * @property {object}   gpuAttrs     — { x, y, color, size } typed arrays from DataStore/DataView
+ * @property {number}   dataTrigger  — monotonically increasing counter
+ * @property {boolean}  xIsLog
+ * @property {boolean}  yIsLog
+ * @property {number[]} xDomain      — [xMin, xMax]
+ * @property {number[]} yDomain      — [yMin, yMax]
+ * @property {object}   props        — the static props from the layer def
+ */
+```
+
+#### Constructor changes
+
+Added `_dataLayerDefs` Map and default scatter registration (with opt-out):
+
+```js
+this._dataLayerDefs = new Map();
+if (!opts.disableDefaultDataLayer) {
+  this.registerDataLayer('default-scatter', (ctx) => {
+    if (ctx.gpuAttrs.x.length === 0) return null;
+    return buildScatterLayer(ctx.gpuAttrs, {
+      dataTrigger: ctx.dataTrigger,
+      xIsLog:      ctx.xIsLog,
+      yIsLog:      ctx.yIsLog,
+    });
+  });
+}
+```
+
+Also added `disableDefaultDataLayer` to the constructor JSDoc.
+
+#### Public API
+
+```js
+/** Register or replace a data layer factory. */
+registerDataLayer(id, buildFn, props = {}) { ... }
+
+/** Remove a registered layer by id. No-op if not found. */
+unregisterDataLayer(id) { ... }
+
+/** Update static props for an already-registered layer. */
+updateDataLayerProps(id, props) { ... }
+```
+
+#### Modified `_render()`
+
+```js
+const layers = [];
+const context = {
+  gpuAttrs,
+  dataTrigger: this._dataTrigger,
+  xIsLog,
+  yIsLog,
+  xDomain: [xMin, xMax],
+  yDomain: [yMin, yMax],
+};
+for (const [, def] of this._dataLayerDefs) {
+  const result = def.build({ ...context, props: def.props });
+  if (result == null) continue;
+  if (Array.isArray(result)) layers.push(...result);
+  else layers.push(result);
+}
+// ROILayer always last
+layers.push(new ROILayer({ id: 'roi-layer', rois, plotXMin: xMin, plotXMax: xMax, plotYMin: yMin, plotYMax: yMax, xIsLog, yIsLog }));
+this._deck.setProps({ viewState: this._buildViewState(), layers });
+```
+
+### Acceptance criteria verified
+
+- ✅ Build passes with zero errors
+- ✅ All existing examples render scatter correctly (default-scatter auto-registered)
+- ✅ `disableDefaultDataLayer: true` option available for ARCH-D migration
+- ✅ No existing public method signatures changed
+- ✅ Insertion order of `_dataLayerDefs` Map matches deck.gl layer stack order
