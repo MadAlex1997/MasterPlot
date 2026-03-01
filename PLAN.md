@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 4.4
-**Last Updated:** 2026-02-26
-**Status:** All Phase 1, Phase 2, Phase 3 complete. F19/F20/F21/EX4/EX5/EX6 all done.
+**Plan Version:** 4.6
+**Last Updated:** 2026-03-01
+**Status:** All Phase 1, Phase 2, Phase 3 complete. ARCH-C done. ARCH-A/D/B pending.
 
 ---
 
@@ -78,6 +78,10 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | EX4 | Scatter Performance Dropdown | ⏳ PENDING | — | — |
 | EX5 | Geophysics / Seismography Example | ✅ COMPLETED | feature/EX5 | 2026-02-25 |
 | EX6 | ROI Table Double-Click Selection | ✅ COMPLETED | feature/EX6 | 2026-02-26 |
+| ARCH-C | ROILayer Internal Decomposition | ✅ COMPLETED | feature/ARCH-C | 2026-03-01 |
+| ARCH-A | PlotController Pluggable Data Layers | ⏳ PENDING | — | — |
+| ARCH-D | SignalDataLayer Extraction | ⏳ PENDING | — | — |
+| ARCH-B | PlotLayer CompositeLayer | ⏳ PENDING | — | — |
 
 ---
 
@@ -249,6 +253,8 @@ Full spec: [docs/plan-archive.md#f18](docs/plan-archive.md#f18)
 - **2026-02-25 [Claude]**: EX5 completed (v4.2) — `SeismographyExample.jsx` (10 stacked PlotCanvas, shared X via domainChanged cross-propagation, one vline-half-bottom LineROI per channel, React table with version-gated label/position edits); webpack + HubPage + README updated. EX4 still pending.
 - **2026-02-26 [Claude]**: EX6 added as PENDING (v4.3) — ROI Table Double-Click Selection; ExampleApp.jsx only; adds `onDoubleClick` to `<tr>` rows to programmatically select ROIs on plot + auto-select parent LinearRegion from RectROI row; requires adding `parentId` to `serializeAll()` output. No engine changes otherwise.
 - **2026-02-26 [Claude]**: EX6 completed (v4.4) — `serializeAll()` enriched with `parentId`; `ExampleApp.jsx` gains double-click handlers + `plotSelectedLinearId`/`plotSelectedRectId` state; green outline on double-clicked LinearRegion rows, red outline on double-clicked RectROI rows; single-click filter unchanged. All Phase 3 features now complete.
+- **2026-03-01 [Claude]**: ARCH-C completed (v4.6) — `ROILayer.renderLayers()` decomposed into `_buildCoordHelpers`, `_buildLinearRegionLayers`, `_buildLineROILayers`, `_buildRectROILayers`; zero API change; build passes. Next: ARCH-A.
+- **2026-03-01 [Claude]**: Architecture refactor added as PENDING (v4.5) — ARCH-C/A/D/B tracks. Goal: pluggable data layer registration in PlotController, ROILayer internal decomposition, SignalStore + SignalDataLayer replacing LinePlotController, and PlotLayer CompositeLayer. Examples may be refactored; demonstrated features must be preserved. LinePlotController to be deleted after ARCH-D migration of LineExample + SeismographyExample.
 
 ---
 
@@ -358,3 +364,284 @@ Full spec: [docs/plan-archive.md#ex5](docs/plan-archive.md#ex5)
 **Completed:** 2026-02-26 | **Branch:** feature/EX6
 `serializeAll()` enriched with `parentId`; `ExampleApp.jsx` gains `handleDoubleClickLinear` + `handleDoubleClickRect` handlers; double-clicking a LinearRegion row sets it as filter AND calls `rc._selectOnly(roi)` + emits `roisChanged` for a plot highlight (green outline on table row); double-clicking a RectROI row selects the rect on plot (red outline), auto-selects its parent LinearRegion in the filter, and highlights both rows.
 Full spec: [docs/plan-archive.md#ex6](docs/plan-archive.md#ex6)
+
+---
+
+## Architecture Refactor — Pending
+
+**Goal:** Make `PlotController` type-agnostic by replacing the hardcoded scatter layer with a pluggable registered-layer system, and improve the composability of deck.gl layers inside the rendering pipeline.
+
+**Motivation:**
+- `PlotController` and `LinePlotController` duplicate all infrastructure (Deck, AxisController ×2, ViewportController, AxisRenderer, RAF loop, wheel zoom, drag pan).
+- `PlotController._render()` hardcodes `buildScatterLayer()` — impossible to mix scatter + line + spectrogram in one plot.
+- `ROILayer.renderLayers()` is a 160-line `if/else if/else` monolith making per-type changes error-prone.
+
+**Implementation order (mandatory):** ARCH-C → ARCH-A → ARCH-D → ARCH-B
+
+**Backwards compatibility:** Demonstrated features must be preserved in all examples, but example source code may be refactored as part of these tracks. LinePlotController may be fully retired once SeismographyExample and LineExample are migrated to the unified PlotController API.
+
+---
+
+### ARCH-C [COMPLETED] ROILayer Internal Decomposition
+**Completed:** 2026-03-01 | **Branch:** feature/ARCH-C
+Split `renderLayers()` into `_buildCoordHelpers`, `_buildLinearRegionLayers`, `_buildLineROILayers`, `_buildRectROILayers`; external API (props, defaultProps, layerName, sublayer ids) unchanged; build verified zero errors.
+Full spec: [docs/plan-archive.md#arch-c](docs/plan-archive.md#arch-c)
+
+---
+
+### ARCH-A [PENDING] PlotController Pluggable Data Layers
+
+**Files changed:** `src/plot/PlotController.js`
+
+**What to build:**
+
+#### DataLayerDef contract (JSDoc, no TS file)
+```js
+/**
+ * @typedef {object} DataLayerDef
+ * @property {string}   id
+ * @property {function} build  — (ctx: RenderContext) => Layer | Layer[] | null
+ * @property {object}   [props]  — static user props forwarded into ctx.props
+ */
+
+/**
+ * @typedef {object} RenderContext
+ * @property {object}   gpuAttrs     — { x, y, color, size } typed arrays from DataStore/DataView
+ * @property {number}   dataTrigger  — monotonically increasing counter
+ * @property {boolean}  xIsLog
+ * @property {boolean}  yIsLog
+ * @property {number[]} xDomain      — [xMin, xMax]
+ * @property {number[]} yDomain      — [yMin, yMax]
+ * @property {object}   props        — the static props from the layer def
+ */
+```
+
+#### Storage
+Add to constructor: `this._dataLayerDefs = new Map();` (insertion order = deck.gl layer stack order).
+
+#### Default scatter layer (backwards compat)
+```js
+// In constructor, after _dataLayerDefs init:
+if (!opts.disableDefaultDataLayer) {
+  this.registerDataLayer('default-scatter', (ctx) => {
+    if (ctx.gpuAttrs.x.length === 0) return null;
+    return buildScatterLayer(ctx.gpuAttrs, {
+      dataTrigger: ctx.dataTrigger,
+      xIsLog: ctx.xIsLog,
+      yIsLog: ctx.yIsLog,
+    });
+  });
+}
+```
+
+#### New public methods
+```js
+/** Register or replace a data layer factory. */
+registerDataLayer(id, buildFn, props = {}) {
+  this._dataLayerDefs.set(id, { build: buildFn, props });
+  this._dirty = true;
+}
+
+/** Remove a registered layer by id. No-op if not found. */
+unregisterDataLayer(id) {
+  if (this._dataLayerDefs.delete(id)) this._dirty = true;
+}
+
+/** Update static props for an already-registered layer. */
+updateDataLayerProps(id, props) {
+  const def = this._dataLayerDefs.get(id);
+  if (def) { def.props = props; this._dirty = true; }
+}
+```
+
+#### Modified `_render()`
+
+Replace the hardcoded `buildScatterLayer` block with:
+```js
+// Build registered data layers
+const layers = [];
+const context = {
+  gpuAttrs, dataTrigger: this._dataTrigger,
+  xIsLog, yIsLog, xDomain: [xMin, xMax], yDomain: [yMin, yMax],
+};
+for (const [, def] of this._dataLayerDefs) {
+  const result = def.build({ ...context, props: def.props });
+  if (result == null) continue;
+  if (Array.isArray(result)) layers.push(...result);
+  else layers.push(result);
+}
+// ROILayer always last
+layers.push(new ROILayer({ id: 'roi-layer', rois, plotXMin: xMin, plotXMax: xMax, plotYMin: yMin, plotYMax: yMax, xIsLog, yIsLog }));
+this._deck.setProps({ viewState: this._buildViewState(), layers });
+```
+
+**Net change:** ~50 lines added to a 750-line file. No existing method signatures change.
+
+**Verification:** ExampleApp + SharedDataExample — scatter renders, live append works, ROIs work. Confirm `disableDefaultDataLayer: true` produces an empty plot (only ROI layer).
+
+---
+
+### ARCH-D [PENDING] SignalDataLayer + LinePlotController Retirement
+
+**Files changed:**
+- `src/plot/layers/SignalDataLayer.js` (new, ~50 lines)
+- `src/plot/LinePlotController.js` (deleted)
+- `examples/LineExample.jsx` (migrated to PlotController + SignalDataLayer)
+- `examples/SeismographyExample.jsx` (migrated to PlotController + SignalDataLayer)
+
+**What to build:**
+
+#### New file `src/plot/layers/SignalDataLayer.js`
+
+A `SignalStore` class manages the signals Map (previously embedded in LinePlotController) and exposes the same data API. A `buildSignalLayers(signalsMap)` function produces the PathLayer array for the registered layer def.
+
+```js
+import { PathLayer } from '@deck.gl/layers';
+
+/**
+ * SignalStore — manages a collection of named time-series signals.
+ * Replaces the signal management previously in LinePlotController.
+ * Used with PlotController.registerDataLayer() for line/waveform plots.
+ */
+export class SignalStore {
+  constructor() {
+    this._signals = new Map();
+    this._xCounter = 0;
+  }
+
+  addSignal(id, color) { ... }                          // same semantics as LinePlotController
+  appendSignalData(id, yValues, xBase) { ... }          // same
+  advanceXCounter(n) { this._xCounter += n; }
+  trimBefore(xMin) { ... }                              // remove points where x < xMin
+  expandDomains() { ... }                               // returns { xDomain, yDomain } for caller to set
+  getPointCount() { ... }
+  reset() { ... }
+  get xCounter() { return this._xCounter; }
+
+  /** Create a DataLayerDef for use with PlotController.registerDataLayer(). */
+  toLayerDef() {
+    return {
+      id:    'signal-data',
+      build: (_ctx) => {
+        const layers = buildSignalLayers(this._signals);
+        return layers.length > 0 ? layers : null;
+      },
+    };
+  }
+}
+
+/** Build PathLayer instances for all signals. */
+export function buildSignalLayers(signalsMap) {
+  const layers = [];
+  for (const [id, sig] of signalsMap) {
+    if (!sig.layerData || sig.path.length < 2) continue;
+    layers.push(new PathLayer({
+      id:             `line-${id}`,
+      data:           sig.layerData,
+      getPath:        d => d.path,
+      getColor:       d => d.color,
+      getWidth:       2,
+      widthUnits:     'pixels',
+      pickable:       false,
+      updateTriggers: { getPath: sig.version },
+    }));
+  }
+  return layers;
+}
+```
+
+#### Migrate `LineExample.jsx`
+
+Replace `LinePlotController` usage with `PlotController` + `SignalStore`:
+
+```js
+// Before:
+const ctrl = new LinePlotController({ xDomain, yDomain });
+ctrl.addSignal('a', [255, 100, 100, 255]);
+ctrl.appendSignalData('a', samples, xBase);
+ctrl.trimBefore(xMin);
+ctrl.expandDomains();
+
+// After:
+const signals = new SignalStore();
+const ctrl = new PlotController({ xDomain, yDomain, disableDefaultDataLayer: true });
+ctrl.registerDataLayer('signals', signals.toLayerDef().build);
+signals.addSignal('a', [255, 100, 100, 255]);
+signals.appendSignalData('a', samples, xBase);
+signals.trimBefore(xMin);
+const { xDomain: xd, yDomain: yd } = signals.expandDomains();
+ctrl.xAxis.setDomain(xd);
+ctrl.yAxis.setDomain(yd);
+```
+
+All demonstrated features preserved: multi-signal render, rolling window, reset, zoom/pan, axis labels.
+
+#### Migrate `SeismographyExample.jsx`
+
+Replace the 10 `LinePlotController` instances with `PlotController` + `SignalStore`. The example currently accesses:
+- `ctrl._signals.get('s')` → `signalStore._signals.get('s')` (or a public `getSignal(id)` accessor on SignalStore)
+- `ctrl._viewport` → `ctrl.viewport` (already a public getter on PlotController)
+- `ctrl._axisRenderer` → PlotController does not expose axisRenderer; label rendering moves to be driven purely via `xLabel`/`yLabel` props on PlotCanvas
+- `ctrl._dirty` → `ctrl._markDirty()` call or removed (PlotController's RAF loop handles dirty automatically)
+- `ctrl._xAxis` → `ctrl.xAxis` (already a public getter)
+- `ctrl._onMouseDown` → remove the manual event re-routing; PlotController handles its own mouse events
+
+The seismography features to preserve: 10 stacked channels, shared X-axis via `domainChanged` cross-propagation, one `vline-half-bottom` LineROI per channel, React table with version-gated label/position edits via `updateFromExternal()`.
+
+#### Delete `src/plot/LinePlotController.js`
+
+Once both examples are migrated and verified, delete the file. Remove its webpack entry and `import` references.
+
+**Note:** `PlotController` gains ROI support for free in migrated examples — the seismography P-wave picks continue to work via the standard ROI system.
+
+**Verification:** LineExample — 3 signals render, rolling window trims correctly, reset works, zoom/pan via mouse. SeismographyExample — 10 stacked channels, shared X sync, P-wave picks draggable and table-editable, no regression vs. current behavior.
+
+---
+
+### ARCH-B [PENDING] PlotLayer CompositeLayer
+
+**Files changed:**
+- `src/plot/layers/PlotLayer.js` (new, ~30 lines)
+- `src/plot/PlotController.js` (`_render()` uses PlotLayer; gated by `opts.usePlotLayer`)
+
+**What to build:**
+
+**New file `src/plot/layers/PlotLayer.js`:**
+```js
+import { CompositeLayer } from '@deck.gl/core';
+
+/**
+ * PlotLayer — CompositeLayer that aggregates all registered data layers
+ * and the ROILayer into a single composable unit for deck.gl.
+ *
+ * Props:
+ *   dataLayers  {Layer[]}  — ordered array of data layers (scatter, line, spectrogram, etc.)
+ *   roiLayer    {Layer}    — ROILayer instance (always rendered last / on top)
+ */
+export class PlotLayer extends CompositeLayer {
+  static get layerName() { return 'PlotLayer'; }
+
+  renderLayers() {
+    const { dataLayers = [], roiLayer } = this.props;
+    return roiLayer ? [...dataLayers, roiLayer] : dataLayers;
+  }
+}
+
+PlotLayer.defaultProps = {
+  dataLayers: { type: 'array', value: [] },
+  roiLayer:   { type: 'object', value: null, optional: true },
+};
+```
+
+**Modified `PlotController._render()`:**
+```js
+const roiLayer = new ROILayer({ id: 'roi-layer', rois, plotXMin: xMin, plotXMax: xMax, plotYMin: yMin, plotYMax: yMax, xIsLog, yIsLog });
+this._deck.setProps({
+  viewState: this._buildViewState(),
+  layers: [new PlotLayer({ id: 'plot-layer', dataLayers, roiLayer })],
+});
+```
+
+**Note on sublayer id namespacing:** CompositeLayer wrapping prefixes sublayer ids (e.g., `roi-layer-${roi.id}-fill` becomes `plot-layer-roi-layer-${roi.id}-fill`). No consumer code inspects deck.gl layer ids by string, so this is safe. Verify ROI picking and drag still work after the change.
+
+**Verification:** All examples — render correctly; ROI drag/resize works; no picking regressions.

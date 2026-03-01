@@ -2994,3 +2994,43 @@ The LinearRegion table required a single-click to filter the RectROI table, with
 - ✅ Single-click on LinearRegion rows continues to filter rect table unchanged
 - ✅ No engine changes beyond adding `parentId` to `serializeAll()`
 - ✅ No stale-closure issues (all cross-render state read via refs)
+
+---
+
+## ARCH-C [COMPLETED] ROILayer Internal Decomposition
+
+**Branch:** `feature/ARCH-C`
+**Completed:** 2026-03-01
+
+**Goal:** Split the monolithic `renderLayers()` method in `src/plot/layers/ROILayer.js` into four focused private helpers. Pure internal refactor — external API (props, `defaultProps`, `layerName`) is unchanged.
+
+**Files changed:** `src/plot/layers/ROILayer.js` only.
+
+**Extracted methods:**
+
+- `_buildCoordHelpers(props)` — builds `toX`/`toY` transform functions and pre-computes `deckXMin`/`deckXMax`/`deckYMin`/`deckYMax` from `plotXMin/Max`/`plotYMin/Max` and log-scale flags.
+- `_buildLinearRegionLayers(roi, coords)` — returns `[PolygonLayer, PathLayer]` (fill + left/right edge lines) for a `linearRegion` ROI.
+- `_buildLineROILayers(roi, coords)` — returns `[PathLayer]` (+ optional `ScatterplotLayer` handle when selected) for a `lineROI`.
+- `_buildRectROILayers(roi, coords)` — returns `[PolygonLayer]` (+ optional `ScatterplotLayer` handles when selected) for a `rectROI`.
+
+**Modified `renderLayers()`:**
+```js
+renderLayers() {
+  const rois = this.props.rois || [];
+  if (rois.length === 0) return [];
+  const coords = this._buildCoordHelpers(this.props);
+  const layers = [];
+  for (const roi of rois) {
+    if (!roi.flags.visible) continue;
+    if (roi.type === 'linearRegion') layers.push(...this._buildLinearRegionLayers(roi, coords));
+    else if (roi.type === 'lineROI') layers.push(...this._buildLineROILayers(roi, coords));
+    else                             layers.push(...this._buildRectROILayers(roi, coords));
+  }
+  return layers;
+}
+```
+
+**Acceptance criteria verified:**
+- ✅ Build succeeds with zero errors (`webpack 5 compiled with 3 warnings` — pre-existing size warnings only)
+- ✅ All sublayer ids are unchanged (embed `roi.id`), so no picking regressions
+- ✅ No consumer code changes required
