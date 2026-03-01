@@ -354,6 +354,15 @@ export class PlotController extends EventEmitter {
     if (def) { def.props = props; this._dirty = true; }
   }
 
+  /**
+   * Schedule a re-render on the next RAF tick.
+   * Call this when external state (e.g. TraceGroup visibility) changes
+   * without going through a DataStore or ROI event.
+   */
+  markDirty() {
+    this._dirty = true;
+  }
+
   // ─── Export placeholder (v2) ───────────────────────────────────────────────
 
   /**

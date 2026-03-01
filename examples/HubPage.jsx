@@ -35,6 +35,11 @@ export default function HubPage() {
       title: 'Seismography (EX5)',
       desc: '10 stacked channels with shared X-axis zoom/pan. Each channel has an independent Y-axis and a draggable vline-half-bottom P-wave pick. Sidebar table shows station, label, and position — edits are version-gated via updateFromExternal(). React owns zero geometry.',
     },
+    {
+      href: 'multi-sensor.html',
+      title: 'Multi-Sensor Scatter (F22/EX7)',
+      desc: '50 sensors × 10k points each (500k total). TraceGroup partitions bulk data by tag in O(n). 25-color OKLAB-derived palette cycles at sensor_25. Scrollable sidebar with per-sensor visibility checkboxes + color swatches. Show All / Hide All bulk controls. React owns zero arrays.',
+    },
   ];
 
   const styles = {

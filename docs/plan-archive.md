@@ -3239,3 +3239,130 @@ Wrap all registered data layers and the ROILayer in a single `PlotLayer` Composi
 - ✅ Build passes zero errors
 - ✅ All examples render correctly with default flag-off path (flat layer array unchanged)
 - ✅ `opts.usePlotLayer: true` produces a single-element `layers` array wrapping all content
+
+---
+
+## F22
+
+### F22 — TraceGroup Abstraction
+
+**Type:** Engine Primitive — `src/plot/layers/TraceGroup.js`
+**Branch:** `feature/F22-EX7`
+**Completed:** 2026-03-01
+
+Generic multi-trace data layer. Partitions bulk data by a tag field into per-tag typed-array buffers in one O(n) pass. Resolves per-trace attributes (color, opacity, user-defined) via palette cycling + per-tag overrides. Plugs into `PlotController` via `registerDataLayer` using `.toLayerDef().build`. Layer-type agnostic: caller provides `buildLayer(traceId, traceData, attrs, ctx)` callback.
+
+### Constructor
+
+```js
+new TraceGroup({
+  palette,      // Array<[R,G,B,A]> — cycled by trace insertion order (required)
+  traceAttrs,   // { [tag]: { color?, opacity?, ...userFields } } — per-tag overrides (optional)
+  defaultAttrs, // { opacity?, size?, ...userFields } — global defaults (optional)
+  buildLayer,   // (traceId, traceData, attrs, ctx) => deck.gl Layer | null (required)
+})
+```
+
+### Internal Per-Trace Structure (TraceEntry)
+
+```js
+{
+  x:              Float32Array,
+  y:              Float32Array,
+  size:           Float32Array,
+  count:          number,         // live point count
+  capacity:       number,         // doubles on overflow
+  version:        number,         // bumped on appendData; drives deck.gl updateTriggers
+  visible:        boolean,        // default true
+  insertionIndex: number,         // stable index for palette cycling
+}
+```
+
+### Public API
+
+| Method | Description |
+|--------|-------------|
+| `appendData({ x, y, tag, size? })` | Bulk append O(n); doubling buffer growth; bumps version per trace |
+| `setTraceVisible(tag, bool)` | Show/hide trace |
+| `getTraceVisible(tag)` | Returns visibility bool |
+| `setTraceAttr(tag, attrs)` | Merge per-tag attr overrides post-construction |
+| `setPalette(palette)` | Replace palette (no remap of existing tags) |
+| `getAllTags()` | Tags in insertion order |
+| `getTrace(tag)` | Raw TraceEntry (advanced use) |
+| `resolveAttrs(tag)` | Merged attrs (palette + overrides + defaults) |
+| `toLayerDef()` | Returns `{ id, build }` for `registerDataLayer` |
+
+### Attribute Resolution Priority (highest wins)
+
+1. `traceAttrs[tag]` field
+2. Palette color by `insertionIndex % palette.length`
+3. `defaultAttrs` field
+4. Library defaults: `{ opacity: 1.0, size: 4.0, color: [255,255,255,255] }`
+
+### Implementation Notes
+
+- No `EventEmitter` — `PlotController` polls `build()` every RAF tick
+- `insertionIndex = this._traces.size` at first-seen time (stable)
+- Buffer doubling mirrors `DataStore._grow()`
+
+---
+
+## EX7
+
+### EX7 — Multi-Sensor Scatter Example
+
+**Depends on:** F22
+**Type:** Example — `examples/MultiSensorExample.jsx`
+**Branch:** `feature/F22-EX7`
+**Completed:** 2026-03-01
+
+50 sensors × 10k points each (500k total). 25-color OKLAB-derived palette cycling so sensors 25–49 reuse slots 0–24. Scrollable sidebar with per-sensor visibility checkboxes + color swatches. "Show All" / "Hide All" bulk controls. All point data at module level — React owns zero arrays.
+
+### Data Setup
+
+- Tags: `sensor_0` … `sensor_49`; 10,000 points per sensor
+- x: uniform `[0, 1000]`, y: uniform `[0, 100]`; LCG pseudo-random for reproducibility
+- Generated once at module level (`let _traceGroup = null`; lazy init on first `onInit`)
+- Single bulk `appendData({ x: allX, y: allY, tag: allTags })` call
+
+### Palette
+
+`PALETTE_25` — 25 RGBA colors hardcoded at top of `MultiSensorExample.jsx`, covering the hue wheel with high contrast on dark background.
+
+### UI Layout
+
+```
+┌──────────────────────────────────────────────────────┐
+│  "Multi-Sensor Scatter — 50 sensors × 10k pts each"  │
+├───────────────────────────────┬──────────────────────┤
+│  PlotCanvas (flex: 1)         │  Sidebar (240px)      │
+│                               │  [Show All][Hide All] │
+│  50 colored scatter layers    │  scrollable list:     │
+│                               │  ☑ sensor_0  ████    │
+│                               │  ☑ sensor_1  ████    │
+│                               │  ☐ sensor_2  ████    │
+└───────────────────────────────┴──────────────────────┘
+```
+
+### Files Created/Modified
+
+| File | Action |
+|------|--------|
+| `src/plot/layers/TraceGroup.js` | Created (F22 engine primitive) |
+| `examples/MultiSensorExample.jsx` | Created |
+| `src/multi-sensor.js` | Created (webpack entry) |
+| `public/multi-sensor.html` | Created |
+| `webpack.config.js` | Added multi-sensor entry + HtmlWebpackPlugin |
+| `examples/HubPage.jsx` | Added EX7 card |
+| `README.md` | Added TraceGroup API section + EX7 section |
+
+### Acceptance Criteria
+
+- ✅ Build passes zero errors
+- ✅ 500k points rendered via 50 ScatterplotLayer instances
+- ✅ 25-color palette cycles correctly at sensor_25
+- ✅ Toggle checkbox → trace visibility toggles on next RAF frame
+- ✅ "Hide All" → empty canvas; "Show All" → all 50 traces return
+- ✅ Zoom/pan works normally
+- ✅ HubPage card links to `multi-sensor.html`
+- ✅ README documents TraceGroup constructor + public API

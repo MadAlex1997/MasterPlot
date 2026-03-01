@@ -14,6 +14,7 @@ module.exports = (env, argv) => {
       'rolling-line':  './src/rolling-line.js',
       'shared-data':   './src/shared-data.js',
       seismography:    './src/seismography.js',
+      'multi-sensor':  './src/multi-sensor.js',
     },
     output: {
       path: path.resolve(__dirname, 'dist'),
@@ -74,6 +75,11 @@ module.exports = (env, argv) => {
         template: './public/seismography.html',
         filename: 'seismography.html',
         chunks:   ['seismography'],
+      }),
+      new HtmlWebpackPlugin({
+        template: './public/multi-sensor.html',
+        filename: 'multi-sensor.html',
+        chunks:   ['multi-sensor'],
       }),
     ],
     devServer: {

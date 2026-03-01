@@ -14,7 +14,7 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 
 ---
 
-## Current Capabilities (F1–F21 + EX1–EX5 + ARCH-A complete)
+## Current Capabilities (F1–F22 + EX1–EX7 + ARCH-A/B/C/D complete)
 
 ### Core Plotting Engine
 - **WebGL rendering** via deck.gl `OrthographicView` — no maps, no geospatial assumptions
@@ -108,6 +108,112 @@ Ten stacked seismograph channels in a single page, each backed by its own `DataS
 | **Sidebar table** | Station · Label · Pos (s); edits committed on Enter/blur |
 | **Version-gated edits** | Table edit calls `updateFromExternal()` with `version + 1`; rejected if a concurrent drag committed a higher version |
 | **React owns no geometry** | `tableRows` is a display cache; all bounds live in `LineROI.position` |
+
+### Multi-Sensor Scatter Example (F22 / EX7)
+
+Fifty sensors × 10,000 points each (500k total points), each sensor colour-coded via a 25-entry palette that cycles at `sensor_25`:
+
+| Feature | Details |
+|---|---|
+| **TraceGroup** | Partitions all 500k points by tag in one O(n) pass at module level; no React state holds any array |
+| **25-color palette** | OKLAB-derived RGBA colors, high-contrast on dark background; sensors 25–49 reuse slots 0–24 |
+| **Pluggable layer** | `traceGroup.toLayerDef().build` registered via `ctrl.registerDataLayer('traces', …)` |
+| **Visibility sidebar** | Scrollable checkbox list; toggling a sensor calls `setTraceVisible()` + bumps a React counter — only the sidebar re-renders, not the canvas |
+| **Show All / Hide All** | Bulk visibility controls; empty canvas on "Hide All", all 50 traces return on "Show All" |
+| **React owns zero arrays** | All data lives at module level; `_traceGroup = null` on unmount |
+
+---
+
+## TraceGroup (F22)
+
+`TraceGroup` is a generic multi-trace data layer that partitions bulk point data by a string tag into per-tag `Float32Array` buffers, and plugs into `PlotController` via `registerDataLayer`.
+
+### Constructor
+
+```js
+import { TraceGroup } from './src/plot/layers/TraceGroup.js';
+
+const tg = new TraceGroup({
+  palette:      [[255,100,100,255], [100,255,100,255], /* … */],  // required
+  buildLayer:   (traceId, traceData, attrs, ctx) => new ScatterplotLayer({ … }), // required
+  traceAttrs:   { 'sensor_0': { color: [255,0,0,255] } },   // optional per-tag overrides
+  defaultAttrs: { opacity: 0.85, size: 3 },                 // optional global defaults
+});
+```
+
+### Public API
+
+| Method | Description |
+|---|---|
+| `appendData({ x, y, tag, size? })` | Bulk append; partitions by `tag` array into per-trace typed arrays in one O(n) pass. Resizes buffers (doubling) as needed. Bumps `version` for each modified trace. |
+| `setTraceVisible(tag, bool)` | Show/hide a trace. Hidden traces are excluded from the next `build()` call. |
+| `getTraceVisible(tag)` | Returns current visibility bool. |
+| `setTraceAttr(tag, attrs)` | Merge per-tag attr overrides post-construction. |
+| `setPalette(palette)` | Replace palette array (does not remap existing tags). |
+| `getAllTags()` | Returns tags in insertion order. |
+| `getTrace(tag)` | Returns raw `TraceEntry` (for advanced use). |
+| `resolveAttrs(tag)` | Returns resolved attrs (palette + overrides + defaults merged). |
+| `toLayerDef()` | Returns `{ id: 'trace-group', build: (ctx) => Layer[] \| null }` for `PlotController.registerDataLayer`. |
+
+### Attribute resolution priority (highest wins)
+
+1. Per-tag `traceAttrs[tag]` field
+2. Palette color: `palette[insertionIndex % palette.length]`
+3. `defaultAttrs` field
+4. Library defaults: `{ opacity: 1.0, size: 4.0, color: [255,255,255,255] }`
+
+Opacity is **not** baked into palette alpha — resolved separately so callers apply it via deck.gl's `opacity` prop.
+
+### Usage with PlotController
+
+```js
+const ctrl = new PlotController({
+  xDomain: [0, 1000], yDomain: [0, 100],
+  panMode: 'drag',
+  disableDefaultDataLayer: true,
+});
+
+const tg = new TraceGroup({
+  palette: PALETTE_25,
+  defaultAttrs: { opacity: 0.85, size: 3 },
+  buildLayer: (traceId, traceData, attrs, ctx) => {
+    const { x, y, count } = traceData;
+    return new ScatterplotLayer({
+      id:          traceId,
+      data:        { length: count },
+      getPosition: (_, { index }) => [
+        ctx.xIsLog ? Math.log10(Math.max(x[index], 1e-10)) : x[index],
+        ctx.yIsLog ? Math.log10(Math.max(y[index], 1e-10)) : y[index],
+        0,
+      ],
+      getRadius:   attrs.size * 0.5,
+      getColor:    attrs.color,
+      opacity:     attrs.opacity,
+      radiusUnits: 'pixels',
+      pickable:    false,
+      updateTriggers: { getPosition: traceData.version },
+    });
+  },
+});
+
+tg.appendData({ x: allX, y: allY, tag: allTags });
+ctrl.registerDataLayer('traces', tg.toLayerDef().build);
+```
+
+### TraceEntry structure
+
+```js
+{
+  x:              Float32Array,   // x coordinates
+  y:              Float32Array,   // y coordinates
+  size:           Float32Array,   // size per point (allocated, but only used if passed in appendData)
+  count:          number,         // live point count
+  capacity:       number,         // buffer allocation (doubles on overflow)
+  version:        number,         // bumped on appendData; drives deck.gl updateTriggers
+  visible:        boolean,        // default true; false excludes from build()
+  insertionIndex: number,         // stable index for palette cycling (order first seen)
+}
+```
 
 ---
 
