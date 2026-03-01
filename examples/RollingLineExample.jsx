@@ -1,6 +1,8 @@
 /**
  * RollingLineExample — demonstrates 30-second rolling expiration on a line plot.
  *
+ * Migrated in ARCH-D: LinePlotController replaced by PlotController + SignalStore.
+ *
  * Three live deterministic sin/cos signals are appended every 200 ms.
  * Signals are vertically offset so they never overlap, making it trivially
  * easy to see the wave shape and rolling expiration simultaneously.
@@ -25,7 +27,8 @@
  */
 
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { LinePlotController } from '../src/plot/LinePlotController.js';
+import { PlotController } from '../src/plot/PlotController.js';
+import { SignalStore }    from '../src/plot/layers/SignalDataLayer.js';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -54,7 +57,8 @@ export default function RollingLineExample() {
   const webglRef      = useRef(null);
   const axisRef       = useRef(null);
   const controllerRef = useRef(null);
-  const startTimeRef  = useRef(null);   // Date.now() at mount
+  const signalsRef    = useRef(null);    // SignalStore — not React state
+  const startTimeRef  = useRef(null);    // Date.now() at mount
   const intervalRef   = useRef(null);
   const pausedRef     = useRef(false);
 
@@ -69,7 +73,7 @@ export default function RollingLineExample() {
 
   // ── tick ───────────────────────────────────────────────────────────────────
 
-  const doTick = useCallback((ctrl) => {
+  const doTick = useCallback((ctrl, signals) => {
     if (pausedRef.current) return;
 
     const now        = (Date.now() - startTimeRef.current) / 1000;  // seconds elapsed
@@ -86,22 +90,24 @@ export default function RollingLineExample() {
         const y = (i % 2 === 0)
           ? AMPLITUDE * Math.sin(2 * Math.PI * FREQ * t) + offset
           : AMPLITUDE * Math.cos(2 * Math.PI * FREQ * t) + offset;
-        ctrl.appendSignalData(sig.id, [y], t);
+        signals.appendSignalData(sig.id, [y], t);
       }
     });
 
     // Trim data older than the rolling window
-    const prevCount = ctrl.getPointCount();
-    ctrl.trimBefore(xWindowMin);
-    const trimmed = prevCount - ctrl.getPointCount();
+    const prevCount = signals.getPointCount();
+    signals.trimBefore(xWindowMin);
+    const trimmed = prevCount - signals.getPointCount();
 
     // y range is deterministic: [−AMPLITUDE, AMPLITUDE + maxOffset] + padding
     const numSigs = SIGNALS.length;
     const yBottom = -AMPLITUDE - 0.5;
     const yTop    = signalOffset(numSigs - 1) + AMPLITUDE + 0.5;
-    ctrl.setDomains([xWindowMin, now], [yBottom, yTop]);
 
-    const totalPts = ctrl.getPointCount();
+    ctrl.xAxis.setDomain([xWindowMin, now]);   // triggers dirty via _wireEvents
+    ctrl.yAxis.setDomain([yBottom, yTop]);
+
+    const totalPts = signals.getPointCount();
     setPointCount(totalPts);
     setElapsedSec(Math.floor(now));
 
@@ -124,14 +130,20 @@ export default function RollingLineExample() {
       ac.height = wc.height;
 
       const numSigs = SIGNALS.length;
-      const ctrl = new LinePlotController({
-        xDomain: [0, WINDOW_SECS],
-        yDomain: [-AMPLITUDE - 0.5, signalOffset(numSigs - 1) + AMPLITUDE + 0.5],
-        xLabel:  'time (s)',
-        yLabel:  'amplitude',
+
+      const signals = new SignalStore();
+      for (const sig of SIGNALS) signals.addSignal(sig.id, sig.color);
+
+      const ctrl = new PlotController({
+        xDomain:                 [0, WINDOW_SECS],
+        yDomain:                 [-AMPLITUDE - 0.5, signalOffset(numSigs - 1) + AMPLITUDE + 0.5],
+        xLabel:                  'time (s)',
+        yLabel:                  'amplitude',
+        panMode:                 'drag',
+        disableDefaultDataLayer: true,
       });
 
-      for (const sig of SIGNALS) ctrl.addSignal(sig.id, sig.color);
+      ctrl.registerDataLayer('signals', signals.toLayerDef().build);
       ctrl.init(wc, ac);
 
       ctrl.on('zoomChanged', d => addLog(`zoom: ×${d.factor.toFixed(2)}`));
@@ -142,10 +154,11 @@ export default function RollingLineExample() {
 
       startTimeRef.current  = Date.now();
       controllerRef.current = ctrl;
+      signalsRef.current    = signals;
 
       // Initial tick then start interval
-      doTick(ctrl);
-      intervalRef.current = setInterval(() => doTick(ctrl), TICK_MS);
+      doTick(ctrl, signals);
+      intervalRef.current = setInterval(() => doTick(ctrl, signals), TICK_MS);
     });
 
     return () => {
@@ -153,6 +166,7 @@ export default function RollingLineExample() {
       clearInterval(intervalRef.current);
       controllerRef.current?.destroy();
       controllerRef.current = null;
+      signalsRef.current    = null;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -1,5 +1,8 @@
 /**
- * LineExample — demonstrates buildLineLayer / PathLayer via LinePlotController.
+ * LineExample — demonstrates PathLayer line plots via PlotController + SignalStore.
+ *
+ * Migrated in ARCH-D: LinePlotController replaced by PlotController (unified
+ * controller) with a SignalStore registered as a pluggable data layer.
  *
  * Three deterministic sin/cos signals (A, B, C) are appended live and
  * vertically offset so they never overlap, making rolling expiration easy to
@@ -13,7 +16,7 @@
  *   t increments by TIME_STEP per sample (continuous, never resets)
  *
  * Rolling window: the last WINDOW_SAMPLES samples stay visible; older
- * points are evicted via LinePlotController.trimBefore() each tick.
+ * points are evicted via SignalStore.trimBefore() each tick.
  *
  * Controls:
  *   Live append checkbox — start/stop the 1-second append interval
@@ -25,7 +28,8 @@
  */
 
 import { useRef, useEffect, useState } from 'react';
-import { LinePlotController } from '../src/plot/LinePlotController.js';
+import { PlotController } from '../src/plot/PlotController.js';
+import { SignalStore }    from '../src/plot/layers/SignalDataLayer.js';
 
 // ── Signal configuration ──────────────────────────────────────────────────────
 
@@ -69,6 +73,7 @@ export default function LineExample() {
   const webglRef      = useRef(null);
   const axisRef       = useRef(null);
   const controllerRef = useRef(null);
+  const signalsRef    = useRef(null);   // SignalStore — module-level, not React state
   const intervalRef   = useRef(null);
 
   const [log,        setLog]        = useState([]);
@@ -78,25 +83,28 @@ export default function LineExample() {
 
   // ── tick: append one round of deterministic wave samples ───────────────────
 
-  const doTick = (ctrl) => {
-    const xBase = ctrl.xCounter;
+  const doTick = (ctrl, signals) => {
+    const xBase = signals.xCounter;
     SIGNALS.forEach((sig, i) => {
       const samples = generateWaveSamples(i, xBase, SAMPLES_PER_TICK);
-      ctrl.appendSignalData(sig.id, samples, xBase);
+      signals.appendSignalData(sig.id, samples, xBase);
     });
-    ctrl.advanceXCounter(SAMPLES_PER_TICK);
+    signals.advanceXCounter(SAMPLES_PER_TICK);
 
     // Rolling expiration: remove points older than WINDOW_SAMPLES
-    const xMin = ctrl.xCounter - WINDOW_SAMPLES;
-    if (xMin > 0) ctrl.trimBefore(xMin);
+    const xMin = signals.xCounter - WINDOW_SAMPLES;
+    if (xMin > 0) signals.trimBefore(xMin);
 
-    ctrl.expandDomains();
-    addLog(`dataAppended: +${SAMPLES_PER_TICK} samples/signal  x=[${Math.max(0, ctrl.xCounter - WINDOW_SAMPLES)}, ${ctrl.xCounter}]`);
+    const { xDomain, yDomain } = signals.expandDomains();
+    ctrl.xAxis.setDomain(xDomain);   // triggers _dirty via _wireEvents
+    ctrl.yAxis.setDomain(yDomain);
+
+    addLog(`dataAppended: +${SAMPLES_PER_TICK} samples/signal  x=[${Math.max(0, signals.xCounter - WINDOW_SAMPLES)}, ${signals.xCounter}]`);
   };
 
-  const startInterval = (ctrl) => {
+  const startInterval = (ctrl, signals) => {
     if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(() => doTick(ctrl), TICK_MS);
+    intervalRef.current = setInterval(() => doTick(ctrl, signals), TICK_MS);
   };
 
   // ── mount ─────────────────────────────────────────────────────────────────
@@ -117,14 +125,22 @@ export default function LineExample() {
       const yTop    = signalOffset(numSignals - 1) + AMPLITUDE + 0.5;
       const yBottom = -AMPLITUDE - 0.5;
 
-      const ctrl = new LinePlotController({
-        xDomain: [0, WINDOW_SAMPLES],
-        yDomain: [yBottom, yTop],
-        xLabel:  'sample',
-        yLabel:  'value',
+      // SignalStore: manages signal paths and layer building
+      const signals = new SignalStore();
+      SIGNALS.forEach(sig => signals.addSignal(sig.id, sig.color));
+
+      // PlotController: unified controller with pluggable layer registry
+      const ctrl = new PlotController({
+        xDomain:                  [0, WINDOW_SAMPLES],
+        yDomain:                  [yBottom, yTop],
+        xLabel:                   'sample',
+        yLabel:                   'value',
+        panMode:                  'drag',
+        disableDefaultDataLayer:  true,   // no scatter; use signals instead
       });
 
-      SIGNALS.forEach(sig => ctrl.addSignal(sig.id, sig.color));
+      // Register the signal layer (build fn captures the SignalStore)
+      ctrl.registerDataLayer('signals', signals.toLayerDef().build);
 
       ctrl.init(wc, ac);
 
@@ -134,13 +150,13 @@ export default function LineExample() {
           addLog(`panChanged: dx=${d.dx.toFixed(0)} dy=${d.dy.toFixed(0)}`);
         }
       });
-      ctrl.on('reset', () => addLog('reset'));
 
       controllerRef.current = ctrl;
+      signalsRef.current    = signals;
 
       // Initial tick + start live append
-      doTick(ctrl);
-      startInterval(ctrl);
+      doTick(ctrl, signals);
+      startInterval(ctrl, signals);
     });
 
     return () => {
@@ -148,6 +164,7 @@ export default function LineExample() {
       clearInterval(intervalRef.current);
       controllerRef.current?.destroy();
       controllerRef.current = null;
+      signalsRef.current    = null;
     };
   }, []); // mount once
 
@@ -156,7 +173,7 @@ export default function LineExample() {
   const handleLiveAppendChange = (e) => {
     const checked = e.target.checked;
     if (checked) {
-      startInterval(controllerRef.current);
+      startInterval(controllerRef.current, signalsRef.current);
     } else {
       clearInterval(intervalRef.current);
     }
@@ -165,15 +182,26 @@ export default function LineExample() {
 
   const handleReset = () => {
     clearInterval(intervalRef.current);
-    controllerRef.current?.reset();
+
+    const signals = signalsRef.current;
+    const ctrl    = controllerRef.current;
+    if (!signals || !ctrl) return;
+
+    signals.reset();
+
+    // y-domain spans all three signal bands + padding
+    const numSignals = SIGNALS.length;
+    const yTop    = signalOffset(numSignals - 1) + AMPLITUDE + 0.5;
+    const yBottom = -AMPLITUDE - 0.5;
+
+    ctrl.xAxis.setDomain([0, WINDOW_SAMPLES]);
+    ctrl.yAxis.setDomain([yBottom, yTop]);
+    addLog('reset');
 
     // Restart append after reset
     if (liveAppend) {
-      const ctrl = controllerRef.current;
-      if (ctrl) {
-        doTick(ctrl);
-        startInterval(ctrl);
-      }
+      doTick(ctrl, signals);
+      startInterval(ctrl, signals);
     }
   };
 

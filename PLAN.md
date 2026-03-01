@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 4.6
+**Plan Version:** 4.8
 **Last Updated:** 2026-03-01
-**Status:** All Phase 1, Phase 2, Phase 3 complete. ARCH-C done. ARCH-A/D/B pending.
+**Status:** All Phase 1, Phase 2, Phase 3 complete. ARCH-C/A/D done. ARCH-B pending.
 
 ---
 
@@ -80,7 +80,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | EX6 | ROI Table Double-Click Selection | ✅ COMPLETED | feature/EX6 | 2026-02-26 |
 | ARCH-C | ROILayer Internal Decomposition | ✅ COMPLETED | feature/ARCH-C | 2026-03-01 |
 | ARCH-A | PlotController Pluggable Data Layers | ✅ COMPLETED | feature/ARCH-A | 2026-03-01 |
-| ARCH-D | SignalDataLayer Extraction | ⏳ PENDING | — | — |
+| ARCH-D | SignalDataLayer Extraction | ✅ COMPLETED | feature/ARCH-D | 2026-03-01 |
 | ARCH-B | PlotLayer CompositeLayer | ⏳ PENDING | — | — |
 
 ---
@@ -255,6 +255,7 @@ Full spec: [docs/plan-archive.md#f18](docs/plan-archive.md#f18)
 - **2026-02-26 [Claude]**: EX6 completed (v4.4) — `serializeAll()` enriched with `parentId`; `ExampleApp.jsx` gains double-click handlers + `plotSelectedLinearId`/`plotSelectedRectId` state; green outline on double-clicked LinearRegion rows, red outline on double-clicked RectROI rows; single-click filter unchanged. All Phase 3 features now complete.
 - **2026-03-01 [Claude]**: ARCH-C completed (v4.6) — `ROILayer.renderLayers()` decomposed into `_buildCoordHelpers`, `_buildLinearRegionLayers`, `_buildLineROILayers`, `_buildRectROILayers`; zero API change; build passes. Next: ARCH-A.
 - **2026-03-01 [Claude]**: ARCH-A completed (v4.7) — `PlotController` gains `DataLayerDef`/`RenderContext` JSDoc typedefs, `_dataLayerDefs` Map, default scatter auto-registration, `registerDataLayer()`/`unregisterDataLayer()`/`updateDataLayerProps()` public API, and a registry-driven `_render()` loop; build verified. Next: ARCH-D.
+- **2026-03-01 [Claude]**: ARCH-D completed (v4.8) — `SignalStore` + `buildSignalLayers()` in `src/plot/layers/SignalDataLayer.js`; `LinePlotController.js` deleted; `LineExample.jsx`, `RollingLineExample.jsx`, `SeismographyExample.jsx` migrated to `PlotController` + `SignalStore`; seismography X-sync via `domainChanged` + syncingRef; ROI via built-in `ctrl.roiController`; no monkey-patching; build passes zero errors. Next: ARCH-B.
 - **2026-03-01 [Claude]**: Architecture refactor added as PENDING (v4.5) — ARCH-C/A/D/B tracks. Goal: pluggable data layer registration in PlotController, ROILayer internal decomposition, SignalStore + SignalDataLayer replacing LinePlotController, and PlotLayer CompositeLayer. Examples may be refactored; demonstrated features must be preserved. LinePlotController to be deleted after ARCH-D migration of LineExample + SeismographyExample.
 
 ---
@@ -397,120 +398,10 @@ Full spec: [docs/plan-archive.md#arch-a](docs/plan-archive.md#arch-a)
 
 ---
 
-### ARCH-D [PENDING] SignalDataLayer + LinePlotController Retirement
-
-**Files changed:**
-- `src/plot/layers/SignalDataLayer.js` (new, ~50 lines)
-- `src/plot/LinePlotController.js` (deleted)
-- `examples/LineExample.jsx` (migrated to PlotController + SignalDataLayer)
-- `examples/SeismographyExample.jsx` (migrated to PlotController + SignalDataLayer)
-
-**What to build:**
-
-#### New file `src/plot/layers/SignalDataLayer.js`
-
-A `SignalStore` class manages the signals Map (previously embedded in LinePlotController) and exposes the same data API. A `buildSignalLayers(signalsMap)` function produces the PathLayer array for the registered layer def.
-
-```js
-import { PathLayer } from '@deck.gl/layers';
-
-/**
- * SignalStore — manages a collection of named time-series signals.
- * Replaces the signal management previously in LinePlotController.
- * Used with PlotController.registerDataLayer() for line/waveform plots.
- */
-export class SignalStore {
-  constructor() {
-    this._signals = new Map();
-    this._xCounter = 0;
-  }
-
-  addSignal(id, color) { ... }                          // same semantics as LinePlotController
-  appendSignalData(id, yValues, xBase) { ... }          // same
-  advanceXCounter(n) { this._xCounter += n; }
-  trimBefore(xMin) { ... }                              // remove points where x < xMin
-  expandDomains() { ... }                               // returns { xDomain, yDomain } for caller to set
-  getPointCount() { ... }
-  reset() { ... }
-  get xCounter() { return this._xCounter; }
-
-  /** Create a DataLayerDef for use with PlotController.registerDataLayer(). */
-  toLayerDef() {
-    return {
-      id:    'signal-data',
-      build: (_ctx) => {
-        const layers = buildSignalLayers(this._signals);
-        return layers.length > 0 ? layers : null;
-      },
-    };
-  }
-}
-
-/** Build PathLayer instances for all signals. */
-export function buildSignalLayers(signalsMap) {
-  const layers = [];
-  for (const [id, sig] of signalsMap) {
-    if (!sig.layerData || sig.path.length < 2) continue;
-    layers.push(new PathLayer({
-      id:             `line-${id}`,
-      data:           sig.layerData,
-      getPath:        d => d.path,
-      getColor:       d => d.color,
-      getWidth:       2,
-      widthUnits:     'pixels',
-      pickable:       false,
-      updateTriggers: { getPath: sig.version },
-    }));
-  }
-  return layers;
-}
-```
-
-#### Migrate `LineExample.jsx`
-
-Replace `LinePlotController` usage with `PlotController` + `SignalStore`:
-
-```js
-// Before:
-const ctrl = new LinePlotController({ xDomain, yDomain });
-ctrl.addSignal('a', [255, 100, 100, 255]);
-ctrl.appendSignalData('a', samples, xBase);
-ctrl.trimBefore(xMin);
-ctrl.expandDomains();
-
-// After:
-const signals = new SignalStore();
-const ctrl = new PlotController({ xDomain, yDomain, disableDefaultDataLayer: true });
-ctrl.registerDataLayer('signals', signals.toLayerDef().build);
-signals.addSignal('a', [255, 100, 100, 255]);
-signals.appendSignalData('a', samples, xBase);
-signals.trimBefore(xMin);
-const { xDomain: xd, yDomain: yd } = signals.expandDomains();
-ctrl.xAxis.setDomain(xd);
-ctrl.yAxis.setDomain(yd);
-```
-
-All demonstrated features preserved: multi-signal render, rolling window, reset, zoom/pan, axis labels.
-
-#### Migrate `SeismographyExample.jsx`
-
-Replace the 10 `LinePlotController` instances with `PlotController` + `SignalStore`. The example currently accesses:
-- `ctrl._signals.get('s')` → `signalStore._signals.get('s')` (or a public `getSignal(id)` accessor on SignalStore)
-- `ctrl._viewport` → `ctrl.viewport` (already a public getter on PlotController)
-- `ctrl._axisRenderer` → PlotController does not expose axisRenderer; label rendering moves to be driven purely via `xLabel`/`yLabel` props on PlotCanvas
-- `ctrl._dirty` → `ctrl._markDirty()` call or removed (PlotController's RAF loop handles dirty automatically)
-- `ctrl._xAxis` → `ctrl.xAxis` (already a public getter)
-- `ctrl._onMouseDown` → remove the manual event re-routing; PlotController handles its own mouse events
-
-The seismography features to preserve: 10 stacked channels, shared X-axis via `domainChanged` cross-propagation, one `vline-half-bottom` LineROI per channel, React table with version-gated label/position edits via `updateFromExternal()`.
-
-#### Delete `src/plot/LinePlotController.js`
-
-Once both examples are migrated and verified, delete the file. Remove its webpack entry and `import` references.
-
-**Note:** `PlotController` gains ROI support for free in migrated examples — the seismography P-wave picks continue to work via the standard ROI system.
-
-**Verification:** LineExample — 3 signals render, rolling window trims correctly, reset works, zoom/pan via mouse. SeismographyExample — 10 stacked channels, shared X sync, P-wave picks draggable and table-editable, no regression vs. current behavior.
+### ARCH-D [COMPLETED] SignalDataLayer + LinePlotController Retirement
+**Completed:** 2026-03-01 | **Branch:** feature/ARCH-D
+`SignalStore` class + `buildSignalLayers()` created in `src/plot/layers/SignalDataLayer.js`; `LinePlotController.js` deleted; `LineExample.jsx`, `RollingLineExample.jsx`, and `SeismographyExample.jsx` migrated to `PlotController` + `SignalStore` (`disableDefaultDataLayer: true`, `registerDataLayer('signals', signals.toLayerDef().build)`); seismography X-sync via `domainChanged` + syncingRef; ROI handled by built-in `ctrl.roiController`; no monkey-patching; build passes zero errors.
+Full spec: [docs/plan-archive.md#arch-d](docs/plan-archive.md#arch-d)
 
 ---
 
