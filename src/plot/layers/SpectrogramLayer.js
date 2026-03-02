@@ -22,6 +22,7 @@
 import { CompositeLayer } from '@deck.gl/core';
 import { BitmapLayer }    from '@deck.gl/layers';
 import FFT                from 'fft.js';
+import * as fftWindowing  from 'fft-windowing';
 
 // ── Viridis LUT (16 evenly-spaced stops) — used as standalone fallback ───────
 
@@ -59,35 +60,30 @@ function viridisColor(t) {
 
 // ── STFT ─────────────────────────────────────────────────────────────────────
 
-function computeSTFT(samples, windowSize, hopSize) {
+function computeSTFT(samples, windowSize, hopSize, windowFn = 'hann') {
   const numBins   = windowSize / 2;
   const numFrames = Math.max(0, Math.floor((samples.length - windowSize) / hopSize) + 1);
 
   if (numFrames === 0) return null;
 
-  // Pre-compute Hann window
-  const hann = new Float32Array(windowSize);
-  for (let i = 0; i < windowSize; i++) {
-    hann[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (windowSize - 1)));
-  }
-
-  const fft      = new FFT(windowSize);
-  const out      = fft.createComplexArray();
-  const windowed = new Float32Array(windowSize);
-  const power    = new Float32Array(numFrames * numBins);  // dB values
+  const fft   = new FFT(windowSize);
+  const out   = fft.createComplexArray();
+  const frame = new Float32Array(windowSize);
+  const power = new Float32Array(numFrames * numBins);  // dB values
 
   let globalMin =  Infinity;
   let globalMax = -Infinity;
 
-  for (let frame = 0; frame < numFrames; frame++) {
-    const offset = frame * hopSize;
+  for (let f = 0; f < numFrames; f++) {
+    const offset = f * hopSize;
 
-    // Apply Hann window
-    for (let i = 0; i < windowSize; i++) {
-      windowed[i] = samples[offset + i] * hann[i];
+    // Copy samples into frame buffer, then apply window function
+    for (let i = 0; i < windowSize; i++) frame[i] = samples[offset + i];
+    if (windowFn !== 'rectangular' && typeof fftWindowing[windowFn] === 'function') {
+      fftWindowing[windowFn](frame);  // mutates frame in-place
     }
 
-    fft.realTransform(out, windowed);
+    fft.realTransform(out, frame);
 
     // Compute dB magnitude for each positive-frequency bin
     for (let bin = 0; bin < numBins; bin++) {
@@ -95,7 +91,7 @@ function computeSTFT(samples, windowSize, hopSize) {
       const im  = out[bin * 2 + 1];
       const mag = Math.sqrt(re * re + im * im) / windowSize;
       const db  = 20 * Math.log10(Math.max(mag, 1e-10));
-      power[frame * numBins + bin] = db;
+      power[f * numBins + bin] = db;
       if (db < globalMin) globalMin = db;
       if (db > globalMax) globalMax = db;
     }
@@ -175,16 +171,17 @@ export class SpectrogramLayer extends CompositeLayer {
   }
 
   updateState({ props, oldProps }) {
-    const dataChanged  = props.dataTrigger  !== oldProps.dataTrigger;
+    const dataChanged  = props.dataTrigger  !== oldProps.dataTrigger
+                      || props.windowFn     !== oldProps.windowFn;
     const colorChanged = props.colorTrigger !== oldProps.colorTrigger;
 
     let stftResult = this.state.stftResult;
 
     // Recompute STFT only when data changes (or first render when stftResult is null)
     if (dataChanged || !stftResult) {
-      const { samples, windowSize, hopSize } = props;
+      const { samples, windowSize, hopSize, windowFn } = props;
       if (samples && samples.length >= windowSize) {
-        stftResult = computeSTFT(samples, windowSize, hopSize || windowSize / 2);
+        stftResult = computeSTFT(samples, windowSize, hopSize || windowSize / 2, windowFn);
         this.setState({ stftResult });
         if (props.lutController && stftResult) {
           // Synchronous: sets controller levels/histogram before buildImage below
@@ -230,13 +227,14 @@ export class SpectrogramLayer extends CompositeLayer {
 SpectrogramLayer.layerName = 'SpectrogramLayer';
 
 SpectrogramLayer.defaultProps = {
-  samples:       { type: 'object',  value: null  },
-  sampleRate:    { type: 'number',  value: 44100 },
-  windowSize:    { type: 'number',  value: 1024  },
-  hopSize:       { type: 'number',  value: 512   },
-  dataTrigger:   { type: 'number',  value: 0     },  // increment to force re-STFT + re-upload
-  lutController: { type: 'object',  value: null  },
-  colorTrigger:  { type: 'number',  value: 0     },  // increment to force image rebuild only
+  samples:       { type: 'object',  value: null   },
+  sampleRate:    { type: 'number',  value: 44100  },
+  windowSize:    { type: 'number',  value: 1024   },
+  hopSize:       { type: 'number',  value: 512    },
+  dataTrigger:   { type: 'number',  value: 0      },  // increment to force re-STFT + re-upload
+  lutController: { type: 'object',  value: null   },
+  colorTrigger:  { type: 'number',  value: 0      },  // increment to force image rebuild only
+  windowFn:      { type: 'string',  value: 'hann' },  // FFT window function name
 };
 
 export default SpectrogramLayer;

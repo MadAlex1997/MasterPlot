@@ -7,16 +7,20 @@
  * Layout (top → bottom):
  *   1. Spectrogram panel  (SpectrogramLayer / BitmapLayer) + LUT sidebar
  *   2. Waveform panel     (buildLineLayer / PathLayer, downsampled by WAVEFORM_STEP)
- *      + frequency band controls + FilterPanel sidebar
+ *      + FilterPanel sidebar
  *
  * Live append: every 500 ms, extend the chirp signal by 0.25 s and
  * rebuild both layers.
  *
  * Controls:
- *   windowSize selector (256 / 512 / 1024 / 2048)
+ *   windowSize selector (256 / 512 / 1024 / 2048 / 4096 / 8192)
+ *   Window fn dropdown (hann / hamming / blackman / rectangular)
+ *   Preset sound dropdown (loads from /sounds)
  *   Live append checkbox
- *   Frequency band: lowFreq / highFreq float inputs (sets spectrogram y-domain)
- *   FilterPanel: DSP filter type/cutoff/Q + Apply/Clear
+ *   FilterPanel: per-type DSP filter UI + Apply/Clear
+ *     - lowpass/highpass: single cutoff slider + Q slider
+ *     - bandpass/notch: two frequency sliders + computed center/Q display
+ *   Apply auto-zooms spectrogram y-axis to filtered frequency range
  *
  * Interaction (both panels):
  *   Scroll wheel → zoom (centered on cursor)
@@ -36,6 +40,15 @@ import HistogramLUTPanel         from '../src/components/HistogramLUTPanel.jsx';
 import { PlaybackController }    from '../src/audio/PlaybackController.js';
 import { FilterController }      from '../src/audio/FilterController.js';
 import FilterPanel               from '../src/components/FilterPanel.jsx';
+
+// ── Preset sound files ─────────────────────────────────────────────────────────
+
+const PRESET_SOUNDS = [
+  { label: 'city blackbird', path: 'sounds/city_bird_sound_black_bird_ZU0_YdN.wav' },
+  { label: 'ringdove + car', path: 'sounds/city_ringdove_with_huma_whistle_and_car_siren_sound_5bn_dzC.wav' },
+  { label: 'plane 1',        path: 'sounds/plane1.wav' },
+  { label: 'plane 2',        path: 'sounds/plane2.wav' },
+];
 
 // ── Playhead drawing helpers ───────────────────────────────────────────────────
 
@@ -158,6 +171,7 @@ export default function SpectrogramExample() {
   const intervalRef     = useRef(null);
   const windowSizeRef   = useRef(1024);
   const timeWindowRef   = useRef(null);   // null = show all; number = seconds to display
+  const windowFnRef     = useRef('hann');
 
   // ── Waveform mutable state ─────────────────────────────────────────────────
   const waveDeckRef       = useRef(null);
@@ -197,6 +211,7 @@ export default function SpectrogramExample() {
   const [log,              setLog]              = useState([]);
   const [liveAppend,       setLiveAppend]       = useState(true);
   const [windowSize,       setWindowSize]       = useState(1024);
+  const [windowFn,         setWindowFn]         = useState('hann');
   const [loading,          setLoading]          = useState(false);
   const [colorTrigger,     setColorTrigger]     = useState(0);
   const [playState,        setPlayState]        = useState('stopped'); // 'playing'|'paused'|'stopped'
@@ -204,11 +219,51 @@ export default function SpectrogramExample() {
   const [filterSampleRate, setFilterSampleRate] = useState(SAMPLE_RATE);
   const [timeWindow,       setTimeWindow]       = useState(null);  // null = All
 
-  // ── EX2: Frequency band filter state (controls spectrogram y-domain) ────────
-  const [lowFreq,  setLowFreq]  = useState(0);
-  const [highFreq, setHighFreq] = useState(SAMPLE_RATE / 2);
-
   const addLog = (msg) => setLog(prev => [msg, ...prev].slice(0, 20));
+
+  // ── Shared audio buffer load helper ───────────────────────────────────────
+
+  /**
+   * Load an already-decoded AudioBuffer into the spectrogram/waveform state.
+   * Called by both handleFileLoad and handlePresetLoad after decoding.
+   */
+  const loadAudioBuffer = async (audioBuffer, sourceName) => {
+    const pcm = audioBuffer.getChannelData(0);
+    const sr  = audioBuffer.sampleRate;
+    loadedSampleRateRef.current = sr;
+    // Clear all existing data
+    lutControllerRef.current.reset();
+    samplesRef.current   = new Float32Array(0);
+    sampleCntRef.current = 0;
+    waveXRef.current     = new Float32Array(0);
+    waveYRef.current     = new Float32Array(0);
+    // Load PCM
+    samplesRef.current   = pcm;
+    sampleCntRef.current = pcm.length;
+    originalSamplesRef.current = samplesRef.current.slice();  // snapshot for "Clear Filter"
+    setFilterSampleRate(sr);
+    dataTriggerRef.current += 1;
+    // Downsample for waveform
+    const numWavePts = Math.floor(pcm.length / WAVEFORM_STEP);
+    const newWX = new Float32Array(numWavePts);
+    const newWY = new Float32Array(numWavePts);
+    for (let i = 0; i < numWavePts; i++) {
+      newWX[i] = (i * WAVEFORM_STEP) / sr;
+      newWY[i] = pcm[i * WAVEFORM_STEP];
+    }
+    waveXRef.current = newWX;
+    waveYRef.current = newWY;
+    waveDataTrigger.current += 1;
+    const durationSecs = pcm.length / sr;
+    xAxisRef.current?.setDomain([0, durationSecs]);
+    waveXAxisRef.current?.setDomain([0, durationSecs]);
+    yAxisRef.current?.setDomain([0, sr / 2]);   // Nyquist for this file
+    dirtyRef.current     = true;
+    waveDirtyRef.current = true;
+    addLog(`Loaded: ${sourceName}  ·  ${sr} Hz  ·  ${durationSecs.toFixed(2)}s`);
+    // Load into playback controller
+    await playbackRef.current.loadBuffer(samplesRef.current, loadedSampleRateRef.current);
+  };
 
   // ── Sample append ──────────────────────────────────────────────────────────
 
@@ -298,6 +353,7 @@ export default function SpectrogramExample() {
         dataTrigger:   dataTriggerRef.current,
         lutController: lutControllerRef.current,
         colorTrigger:  colorTriggerRef.current,  // read from ref, not stale state
+        windowFn:      windowFnRef.current,
       }),
     ];
 
@@ -682,17 +738,6 @@ export default function SpectrogramExample() {
     waveDirtyRef.current = true;
   }, [timeWindow]);
 
-  // ── EX2: Apply frequency band to spectrogram y-axis when inputs change ───────
-  useEffect(() => {
-    const yAxis = yAxisRef.current;
-    if (!yAxis) return;
-    const lo = Math.max(0, lowFreq);
-    const hi = Math.min(loadedSampleRateRef.current / 2, highFreq);
-    if (lo >= hi) return;  // invalid range — don't apply
-    yAxis.setDomain([lo, hi]);
-    dirtyRef.current = true;
-  }, [lowFreq, highFreq]);
-
   // ── UI handlers ───────────────────────────────────────────────────────────
 
   const handleLiveAppendChange = (e) => {
@@ -721,6 +766,13 @@ export default function SpectrogramExample() {
     dirtyRef.current = true;
   };
 
+  const handleWindowFnChange = (e) => {
+    windowFnRef.current = e.target.value;
+    setWindowFn(e.target.value);
+    dataTriggerRef.current += 1;
+    dirtyRef.current = true;
+  };
+
   const handleFileLoad = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -732,49 +784,32 @@ export default function SpectrogramExample() {
       const audioCtx    = new AudioContext();
       const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
       audioCtx.close();
-      const pcm = audioBuffer.getChannelData(0);
-      const sr  = audioBuffer.sampleRate;
-      loadedSampleRateRef.current = sr;
-      // Clear all existing data
-      lutControllerRef.current.reset();
-      samplesRef.current   = new Float32Array(0);
-      sampleCntRef.current = 0;
-      waveXRef.current     = new Float32Array(0);
-      waveYRef.current     = new Float32Array(0);
-      // Load PCM
-      samplesRef.current   = pcm;
-      sampleCntRef.current = pcm.length;
-      originalSamplesRef.current = samplesRef.current.slice();  // snapshot for "Clear Filter"
-      setFilterSampleRate(sr);
-      dataTriggerRef.current += 1;
-      // Reset frequency band to full range for new file
-      setLowFreq(0);
-      setHighFreq(sr / 2);
-      // Downsample for waveform
-      const numWavePts = Math.floor(pcm.length / WAVEFORM_STEP);
-      const newWX = new Float32Array(numWavePts);
-      const newWY = new Float32Array(numWavePts);
-      for (let i = 0; i < numWavePts; i++) {
-        newWX[i] = (i * WAVEFORM_STEP) / sr;
-        newWY[i] = pcm[i * WAVEFORM_STEP];
-      }
-      waveXRef.current = newWX;
-      waveYRef.current = newWY;
-      waveDataTrigger.current += 1;
-      const durationSecs = pcm.length / sr;
-      xAxisRef.current?.setDomain([0, durationSecs]);
-      waveXAxisRef.current?.setDomain([0, durationSecs]);
-      yAxisRef.current?.setDomain([0, sr / 2]);   // Nyquist for this file
-      dirtyRef.current     = true;
-      waveDirtyRef.current = true;
-      addLog(`Loaded: ${file.name}  ·  ${sr} Hz  ·  ${durationSecs.toFixed(2)}s`);
-      // Load into playback controller (non-blocking — await is fine here since we're already async)
-      await playbackRef.current.loadBuffer(samplesRef.current, loadedSampleRateRef.current);
+      await loadAudioBuffer(audioBuffer, file.name);
     } catch (err) {
       addLog(`Error loading file: ${err.message}`);
     }
     setLoading(false);
     e.target.value = '';  // allow re-loading same file
+  };
+
+  const handlePresetLoad = async (e) => {
+    const path = e.target.value;
+    if (!path) return;
+    e.target.value = '';  // reset dropdown immediately
+    setLoading(true);
+    clearInterval(intervalRef.current);
+    setLiveAppend(false);
+    try {
+      const resp        = await fetch(path);
+      const arrayBuffer = await resp.arrayBuffer();
+      const audioCtx    = new AudioContext();
+      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      audioCtx.close();
+      await loadAudioBuffer(audioBuffer, path.split('/').pop());
+    } catch (err) {
+      addLog(`Preset load error: ${err.message}`);
+    }
+    setLoading(false);
   };
 
   // ── Filter handlers ───────────────────────────────────────────────────────
@@ -793,6 +828,24 @@ export default function SpectrogramExample() {
         await playbackRef.current.loadBuffer(filtered, loadedSampleRateRef.current);
       }
       addLog(`Filter: ${fc.state.type}  cutoff=${fc.state.frequency.toFixed(0)} Hz  Q=${fc.state.Q.toFixed(2)}`);
+
+      // EX9-3: auto-zoom spectrogram y-axis to filtered frequency range
+      const sr   = loadedSampleRateRef.current;
+      const nyq  = sr / 2;
+      const yAxis = yAxisRef.current;
+      if (yAxis) {
+        if (fc.state.type === 'lowpass') {
+          yAxis.setDomain([0, fc.state.frequency]);
+        } else if (fc.state.type === 'highpass') {
+          yAxis.setDomain([fc.state.frequency, nyq]);
+        } else if (fc.state.type === 'bandpass') {
+          yAxis.setDomain([fc.state.lowFreq, fc.state.highFreq]);
+        } else {
+          // notch, none → full range
+          yAxis.setDomain([0, nyq]);
+        }
+        dirtyRef.current = true;
+      }
     } catch (err) {
       addLog(`Filter error: ${err.message}`);
     }
@@ -807,23 +860,12 @@ export default function SpectrogramExample() {
     if (playbackRef.current?.duration > 0) {
       await playbackRef.current.loadBuffer(samplesRef.current, loadedSampleRateRef.current);
     }
+    // EX9-3: restore y-axis to full frequency range
+    const nyq = loadedSampleRateRef.current / 2;
+    yAxisRef.current?.setDomain([0, nyq]);
+    dirtyRef.current = true;
     addLog('Filter cleared — original audio restored');
   };
-
-  // ── EX2: Frequency band input handlers ────────────────────────────────────
-
-  const handleLowFreqChange = (e) => {
-    const v = parseFloat(e.target.value);
-    if (!isNaN(v)) setLowFreq(v);
-  };
-
-  const handleHighFreqChange = (e) => {
-    const v = parseFloat(e.target.value);
-    if (!isNaN(v)) setHighFreq(v);
-  };
-
-  const nyquist = loadedSampleRateRef.current / 2;
-  const freqBandValid = lowFreq < highFreq && lowFreq >= 0 && highFreq <= nyquist;
 
   // ── Styles ────────────────────────────────────────────────────────────────
 
@@ -855,11 +897,6 @@ export default function SpectrogramExample() {
     background: '#222', border: '1px solid #444', borderRadius: 3,
     color: '#ccc', padding: '2px 6px', fontSize: 12, marginLeft: 4,
   };
-  const numInputStyle = {
-    background: '#1a1a1a', border: '1px solid #444', borderRadius: 3,
-    color: '#ccc', padding: '2px 5px', fontSize: 11, width: 72,
-    fontFamily: 'monospace',
-  };
 
   return (
     <div style={containerStyle}>
@@ -879,6 +916,15 @@ export default function SpectrogramExample() {
         </label>
 
         <label style={checkboxLabelStyle}>
+          Window fn
+          <select value={windowFn} onChange={handleWindowFnChange} style={selectStyle}>
+            {['hann', 'hamming', 'blackman', 'rectangular'].map(w => (
+              <option key={w} value={w}>{w}</option>
+            ))}
+          </select>
+        </label>
+
+        <label style={checkboxLabelStyle}>
           Time window
           <select value={timeWindow ?? 'all'} onChange={handleTimeWindowChange} style={selectStyle}>
             <option value="all">All</option>
@@ -892,6 +938,22 @@ export default function SpectrogramExample() {
         <label style={checkboxLabelStyle}>
           <input type="checkbox" checked={liveAppend} onChange={handleLiveAppendChange} />
           Live append
+        </label>
+
+        {/* Preset sound dropdown */}
+        <label style={checkboxLabelStyle}>
+          Preset
+          <select
+            defaultValue=""
+            onChange={handlePresetLoad}
+            style={selectStyle}
+            disabled={loading}
+          >
+            <option value="">— Load preset —</option>
+            {PRESET_SOUNDS.map(s => (
+              <option key={s.path} value={s.path}>{s.label}</option>
+            ))}
+          </select>
         </label>
 
         <label style={checkboxLabelStyle}>
@@ -956,7 +1018,7 @@ export default function SpectrogramExample() {
             <canvas ref={webglRef} style={canvasStyle} />
             <canvas ref={axisRef}  style={{ ...canvasStyle, pointerEvents: 'none' }} />
           </div>
-          {/* LUT sidebar only (FilterPanel moved to waveform section) */}
+          {/* LUT sidebar */}
           <div style={{ width: 140, display: 'flex', flexDirection: 'column', borderLeft: '1px solid #333', flexShrink: 0 }}>
             <HistogramLUTPanel controller={lutControllerRef.current} />
           </div>
@@ -964,68 +1026,20 @@ export default function SpectrogramExample() {
 
         <div style={dividerStyle} />
 
-        {/* Waveform row: plot canvas + controls sidebar */}
+        {/* Waveform row: plot canvas + DSP controls sidebar */}
         <div style={{ flex: 1.5, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
           <div style={{ ...panelStyle, flex: 1 }}>
             <canvas ref={waveWebglRef} style={canvasStyle} />
             <canvas ref={waveAxisRef}  style={{ ...canvasStyle, pointerEvents: 'none' }} />
           </div>
 
-          {/* Waveform sidebar: frequency band inputs + FilterPanel */}
+          {/* Waveform sidebar: FilterPanel + Clear button */}
           <div style={{
             width: 180, display: 'flex', flexDirection: 'column',
             borderLeft: '1px solid #333', flexShrink: 0, overflowY: 'auto',
           }}>
-            {/* Frequency band section */}
-            <div style={{ padding: '8px 10px', borderBottom: '1px solid #2a2a2a' }}>
-              <div style={{ color: '#888', fontSize: 10, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>
-                Freq Band (Hz)
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#666', fontSize: 11 }}>
-                  Low
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max={nyquist}
-                    value={lowFreq}
-                    onChange={handleLowFreqChange}
-                    style={numInputStyle}
-                  />
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#666', fontSize: 11 }}>
-                  High
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max={nyquist}
-                    value={highFreq}
-                    onChange={handleHighFreqChange}
-                    style={numInputStyle}
-                  />
-                </label>
-                <div style={{ fontSize: 10, color: freqBandValid ? '#6a6' : '#a55' }}>
-                  {freqBandValid
-                    ? `${lowFreq.toFixed(1)} – ${highFreq.toFixed(1)} Hz`
-                    : 'Invalid range'}
-                </div>
-                <button
-                  onClick={() => { setLowFreq(0); setHighFreq(nyquist); }}
-                  style={{
-                    background: '#222', border: '1px solid #444', borderRadius: 3,
-                    color: '#888', padding: '2px 6px', fontSize: 10,
-                    cursor: 'pointer', fontFamily: 'monospace',
-                  }}
-                >
-                  Reset to full
-                </button>
-              </div>
-            </div>
-
-            {/* DSP FilterPanel (moved from spectrogram sidebar) */}
-            <div style={{ flex: 1, overflow: 'scroll', }}>
+            {/* DSP FilterPanel */}
+            <div style={{ flex: 1, overflow: 'scroll' }}>
               <FilterPanel
                 controller={filterControllerRef.current}
                 sampleRate={filterSampleRate}

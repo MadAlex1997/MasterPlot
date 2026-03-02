@@ -12,8 +12,8 @@ export default function HubPage() {
     },
     {
       href: 'spectrogram.html',
-      title: 'Spectrogram',
-      desc: 'Real-time STFT spectrogram with audio file loading, HistogramLUT, playback, and biquad filters.',
+      title: 'Spectrogram (EX9)',
+      desc: 'Real-time STFT with pluggable window functions (Hann/Hamming/Blackman/Rectangular), preset sound loading, per-type DSP filter UI (single cutoff+Q for lowpass/highpass; dual freq sliders for bandpass/notch with computed center+Q and dual canvas markers), auto-zoom y-axis after Apply, HistogramLUT with clamped level handles, synchronized waveform, and playback.',
     },
     {
       href: 'shared-data.html',

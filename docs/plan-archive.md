@@ -3410,3 +3410,38 @@ new TraceGroup({
 8. `dist/line.html` and `dist/rolling-line.html` absent from build output ✅
 9. HubPage: new card present, old cards gone ✅
 10. README updated ✅
+
+---
+
+## EX9 [COMPLETED] Spectrogram Overhaul
+
+**Branch:** `feature/EX9`
+**Completed:** 2026-03-01
+
+### Overview
+
+Six targeted improvements to the spectrogram page and its supporting engine modules:
+
+1. Remove the "Freq Band" display-only filter (EX9-1)
+2. Per-filter-type DSP input UI — single cutoff+Q for lowpass/highpass; dual low/high sliders with computed center+Q for bandpass/notch (EX9-2)
+3. Auto-zoom spectrogram y-axis to filtered frequency range after Apply; restore full range on Clear (EX9-3)
+4. Pluggable FFT window functions via `fft-windowing` npm; `SpectrogramLayer.windowFn` prop; `rectangular` skips windowing (EX9-4)
+5. Preset sound file loading via dropdown in header; 4 WAV files from `/sounds`; `CopyWebpackPlugin` copies to `dist/sounds/`; shared `loadAudioBuffer` helper (EX9-5)
+6. LUT level handle clamping fix — `HistogramLUTController.setSpectrogramData` clamps `level_min`/`level_max` to new `[globalMin, globalMax]` and emits `levelsChanged` only if actually clamped (EX9-6)
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `examples/SpectrogramExample.jsx` | Remove freq band UI + state + useEffect; add `windowFn` state/ref + dropdown; add `PRESET_SOUNDS` + `handlePresetLoad`; extract `loadAudioBuffer` shared helper; y-axis auto-zoom in `handleApplyFilter` / restore in `handleClearFilter` |
+| `src/audio/FilterController.js` | Add `lowFreq`/`highFreq` state; `setLowHighFreq()` (geometric-mean center + bandwidth Q); remove `allpass`; `setType()` resets to sensible defaults per type |
+| `src/components/FilterPanel.jsx` | Type-aware layout: lowpass/highpass = single cutoff slider + Q; bandpass/notch = two frequency sliders + read-only center/Q; dual orange dashed markers on frequency-response canvas |
+| `src/plot/layers/SpectrogramLayer.js` | `import * as fftWindowing from 'fft-windowing'`; `windowFn` prop (default `'hann'`); `computeSTFT` copies frame buffer then calls `fftWindowing[windowFn](frame)` (skipped for `'rectangular'`); `updateState` triggers STFT recompute on `windowFn` change |
+| `src/plot/layers/HistogramLUTController.js` | `setSpectrogramData` clamps `level_min`/`level_max` to `[globalMin, globalMax]`; emits `levelsChanged` only when clamping actually occurred |
+| `webpack.config.js` | `CopyWebpackPlugin` added; copies `sounds/` → `dist/sounds/` |
+| `package.json` | `fft-windowing` runtime dep; `copy-webpack-plugin` dev dep |
+
+### Implementation Notes
+
+- `fft-windowing` exports named functions (`hann`, `hamming`, `blackman`, etc.) that mutate a `Float32Array` in-place and return the same array. There is no generic `windowFunction` export — use `import * as fftWindowing` and index by string.
+- `'rectangular'` is not a `fft-windowing` export; the spec implementation skips window application when `windowFn === 'rectangular'`.

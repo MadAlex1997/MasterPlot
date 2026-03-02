@@ -48,17 +48,35 @@ export default function FilterPanel({ controller, sampleRate = 44100, onApply, a
     }
     ctx.stroke();
 
-    // Cutoff frequency marker (orange vertical dashed line)
     const nyquist = sampleRate / 2;
-    const fx = Math.log(state.frequency / 20) / Math.log(nyquist / 20) * W;
+
+    // Helper: convert Hz to canvas x position (log scale 20 Hz → nyquist)
+    const freqToX = (hz) => Math.log(hz / 20) / Math.log(nyquist / 20) * W;
+
+    // Draw cutoff marker(s) — orange dashed vertical line(s)
     ctx.strokeStyle = '#f80'; ctx.lineWidth = 1;
     ctx.setLineDash([3, 3]);
-    ctx.beginPath(); ctx.moveTo(fx, 0); ctx.lineTo(fx, H); ctx.stroke();
+
+    if (state.type === 'bandpass' || state.type === 'notch') {
+      // Two markers: lowFreq and highFreq
+      const x1 = freqToX(Math.max(20, state.lowFreq));
+      const x2 = freqToX(Math.min(nyquist, state.highFreq));
+      ctx.beginPath(); ctx.moveTo(x1, 0); ctx.lineTo(x1, H); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x2, 0); ctx.lineTo(x2, H); ctx.stroke();
+    } else {
+      // Single marker at computed frequency
+      const fx = freqToX(state.frequency);
+      ctx.beginPath(); ctx.moveTo(fx, 0); ctx.lineTo(fx, H); ctx.stroke();
+    }
+
     ctx.setLineDash([]);
   }, [state, sampleRate, controller]);
 
   const nyquist = sampleRate / 2;
   const sliderStyle = { width: '100%', marginTop: 2 };
+
+  const isBandType = state.type === 'bandpass' || state.type === 'notch';
+  const isSingleCutoff = state.type === 'lowpass' || state.type === 'highpass';
 
   return (
     <div style={{
@@ -77,10 +95,10 @@ export default function FilterPanel({ controller, sampleRate = 44100, onApply, a
         {FilterController.filterTypes.map(t => <option key={t} value={t}>{t}</option>)}
       </select>
 
-      {state.type !== 'none' && (
+      {isSingleCutoff && (
         <>
           <label>
-            <span style={{ color: '#555' }}>Cutoff </span>
+            <span style={{ color: '#555' }}>{state.type === 'lowpass' ? 'Cutoff (low) ' : 'Cutoff (high) '}</span>
             <span style={{ color: '#aaa' }}>
               {state.frequency < 1000
                 ? `${state.frequency.toFixed(0)} Hz`
@@ -105,6 +123,45 @@ export default function FilterPanel({ controller, sampleRate = 44100, onApply, a
               style={sliderStyle}
             />
           </label>
+        </>
+      )}
+
+      {isBandType && (
+        <>
+          <label>
+            <span style={{ color: '#555' }}>Low freq </span>
+            <span style={{ color: '#aaa' }}>
+              {state.lowFreq < 1000 ? `${state.lowFreq.toFixed(0)} Hz` : `${(state.lowFreq / 1000).toFixed(2)} kHz`}
+            </span>
+            <input type="range" min="0" max="1" step="0.001"
+              value={Math.log(Math.max(20, state.lowFreq) / 20) / Math.log(nyquist / 20)}
+              onChange={e => {
+                const t  = parseFloat(e.target.value);
+                const lo = Math.round(20 * Math.pow(nyquist / 20, t));
+                if (lo < state.highFreq) controller.setLowHighFreq(lo, state.highFreq);
+              }}
+              style={sliderStyle}
+            />
+          </label>
+          <label>
+            <span style={{ color: '#555' }}>High freq </span>
+            <span style={{ color: '#aaa' }}>
+              {state.highFreq < 1000 ? `${state.highFreq.toFixed(0)} Hz` : `${(state.highFreq / 1000).toFixed(2)} kHz`}
+            </span>
+            <input type="range" min="0" max="1" step="0.001"
+              value={Math.log(Math.min(nyquist, state.highFreq) / 20) / Math.log(nyquist / 20)}
+              onChange={e => {
+                const t  = parseFloat(e.target.value);
+                const hi = Math.round(20 * Math.pow(nyquist / 20, t));
+                if (hi > state.lowFreq) controller.setLowHighFreq(state.lowFreq, hi);
+              }}
+              style={sliderStyle}
+            />
+          </label>
+          <div style={{ color: '#666', fontSize: 10 }}>
+            center {state.frequency < 1000 ? `${state.frequency.toFixed(0)} Hz` : `${(state.frequency / 1000).toFixed(2)} kHz`}
+            {' · '}Q {state.Q.toFixed(2)}
+          </div>
         </>
       )}
 

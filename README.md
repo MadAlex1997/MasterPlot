@@ -14,7 +14,7 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 
 ---
 
-## Current Capabilities (F1–F22 + EX1–EX7 + ARCH-A/B/C/D complete)
+## Current Capabilities (F1–F22 + EX1–EX9 + ARCH-A/B/C/D complete)
 
 ### Core Plotting Engine
 - **WebGL rendering** via deck.gl `OrthographicView` — no maps, no geospatial assumptions
@@ -63,19 +63,21 @@ Drag directly on the axis gutter (the tick-label margin) to zoom that axis indep
 - Emits `zoomChanged` with `{ factor, axis }`
 - Float drift prevented via restore-and-reapply pattern
 
-### Spectrogram / Audio Analysis Example
+### Spectrogram / Audio Analysis Example (EX9)
 A full-featured spectrogram viewer is available at the demo (Spectrogram tab):
 
 | Feature | Details |
 |---|---|
-| **Real-time STFT spectrogram** | WebGL rendered; configurable window size; hop = window/2 |
+| **Real-time STFT spectrogram** | WebGL rendered; configurable window size (256–8192); hop = window/2 |
+| **FFT window function** | Dropdown selects Hann / Hamming / Blackman / Rectangular; switches immediately recompute STFT via `fft-windowing` npm |
 | **Synchronized waveform** | PCM waveform shown below the spectrogram |
 | **Audio file loading** | Any format `AudioContext.decodeAudioData` supports (WAV, MP3, OGG, FLAC, etc.) |
-| **Live append mode** | Chirp + noise generated every 100 ms; toggle on/off |
-| **HistogramLUT panel** | pyqtgraph-style dB amplitude histogram; draggable level_min / level_max handles; 6 LUT presets (Viridis, Plasma, Inferno, Magma, Hot, Grayscale); Auto Level button |
+| **Preset sounds** | Dropdown loads 4 bundled WAV files (city blackbird, ringdove + car, plane 1, plane 2) from `/sounds`; no file picker needed |
+| **Live append mode** | Chirp + noise generated every 500 ms; toggle on/off |
+| **HistogramLUT panel** | pyqtgraph-style dB amplitude histogram; draggable level_min / level_max handles (clamp to new dB range after filtering — no more disappearing handles); 6 LUT presets; Auto Level button |
 | **Audio playback** | Play / Pause / Stop; yellow dashed playhead line on both panels at 60 fps; Ctrl+click to seek on either panel |
-| **Frequency band controls (EX2)** | Low/High `<input type="number">` inputs next to the waveform panel; updates the spectrogram y-axis domain in real time to zoom to a frequency band; validity indicator + "Reset to full" button |
-| **Frequency filters** | Offline biquad DSP via `OfflineAudioContext` (lowpass, highpass, bandpass, notch, allpass) in the waveform sidebar; frequency response curve preview; Apply / Clear DSP Filter |
+| **Per-type DSP filters** | Offline biquad DSP via `OfflineAudioContext`; **lowpass/highpass**: single log-scale cutoff slider + Q slider; **bandpass/notch**: two frequency sliders (Low freq / High freq) with computed geometric-mean center + bandwidth Q shown as read-only text; dual orange markers on frequency-response canvas |
+| **Auto-zoom on Apply** | Clicking Apply zooms the spectrogram y-axis to the filtered range: `[0, cutoff]` (lowpass), `[cutoff, nyq]` (highpass), `[low, high]` (bandpass); Clear DSP Filter restores `[0, nyquist]` |
 
 ### Scatter + ROI Example (EX1)
 The main scatter demo (`ExampleApp`) includes two live ROI inspection tables below the event log:

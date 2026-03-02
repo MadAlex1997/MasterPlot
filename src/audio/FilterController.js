@@ -4,15 +4,56 @@ export class FilterController extends EventEmitter {
   constructor() {
     super();
     this.state = {
-      type:      'none',   // 'none'|'lowpass'|'highpass'|'bandpass'|'notch'|'allpass'
-      frequency: 1000,     // Hz — cutoff / centre frequency
-      Q:         1.0,      // resonance / bandwidth
+      type:      'none',   // 'none'|'lowpass'|'highpass'|'bandpass'|'notch'
+      frequency: 1000,     // Hz — cutoff for lowpass/highpass; computed center for bandpass/notch
+      Q:         1.0,      // resonance for lowpass/highpass; computed from bandwidth for bandpass/notch
+      lowFreq:   500,      // Hz — low edge for bandpass/notch (user-facing)
+      highFreq:  2000,     // Hz — high edge for bandpass/notch (user-facing)
     };
   }
 
-  setType(type)      { this.state.type = type;       this.emit('changed', { ...this.state }); }
-  setFrequency(freq) { this.state.frequency = freq;  this.emit('changed', { ...this.state }); }
-  setQ(q)            { this.state.Q = q;             this.emit('changed', { ...this.state }); }
+  setType(type) {
+    this.state.type = type;
+    // Reset parameters to sensible defaults when switching between single/dual input modes
+    if (type === 'bandpass' || type === 'notch') {
+      this.state.lowFreq  = 500;
+      this.state.highFreq = 2000;
+      this._updateCenterFromLowHigh();
+    } else if (type === 'lowpass' || type === 'highpass') {
+      this.state.frequency = 1000;
+      this.state.Q         = 1.0;
+    }
+    this.emit('changed', { ...this.state });
+  }
+
+  setFrequency(freq) {
+    this.state.frequency = freq;
+    this.emit('changed', { ...this.state });
+  }
+
+  setQ(q) {
+    this.state.Q = q;
+    this.emit('changed', { ...this.state });
+  }
+
+  /**
+   * Set bandpass/notch filter via low + high frequency edges.
+   * Computes geometric-mean center + bandwidth-derived Q.
+   */
+  setLowHighFreq(lowFreq, highFreq) {
+    this.state.lowFreq  = lowFreq;
+    this.state.highFreq = highFreq;
+    this._updateCenterFromLowHigh();
+    this.emit('changed', { ...this.state });
+  }
+
+  _updateCenterFromLowHigh() {
+    const { lowFreq, highFreq } = this.state;
+    const center = Math.sqrt(lowFreq * highFreq);
+    const bw     = highFreq - lowFreq;
+    this.state.frequency = center;
+    this.state.Q         = bw > 0 ? center / bw : 1.0;
+  }
 
   /**
    * Process samples through the biquad filter using OfflineAudioContext.
@@ -69,6 +110,6 @@ export class FilterController extends EventEmitter {
   }
 
   static get filterTypes() {
-    return ['none', 'lowpass', 'highpass', 'bandpass', 'notch', 'allpass'];
+    return ['none', 'lowpass', 'highpass', 'bandpass', 'notch'];
   }
 }

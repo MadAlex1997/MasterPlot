@@ -1,5 +1,6 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const CopyWebpackPlugin = require('copy-webpack-plugin');
 
 module.exports = (env, argv) => {
   const isDev = argv.mode === 'development';
@@ -74,6 +75,9 @@ module.exports = (env, argv) => {
         template: './public/multi-sensor.html',
         filename: 'multi-sensor.html',
         chunks:   ['multi-sensor'],
+      }),
+      new CopyWebpackPlugin({
+        patterns: [{ from: 'sounds', to: 'sounds' }],
       }),
     ],
     devServer: {

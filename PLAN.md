@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 5.1
+**Plan Version:** 5.2
 **Last Updated:** 2026-03-01
-**Status:** All Phase 1, Phase 2, Phase 3 complete. All ARCH tracks (C/A/D/B) complete. F22 + EX7 + EX8 complete. EX4 still pending.
+**Status:** All Phase 1, Phase 2, Phase 3 complete. All ARCH tracks (C/A/D/B) complete. F22 + EX7 + EX8 + EX9 complete. EX4 still pending.
 
 ---
 
@@ -85,6 +85,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | F22 | TraceGroup Abstraction | ✅ COMPLETED | feature/F22-EX7 | 2026-03-01 |
 | EX7 | Multi-Sensor Scatter Example | ✅ COMPLETED | feature/F22-EX7 | 2026-03-01 |
 | EX8 | Live Signal Analysis (Merge Line Examples) | ✅ COMPLETED | feature/EX8 | 2026-03-01 |
+| EX9 | Spectrogram Overhaul | ✅ COMPLETED | feature/EX9 | 2026-03-01 |
 
 ---
 
@@ -264,6 +265,8 @@ Full spec: [docs/plan-archive.md#f18](docs/plan-archive.md#f18)
 - **2026-03-01 [Claude]**: F22 + EX7 completed (v5.0) — `TraceGroup` created in `src/plot/layers/TraceGroup.js`; O(n) bulk partition, doubling buffer growth, palette cycling, per-tag attr overrides, `toLayerDef()` for `registerDataLayer`; `MultiSensorExample.jsx` (50 sensors × 10k pts, 500k total, scrollable sidebar, 25-color palette cycling, React owns zero arrays); webpack entry + HTML + HubPage card + README TraceGroup API section; build passes zero errors. EX4 still PENDING.
 - **2026-03-01 [Claude]**: EX8 added as PENDING (v5.1) — Live Signal Analysis replaces redundant LineExample + RollingLineExample. Merges wall-clock time X-axis, configurable 10s/30s/60s rolling window, and new LinearRegion ROI stats sidebar (mean/RMS/peak-to-peak per signal). No engine changes; example-only. Next agent: implement EX8.
 - **2026-03-01 [Claude]**: EX8 completed (v5.1) — `LiveSignalsExample.jsx` created; six old files deleted; webpack/HubPage/README updated; build passes zero errors. Bug fix applied during implementation: ROI bounds accessed as `roi.x1`/`roi.x2` (not `roi.bounds`). EX4 still PENDING.
+- **2026-03-01 [Claude]**: EX9 added as PENDING (v5.1 note) — Spectrogram Overhaul: 6 sub-tasks covering Freq Band removal, per-type DSP inputs, y-axis auto-zoom after Apply, fft-windowing npm integration, preset sounds dropdown, and LUT handle clamping fix.
+- **2026-03-01 [Claude]**: EX9 completed (v5.2) — All 6 sub-tasks implemented: Freq Band UI removed; `FilterController` gains `lowFreq`/`highFreq` state + `setLowHighFreq()` + geometric-mean center/Q; `FilterPanel` per-type layout with dual canvas markers; `SpectrogramLayer` `windowFn` prop via `fft-windowing` (`import * as fftWindowing`; `rectangular` skips windowing); `handleApplyFilter` auto-zooms y-axis; `handleClearFilter` restores full range; `CopyWebpackPlugin` copies `sounds/` → `dist/sounds/`; `loadAudioBuffer` shared helper; `HistogramLUTController.setSpectrogramData` clamps levels. Build passes zero errors.
 
 ---
 
@@ -437,3 +440,10 @@ Full spec: [docs/plan-archive.md#ex7](docs/plan-archive.md#ex7)
 **Completed:** 2026-03-01 | **Branch:** feature/EX8
 Replaced `LineExample`/`RollingLineExample` with `LiveSignalsExample.jsx`: three live sin/cos signals on a configurable rolling window (10 s/30 s/60 s), wall-clock X-axis, and a 220 px stats sidebar showing mean/RMS/peak-to-peak per signal inside a drawn LinearRegion ROI (updated live each tick); old six files deleted; webpack/HubPage/README updated; bug fix: ROI bounds accessed as `roi.x1`/`roi.x2` (not `roi.bounds`).
 Full spec: [docs/plan-archive.md#ex8](docs/plan-archive.md#ex8)
+
+---
+
+### EX9 [COMPLETED] Spectrogram Overhaul
+**Completed:** 2026-03-01 | **Branch:** feature/EX9
+Six improvements: removed misleading "Freq Band" y-axis pan UI; per-type DSP filter inputs (single cutoff+Q for lowpass/highpass, dual low/high sliders with computed center+Q for bandpass/notch, dual canvas markers); auto-zoom spectrogram y-axis after Apply/Clear; `fft-windowing` npm for pluggable window functions (hann/hamming/blackman/rectangular) via `SpectrogramLayer.windowFn` prop; preset sound dropdown in header loading 4 WAV files from `/sounds` via `CopyWebpackPlugin`; LUT handle clamping fix in `HistogramLUTController.setSpectrogramData()`.
+Full spec: [docs/plan-archive.md#ex9](docs/plan-archive.md#ex9)

@@ -66,6 +66,16 @@ export class HistogramLUTController extends EventEmitter {
     this.state.globalMin = globalMin;
     this.state.globalMax = globalMax;
     this._computeHistogram();
+
+    // Clamp existing levels into the new dB range so handles stay on-canvas
+    const clampedMin = Math.max(globalMin, Math.min(this.state.level_min, globalMax));
+    const clampedMax = Math.max(globalMin, Math.min(this.state.level_max, globalMax));
+    if (clampedMin !== this.state.level_min || clampedMax !== this.state.level_max) {
+      this.state.level_min = clampedMin;
+      this.state.level_max = clampedMax;
+      this.emit('levelsChanged', clampedMin, clampedMax);
+    }
+
     this.emit('histogramReady', {
       bins:      this.state.histogramBins,
       edges:     this.state.histogramEdges,
