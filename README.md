@@ -14,7 +14,7 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 
 ---
 
-## Current Capabilities (F1–F22 + EX1–EX9 + ARCH-A/B/C/D complete)
+## Current Capabilities (F1–F22 + EX1–EX9 + EX4 + ARCH-A/B/C/D complete)
 
 ### Core Plotting Engine
 - **WebGL rendering** via deck.gl `OrthographicView` — no maps, no geospatial assumptions
@@ -79,8 +79,22 @@ A full-featured spectrogram viewer is available at the demo (Spectrogram tab):
 | **Per-type DSP filters** | Offline biquad DSP via `OfflineAudioContext`; **lowpass/highpass**: single log-scale cutoff slider + Q slider; **bandpass/notch**: two frequency sliders (Low freq / High freq) with computed geometric-mean center + bandwidth Q shown as read-only text; dual orange markers on frequency-response canvas |
 | **Auto-zoom on Apply** | Clicking Apply zooms the spectrogram y-axis to the filtered range: `[0, cutoff]` (lowpass), `[cutoff, nyq]` (highpass), `[low, high]` (bandpass); Clear DSP Filter restores `[0, nyquist]` |
 
-### Scatter + ROI Example (EX1)
-The main scatter demo (`ExampleApp`) includes two live ROI inspection tables below the event log:
+### Scatter + ROI Example (EX1 / EX4)
+The main scatter demo (`ExampleApp`) includes a **point-count dropdown** for performance benchmarking and two live ROI inspection tables below the event log.
+
+**Point-count dropdown (EX4)**
+
+| Option | Points |
+|---|---|
+| 10,000 | Default; fast load |
+| 100,000 | — |
+| 1,000,000 | — |
+| 5,000,000 | — |
+| 10,000,000 | GPU stress test |
+
+Selecting a new count pauses live append, calls `dataStore.clear()`, resets the domain, loads the new dataset, and resumes append — React holds only the integer count, no arrays.
+
+**ROI inspection tables**
 
 | Table | Contents | Update trigger |
 |---|---|---|
@@ -104,11 +118,11 @@ Click any LinearRegion row to select it and populate the RectROI table. Click ag
 
 ### Seismography Example (EX5)
 
-Ten stacked seismograph channels in a single page, each backed by its own `DataStore` and independent Y-axis:
+Fifty stacked seismograph channels in a single page, each backed by its own `DataStore` and independent Y-axis:
 
 | Feature | Details |
 |---|---|
-| **10 channels** | Independent sin-wave signals with distinct frequency and phase per channel |
+| **50 channels** | Independent sin-wave signals with distinct frequency and phase per channel |
 | **Shared X-axis** | Zoom or pan on any channel propagates the new x-domain to all others via `domainChanged` → `xAxis.setDomain()` |
 | **P-wave picks** | Each channel has a pre-seeded `vline-half-bottom` LineROI with a station label rendered on the canvas overlay |
 | **Draggable picks** | Drag any pick to update its position; table row refreshes on `roiFinalized` |
@@ -486,6 +500,8 @@ const accepted = roiController.updateFromExternal({
 |---|---|
 | `L` | Enter LinearRegion creation mode (click x1, then x2) |
 | `R` | Enter RectROI creation mode (click top-left, then bottom-right) |
+| `V` | Enter vertical LineROI creation mode (one click places the line) |
+| `H` | Enter horizontal LineROI creation mode (one click places the line) |
 | `D` | Delete the currently selected ROI |
 | `Esc` | Cancel creation mode |
 | `scroll` | Zoom (centered on cursor) |
@@ -497,10 +513,11 @@ const accepted = roiController.updateFromExternal({
 ## Performance Profile
 
 Tested with:
-- **1M initial points** — no stutter on initial load
+- **10k default / up to 10M via dropdown (EX4)** — no stutter; `dataStore.clear()` + reload without buffer re-allocation
 - **+10k points appended every 2 seconds** — smooth, no GC spikes
 - **Zoom/pan** — domain-only update, no buffer re-upload
 - **ROI picking** — O(n_rois) not O(n_points)
+- **500k points (50 sensors × 10k)** — via `TraceGroup` with per-trace visibility toggling
 
 Target: 10M+ points (GPU instancing; only viewport-culling limits performance).
 
@@ -529,14 +546,18 @@ src/
       ROIBase.js          — abstract base class
       RectROI.js          — draggable/resizable rectangle
       LinearRegion.js     — vertical strip
+      LineROI.js          — single-pixel line (6 modes, optional label)
       ROIController.js    — interaction handler
       ConstraintEngine.js — parent-child constraint enforcement
     layers/
-      ScatterLayer.js     — deck.gl scatter (instanced)
-      LineLayer.js        — deck.gl polylines
-      ROILayer.js         — deck.gl composite ROI renderer
-      SpectrogramLayer.js — STFT + WebGL texture spectrogram
+      ScatterLayer.js          — deck.gl scatter (instanced)
+      LineLayer.js             — deck.gl polylines
+      ROILayer.js              — deck.gl composite ROI renderer
+      SpectrogramLayer.js      — STFT + WebGL texture spectrogram
       HistogramLUTController.js — dB histogram + LUT remapping
+      SignalDataLayer.js        — SignalStore + buildSignalLayers for line plots (ARCH-D)
+      TraceGroup.js             — multi-trace scatter partitioner with palette cycling (F22)
+      PlotLayer.js              — optional CompositeLayer wrapper (ARCH-B)
     axes/
       AxisController.js   — d3-scale wrapper
       AxisRenderer.js     — canvas 2D ticks + labels
@@ -547,19 +568,19 @@ src/
     PlotCanvas.jsx        — React wrapper (canvas + controller lifecycle)
     HistogramLUTPanel.jsx — histogram + level handles + LUT preset UI
     FilterPanel.jsx       — filter type, cutoff, Q controls + response curve
-examples/
-  HubPage.jsx              — demo navigation hub
-  ExampleApp.jsx           — scatter/ROI/live-append + ROI inspection tables (EX1)
-  LiveSignalsExample.jsx   — three live signals + rolling window + ROI stats sidebar (EX8)
-  SpectrogramExample.jsx   — full audio analysis + frequency band inputs (EX2)
-  SharedDataExample.jsx    — two-plot shared DataStore + filtered DataView demo (F17)
-  SeismographyExample.jsx  — 10 stacked channels, shared X-axis, vline picks + table (EX5)
-src/
   integration/
     ExternalDataAdapter.js — interface contract for external data sources (F18)
     ExternalROIAdapter.js  — interface contract for ROI persistence/sync (F18)
     MockDataAdapter.js     — random data generator mock (F18)
     MockROIAdapter.js      — localStorage-backed ROI persistence mock (F18)
+examples/
+  HubPage.jsx              — demo navigation hub
+  ExampleApp.jsx           — scatter/ROI/live-append + point-count dropdown + ROI tables (EX1/EX4)
+  LiveSignalsExample.jsx   — three live signals + rolling window + ROI stats sidebar (EX8)
+  MultiSensorExample.jsx   — 50 sensors × 10k pts via TraceGroup; visibility sidebar (EX7)
+  SpectrogramExample.jsx   — full audio analysis + preset sounds + window functions (EX2/EX9)
+  SharedDataExample.jsx    — two-plot shared DataStore + filtered DataView demo (F17)
+  SeismographyExample.jsx  — 10 stacked channels, shared X-axis, vline picks + table (EX5)
 public/
   index.html
 ```

@@ -3,7 +3,7 @@ export default function HubPage() {
     {
       href: 'example.html',
       title: 'Scatter / ROI',
-      desc: '1M points + live append every 2 s. ROI creation: L (LinearRegion), R (RectROI), V (vertical LineROI), H (horizontal LineROI). LinearRegion constraint propagation + cascading child versioning (F19). LineROI (F20): full/half variants with canvas-overlay labels, draggable, version-gated sync. ROIs carry monotonic version numbers; serializeAll/updateFromExternal enable persistence. DataStore supports rolling ring buffer; PlotDataView provides lazy filtered views.',
+      desc: '10k default / up to 10M via dropdown. Live append every 2 s. ROI creation: L (LinearRegion), R (RectROI), V (vertical LineROI), H (horizontal LineROI). LinearRegion constraint propagation + cascading child versioning (F19). LineROI (F20): full/half variants with canvas-overlay labels, draggable, version-gated sync. ROIs carry monotonic version numbers; serializeAll/updateFromExternal enable persistence. DataStore supports rolling ring buffer; PlotDataView provides lazy filtered views.',
     },
     {
       href: 'live-signals.html',
@@ -28,7 +28,7 @@ export default function HubPage() {
     {
       href: 'seismography.html',
       title: 'Seismography (EX5)',
-      desc: '10 stacked channels with shared X-axis zoom/pan. Each channel has an independent Y-axis and a draggable vline-half-bottom P-wave pick. Sidebar table shows station, label, and position — edits are version-gated via updateFromExternal(). React owns zero geometry.',
+      desc: '50 stacked channels with shared X-axis zoom/pan. Each channel has an independent Y-axis and a draggable vline-half-bottom P-wave pick. Sidebar table shows station, label, and position — edits are version-gated via updateFromExternal(). React owns zero geometry.',
     },
     {
       href: 'multi-sensor.html',

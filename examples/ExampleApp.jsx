@@ -312,11 +312,8 @@ export default function ExampleApp() {
       const controller = plotRef.current?.getController();
       if (!controller) return;
 
-      // Load 1M initial points
-      console.log('[init] Generating 1M points...');
       const initialData = generatePoints(INITIAL_POINT_COUNT);
       controller.appendData(initialData);
-      console.log('[init] 1M points loaded.');
 
       // Start live append every 2 seconds
       startAppend(controller);

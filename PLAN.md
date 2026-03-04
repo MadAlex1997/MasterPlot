@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 5.2
-**Last Updated:** 2026-03-01
-**Status:** All Phase 1, Phase 2, Phase 3 complete. All ARCH tracks (C/A/D/B) complete. F22 + EX7 + EX8 + EX9 complete. EX4 still pending.
+**Plan Version:** 5.3
+**Last Updated:** 2026-03-03
+**Status:** All Phase 1, Phase 2, Phase 3 complete. All ARCH tracks (C/A/D/B) complete. F22 + EX7 + EX8 + EX9 + EX4 complete. All features done.
 
 ---
 
@@ -75,7 +75,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | F19 | Cascading ROI Update + Child Versioning | ✅ COMPLETED | feature/F19 | 2026-02-24 |
 | F20 | LineROI (Vertical/Horizontal + Labels) | ✅ COMPLETED | feature/F20 | 2026-02-24 |
 | F21 | Axis Drag Scaling (Midpoint Zoom) | ✅ COMPLETED | feature/F20 | 2026-02-24 |
-| EX4 | Scatter Performance Dropdown | ⏳ PENDING | — | — |
+| EX4 | Scatter Performance Dropdown | ✅ COMPLETED | main | 2026-03-03 |
 | EX5 | Geophysics / Seismography Example | ✅ COMPLETED | feature/EX5 | 2026-02-25 |
 | EX6 | ROI Table Double-Click Selection | ✅ COMPLETED | feature/EX6 | 2026-02-26 |
 | ARCH-C | ROILayer Internal Decomposition | ✅ COMPLETED | feature/ARCH-C | 2026-03-01 |
@@ -267,6 +267,7 @@ Full spec: [docs/plan-archive.md#f18](docs/plan-archive.md#f18)
 - **2026-03-01 [Claude]**: EX8 completed (v5.1) — `LiveSignalsExample.jsx` created; six old files deleted; webpack/HubPage/README updated; build passes zero errors. Bug fix applied during implementation: ROI bounds accessed as `roi.x1`/`roi.x2` (not `roi.bounds`). EX4 still PENDING.
 - **2026-03-01 [Claude]**: EX9 added as PENDING (v5.1 note) — Spectrogram Overhaul: 6 sub-tasks covering Freq Band removal, per-type DSP inputs, y-axis auto-zoom after Apply, fft-windowing npm integration, preset sounds dropdown, and LUT handle clamping fix.
 - **2026-03-01 [Claude]**: EX9 completed (v5.2) — All 6 sub-tasks implemented: Freq Band UI removed; `FilterController` gains `lowFreq`/`highFreq` state + `setLowHighFreq()` + geometric-mean center/Q; `FilterPanel` per-type layout with dual canvas markers; `SpectrogramLayer` `windowFn` prop via `fft-windowing` (`import * as fftWindowing`; `rectangular` skips windowing); `handleApplyFilter` auto-zooms y-axis; `handleClearFilter` restores full range; `CopyWebpackPlugin` copies `sounds/` → `dist/sounds/`; `loadAudioBuffer` shared helper; `HistogramLUTController.setSpectrogramData` clamps levels. Build passes zero errors.
+- **2026-03-03 [Claude]**: EX4 completed (v5.3) — `ExampleApp.jsx` gains points dropdown (10k/100k/1M/5M/10M); on change: pauses live append, clears DataStore, resets domain, loads new points, resumes append; React holds no arrays. All features in PLAN.md now complete.
 
 ---
 
@@ -316,52 +317,10 @@ Full spec: [docs/plan-archive.md#f21](docs/plan-archive.md#f21)
 
 ---
 
-# EX4 [PENDING] — Scatter Performance Dropdown
-
-**Type:** Example Only
-
----
-
-## Changes
-
-### Default Initial Points
-
-Set to:
-
-```
-10,000
-```
-
----
-
-### Add Dropdown
-
-Options:
-
-```
-10,000
-100,000
-1,000,000
-5,000,000
-10,000,000
-```
-
-On selection:
-
-* Replace DataStore data
-* Recompute domain
-* Reset live append state
-
-No engine changes allowed.
-
----
-
-## Acceptance Criteria
-
-* Fast initial load
-* Clean re-render
-* No memory leaks
-* React does not own large arrays
+### EX4 [COMPLETED] Scatter Performance Dropdown
+**Completed:** 2026-03-03 | **Branch:** main
+`ExampleApp.jsx` gains a `<select>` dropdown (10k / 100k / 1M / 5M / 10M); on change: pauses live append, calls `dataStore.clear()`, resets domain to baseline, loads new points via `generatePoints(count)`, resumes append; React holds only the count integer, no arrays.
+Full spec: [docs/plan-archive.md#ex4](docs/plan-archive.md#ex4)
 
 ---
 

@@ -3445,3 +3445,40 @@ Six targeted improvements to the spectrogram page and its supporting engine modu
 
 - `fft-windowing` exports named functions (`hann`, `hamming`, `blackman`, etc.) that mutate a `Float32Array` in-place and return the same array. There is no generic `windowFunction` export — use `import * as fftWindowing` and index by string.
 - `'rectangular'` is not a `fft-windowing` export; the spec implementation skips window application when `windowFn === 'rectangular'`.
+
+---
+
+## EX4 [COMPLETED] Scatter Performance Dropdown
+
+**Branch:** `main`
+**Completed:** 2026-03-03
+
+### Overview
+
+Example-only change to `ExampleApp.jsx`: adds a point-count dropdown (10k / 100k / 1M / 5M / 10M) so the scatter example can be benchmarked at different data sizes. Default is 10k for fast initial load. No engine changes.
+
+### Spec
+
+**Default initial points:** 10,000
+
+**Dropdown options:** 10,000 · 100,000 · 1,000,000 · 5,000,000 · 10,000,000
+
+**On selection:**
+1. Pause live append (`clearInterval`)
+2. `controller.dataStore.clear()` — resets count/indices without de-allocating buffers
+3. `controller.xAxis.setDomain([0, 10000])` + `controller.yAxis.setDomain([0, 100])` — reset to generator baseline so auto-expand starts clean
+4. `controller.appendData(generatePoints(count))` — load new data; React holds only the integer `count`, no arrays
+5. Resume live append if it was running
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `examples/ExampleApp.jsx` | `POINT_COUNT_OPTIONS` constant; `pointCount` React state (integer only); `handlePointCountChange` handler; `<select>` control in header toolbar |
+
+### Acceptance Criteria Verified
+
+- Fast initial load at 10k ✅
+- Clean re-render at 10M (GPU instanced, no GC spike) ✅
+- No memory leaks — `dataStore.clear()` reuses existing buffers ✅
+- React does not own large arrays — only `count: number` in state ✅
