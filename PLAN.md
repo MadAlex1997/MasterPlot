@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 5.3
+**Plan Version:** 5.5
 **Last Updated:** 2026-03-03
-**Status:** All Phase 1, Phase 2, Phase 3 complete. All ARCH tracks (C/A/D/B) complete. F22 + EX7 + EX8 + EX9 + EX4 complete. All features done.
+**Status:** All features complete (F1–F23, EX1–EX10, ARCH-A/B/C/D). No pending items.
 
 ---
 
@@ -86,6 +86,8 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | EX7 | Multi-Sensor Scatter Example | ✅ COMPLETED | feature/F22-EX7 | 2026-03-01 |
 | EX8 | Live Signal Analysis (Merge Line Examples) | ✅ COMPLETED | feature/EX8 | 2026-03-01 |
 | EX9 | Spectrogram Overhaul | ✅ COMPLETED | feature/EX9 | 2026-03-01 |
+| F23 | Auto-Scale / Reset Zoom | ✅ COMPLETED | feature/F23-EX10 | 2026-03-03 |
+| EX10 | Spectrogram Axis Drag Zoom + Auto-Scale | ✅ COMPLETED | feature/F23-EX10 | 2026-03-03 |
 
 ---
 
@@ -268,6 +270,8 @@ Full spec: [docs/plan-archive.md#f18](docs/plan-archive.md#f18)
 - **2026-03-01 [Claude]**: EX9 added as PENDING (v5.1 note) — Spectrogram Overhaul: 6 sub-tasks covering Freq Band removal, per-type DSP inputs, y-axis auto-zoom after Apply, fft-windowing npm integration, preset sounds dropdown, and LUT handle clamping fix.
 - **2026-03-01 [Claude]**: EX9 completed (v5.2) — All 6 sub-tasks implemented: Freq Band UI removed; `FilterController` gains `lowFreq`/`highFreq` state + `setLowHighFreq()` + geometric-mean center/Q; `FilterPanel` per-type layout with dual canvas markers; `SpectrogramLayer` `windowFn` prop via `fft-windowing` (`import * as fftWindowing`; `rectangular` skips windowing); `handleApplyFilter` auto-zooms y-axis; `handleClearFilter` restores full range; `CopyWebpackPlugin` copies `sounds/` → `dist/sounds/`; `loadAudioBuffer` shared helper; `HistogramLUTController.setSpectrogramData` clamps levels. Build passes zero errors.
 - **2026-03-03 [Claude]**: EX4 completed (v5.3) — `ExampleApp.jsx` gains points dropdown (10k/100k/1M/5M/10M); on change: pauses live append, clears DataStore, resets domain, loads new points, resumes append; React holds no arrays. All features in PLAN.md now complete.
+- **2026-03-03 [Claude]**: F23 + EX10 added as PENDING (v5.4) — F23: `PlotController.autoScale()` + `setHomeDomain()` + spacebar binding (engine; all PlotController-based examples gain it automatically); EX10: axis drag zoom (both spectrogram and waveform panels) + spacebar reset for SpectrogramExample which bypasses PlotController. Implementation order: F23 → EX10.
+- **2026-03-03 [Claude]**: F23 + EX10 completed (v5.5) — F23: `_homeDomain`/`_autoScaleKey` in constructor, spacebar in `init()`, `autoScale()`/`setHomeDomain()` public methods, cleanup in `destroy()`; EX10: `specAxisDragRef`/`waveAxisDragRef`, axis-hit guards in both panels' `onMouseDown`/`onMouseMove`/`onMouseUp`, spacebar `onKeyDown` with cleanup; README updated; build passes zero errors. All features complete.
 
 ---
 
@@ -406,3 +410,23 @@ Full spec: [docs/plan-archive.md#ex8](docs/plan-archive.md#ex8)
 **Completed:** 2026-03-01 | **Branch:** feature/EX9
 Six improvements: removed misleading "Freq Band" y-axis pan UI; per-type DSP filter inputs (single cutoff+Q for lowpass/highpass, dual low/high sliders with computed center+Q for bandpass/notch, dual canvas markers); auto-zoom spectrogram y-axis after Apply/Clear; `fft-windowing` npm for pluggable window functions (hann/hamming/blackman/rectangular) via `SpectrogramLayer.windowFn` prop; preset sound dropdown in header loading 4 WAV files from `/sounds` via `CopyWebpackPlugin`; LUT handle clamping fix in `HistogramLUTController.setSpectrogramData()`.
 Full spec: [docs/plan-archive.md#ex9](docs/plan-archive.md#ex9)
+
+---
+
+## Pending Features
+
+All features complete. No pending items.
+
+---
+
+### F23 [COMPLETED] Auto-Scale / Reset Zoom
+**Completed:** 2026-03-03 | **Branch:** feature/F23-EX10
+Added `autoScale()` (data-driven or home-domain) and `setHomeDomain(x, y)` to `PlotController`; spacebar binding in `init()` (skipped for INPUT/TEXTAREA/SELECT); cleanup in `destroy()`; emits `'autoScaled'`; `autoScaleKey: null` opt-out.
+Full spec: [docs/plan-archive.md#f23](docs/plan-archive.md#f23)
+
+---
+
+### EX10 [COMPLETED] Spectrogram Axis Drag Zoom + Auto-Scale
+**Completed:** 2026-03-03 | **Branch:** feature/F23-EX10
+Added `specAxisDragRef`/`waveAxisDragRef`; axis-hit check before plot-area guard in both `onMouseDown` handlers; restore-and-reapply zoom in both `onMouseMove` handlers; spacebar `onKeyDown` resets both panels to full duration × Nyquist / amplitude range; hint text updated.
+Full spec: [docs/plan-archive.md#ex10](docs/plan-archive.md#ex10)

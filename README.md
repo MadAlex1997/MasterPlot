@@ -14,7 +14,7 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 
 ---
 
-## Current Capabilities (F1–F22 + EX1–EX9 + EX4 + ARCH-A/B/C/D complete)
+## Current Capabilities (F1–F23 + EX1–EX10 + ARCH-A/B/C/D complete)
 
 ### Core Plotting Engine
 - **WebGL rendering** via deck.gl `OrthographicView` — no maps, no geospatial assumptions
@@ -63,7 +63,28 @@ Drag directly on the axis gutter (the tick-label margin) to zoom that axis indep
 - Emits `zoomChanged` with `{ factor, axis }`
 - Float drift prevented via restore-and-reapply pattern
 
-### Spectrogram / Audio Analysis Example (EX9)
+### Auto-Scale / Reset Zoom (F23)
+Press **Spacebar** to instantly fit both axes to the full extent of the current data:
+
+```js
+// Programmatic auto-scale (also triggered by spacebar)
+ctrl.autoScale();
+
+// Register an explicit home domain — spacebar restores these exact bounds instead of scanning data
+ctrl.setHomeDomain([0, 10], [0, 100]);
+```
+
+| Behaviour | Details |
+|-----------|---------|
+| **Spacebar** | Resets both axes; ignored when focus is inside `<input>`, `<textarea>`, or `<select>` |
+| **Data-driven** | Scans `DataStore.getLogicalData()` for min/max on both axes; adds 5 % padding each side |
+| **Home domain** | If `setHomeDomain(x, y)` was called with both non-null, those exact bounds are used instead of scanning |
+| **No-op guard** | Does nothing when the DataStore has 0 points and no home domain is set |
+| **Multi-plot** | Each `PlotController` instance binds its own handler — no cross-firing on pages with multiple plots |
+| **Event** | Emits `'autoScaled'` with `{ xDomain, yDomain }` |
+| **Opt out** | Pass `autoScaleKey: null` in constructor options to disable the spacebar binding entirely |
+
+### Spectrogram / Audio Analysis Example (EX9 + EX10)
 A full-featured spectrogram viewer is available at the demo (Spectrogram tab):
 
 | Feature | Details |
@@ -78,6 +99,8 @@ A full-featured spectrogram viewer is available at the demo (Spectrogram tab):
 | **Audio playback** | Play / Pause / Stop; yellow dashed playhead line on both panels at 60 fps; Ctrl+click to seek on either panel |
 | **Per-type DSP filters** | Offline biquad DSP via `OfflineAudioContext`; **lowpass/highpass**: single log-scale cutoff slider + Q slider; **bandpass/notch**: two frequency sliders (Low freq / High freq) with computed geometric-mean center + bandwidth Q shown as read-only text; dual orange markers on frequency-response canvas |
 | **Auto-zoom on Apply** | Clicking Apply zooms the spectrogram y-axis to the filtered range: `[0, cutoff]` (lowpass), `[cutoff, nyq]` (highpass), `[low, high]` (bandpass); Clear DSP Filter restores `[0, nyquist]` |
+| **Axis drag zoom (EX10)** | Drag on the X or Y axis gutter to zoom that axis independently (same convention as F21: X left=in, Y down=in); works on both spectrogram and waveform panels |
+| **Spacebar reset (EX10)** | Resets both panels to full duration × full frequency/amplitude range; no-op when no audio is loaded |
 
 ### Scatter + ROI Example (EX1 / EX4)
 The main scatter demo (`ExampleApp`) includes a **point-count dropdown** for performance benchmarking and two live ROI inspection tables below the event log.

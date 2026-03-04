@@ -3482,3 +3482,59 @@ Example-only change to `ExampleApp.jsx`: adds a point-count dropdown (10k / 100k
 - Clean re-render at 10M (GPU instanced, no GC spike) ✅
 - No memory leaks — `dataStore.clear()` reuses existing buffers ✅
 - React does not own large arrays — only `count: number` in state ✅
+
+---
+
+## F23
+
+### F23 — Auto-Scale / Reset Zoom
+
+**Completed:** 2026-03-03 | **Branch:** feature/F23-EX10
+
+**Scope:** `src/plot/PlotController.js` — engine only.
+
+**What was built:**
+- `_homeDomain = { x: null, y: null }` and `_autoScaleKey = opts.autoScaleKey ?? ' '` added to constructor
+- `_onKeyDown = null` placeholder in constructor; assigned and registered in `init()` after window resize listener
+- Spacebar binding guards: `e.repeat`, `INPUT/TEXTAREA/SELECT` tag check, `e.key === this._autoScaleKey`
+- `window.removeEventListener('keydown', this._onKeyDown)` cleanup in `destroy()`
+- `autoScale()`: if both `_homeDomain.x` and `_homeDomain.y` are non-null → use directly; otherwise scan `DataStore.getLogicalData()` for min/max, add 5 % padding; no-op if 0 points; calls `_updateScales()`, sets `_dirty = true`, emits `'autoScaled'`
+- `setHomeDomain(xDomain, yDomain)`: stores `{ x: xDomain ?? null, y: yDomain ?? null }`
+
+**Acceptance criteria (all met):**
+- Spacebar resets scatter example (`ExampleApp`) to full data extent ✅
+- `ctrl.autoScale()` callable programmatically and emits `'autoScaled'` ✅
+- `ctrl.setHomeDomain([0,10], [-1,1])` causes spacebar to restore those exact bounds ✅
+- Spacebar is a no-op when focus is inside `<input>`, `<textarea>`, or `<select>` ✅
+- Multiple PlotController instances each respond independently ✅
+- No regression to existing zoom, pan, or ROI interactions ✅
+
+---
+
+## EX10
+
+### EX10 — Spectrogram Axis Drag Zoom + Auto-Scale
+
+**Completed:** 2026-03-03 | **Branch:** feature/F23-EX10
+
+**Scope:** `examples/SpectrogramExample.jsx` — no engine changes.
+
+**What was built:**
+- `specAxisDragRef = useRef(null)` and `waveAxisDragRef = useRef(null)` added alongside existing refs
+- **Spectrogram `onMouseDown`**: axis-hit check via `axisRendRef.current?.getAxisHit(pos.x, pos.y)` inserted BEFORE `isInPlotArea` guard; on hit: stores `{ axis, startX, startY, xDomain, yDomain }` in `specAxisDragRef.current` and returns early
+- **Spectrogram `onMouseMove`**: reads `specAxisDragRef.current`; computes `delta = axis==='x' ? -dx : dy`; `factor = Math.exp(delta * 0.01)`; restore-and-reapply pattern; marks `dirtyRef.current = true`; returns early
+- **Spectrogram `onMouseUp`**: clears both `specAxisDragRef.current = null` and `panRef.current = null`
+- **Waveform panel**: identical pattern using `waveAxisDragRef`, `waveXAxisRef`, `waveYAxisRef`, `waveAxisRendRef`
+- **Spacebar `onKeyDown`**: guards `e.repeat` and tag check; reads `loadedSampleRateRef.current` + `samplesRef.current.length`; no-op if `!dur`; sets both panels to `[0, dur]` × `[0, sr/2]` and `[0, dur]` × `[-1.1, 1.1]`; sets both dirty flags
+- `window.addEventListener('keydown', onKeyDown)` inside mount `useEffect`; removed in cleanup return
+- Header hint text updated to include `drag axis=zoom axis · space=reset zoom`
+
+**Acceptance criteria (all met):**
+- Drag on spectrogram X-axis gutter → zooms time axis (left=in, right=out) ✅
+- Drag on spectrogram Y-axis gutter → zooms frequency axis (down=in, up=out) ✅
+- Drag on waveform X-axis gutter → zooms time axis ✅
+- Drag on waveform Y-axis gutter → zooms amplitude axis ✅
+- Spacebar resets both panels to full range simultaneously ✅
+- Spacebar is a no-op when no audio is loaded ✅
+- Spacebar is a no-op when focus is inside `<input>`, `<textarea>`, or `<select>` ✅
+- No regression to existing pan, wheel zoom, playhead, or filter interactions ✅

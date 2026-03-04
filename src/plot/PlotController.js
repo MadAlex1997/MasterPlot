@@ -149,6 +149,11 @@ export class PlotController extends EventEmitter {
     this._axisDragAxis   = null;   // 'x' | 'y'
     this._axisDragStart  = null;   // { x, y, xDomain, yDomain }
 
+    // F23: auto-scale / home domain
+    this._homeDomain   = { x: null, y: null };
+    this._autoScaleKey = opts.autoScaleKey !== undefined ? opts.autoScaleKey : ' ';
+    this._onKeyDown    = null;  // assigned in init()
+
     // Bound event handlers for cleanup
     this._onWheel      = this._onWheel.bind(this);
     this._onMouseDown  = this._onMouseDown.bind(this);
@@ -206,6 +211,14 @@ export class PlotController extends EventEmitter {
     webglCanvas.addEventListener('mouseup',   this._onMouseUp);
     window.addEventListener('resize',         this._onResize);
 
+    // F23: spacebar → autoScale
+    this._onKeyDown = (e) => {
+      if (e.repeat) return;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+      if (e.key === this._autoScaleKey) { e.preventDefault(); this.autoScale(); }
+    };
+    if (this._autoScaleKey) window.addEventListener('keydown', this._onKeyDown);
+
     // Start render loop
     this._scheduleRender();
   }
@@ -221,6 +234,7 @@ export class PlotController extends EventEmitter {
       this._webglCanvas.removeEventListener('mouseup',   this._onMouseUp);
     }
     window.removeEventListener('resize', this._onResize);
+    if (this._onKeyDown) window.removeEventListener('keydown', this._onKeyDown);
 
     this._roiController.destroy();
 
@@ -279,6 +293,52 @@ export class PlotController extends EventEmitter {
   /** @param {number} speed  Tuning range: 0.005 – 0.1 */
   setFollowPanSpeed(speed) {
     this._followPanSpeed = Math.max(0.001, Number(speed));
+  }
+
+  // ─── F23: Auto-scale ───────────────────────────────────────────────────────
+
+  /**
+   * Fit both axes to the full extent of current data (+ 5 % padding each side).
+   * If setHomeDomain() was called with both x and y non-null, those exact bounds are used.
+   * Emits 'autoScaled' with { xDomain, yDomain }.
+   */
+  autoScale() {
+    let xDomain, yDomain;
+    if (this._homeDomain.x !== null && this._homeDomain.y !== null) {
+      xDomain = this._homeDomain.x;
+      yDomain = this._homeDomain.y;
+    } else {
+      const data = this._dataStore.getLogicalData();
+      const n = data.x.length;
+      if (n === 0) return;
+      let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+      for (let i = 0; i < n; i++) {
+        if (data.x[i] < xMin) xMin = data.x[i];
+        if (data.x[i] > xMax) xMax = data.x[i];
+        if (data.y[i] < yMin) yMin = data.y[i];
+        if (data.y[i] > yMax) yMax = data.y[i];
+      }
+      const xPad = (xMax - xMin) * 0.05 || 0.05;
+      const yPad = (yMax - yMin) * 0.05 || 0.05;
+      xDomain = [xMin - xPad, xMax + xPad];
+      yDomain = [yMin - yPad, yMax + yPad];
+    }
+    this._xAxis.setDomain(xDomain);
+    this._yAxis.setDomain(yDomain);
+    this._updateScales();
+    this._dirty = true;
+    this.emit('autoScaled', { xDomain, yDomain });
+  }
+
+  /**
+   * Register an explicit home domain used by autoScale().
+   * autoScale() uses home domains only when BOTH x and y are non-null.
+   *
+   * @param {number[]|null} xDomain — e.g. [0, 10], or null to compute from data
+   * @param {number[]|null} yDomain — e.g. [0, 100], or null to compute from data
+   */
+  setHomeDomain(xDomain, yDomain) {
+    this._homeDomain = { x: xDomain ?? null, y: yDomain ?? null };
   }
 
   // ─── Zoom / Pan ────────────────────────────────────────────────────────────

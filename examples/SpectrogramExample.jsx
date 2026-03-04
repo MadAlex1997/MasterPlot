@@ -185,6 +185,9 @@ export default function SpectrogramExample() {
   const waveDirtyRef      = useRef(true);
   const wavePanRef        = useRef(null);
 
+  const specAxisDragRef = useRef(null);  // EX10: axis drag state for spectrogram panel
+  const waveAxisDragRef = useRef(null);  // EX10: axis drag state for waveform panel
+
   const fileInputRef        = useRef(null);
   const loadedSampleRateRef = useRef(SAMPLE_RATE);  // actual sr of loaded audio
 
@@ -544,6 +547,17 @@ export default function SpectrogramExample() {
       const viewport = viewportRef.current;
       if (!viewport) return;
       const pos = viewport.getCanvasPosition(e, webglRef.current);
+      // EX10: axis drag — must be checked before plot-area guard (gutters are outside plot area)
+      const axisHit = axisRendRef.current?.getAxisHit(pos.x, pos.y);
+      if (axisHit) {
+        specAxisDragRef.current = {
+          axis: axisHit,
+          startX: pos.x, startY: pos.y,
+          xDomain: xAxisRef.current.getDomain(),
+          yDomain: yAxisRef.current.getDomain(),
+        };
+        return;  // skip pan
+      }
       if (!viewport.isInPlotArea(pos.x, pos.y)) return;
       // Ctrl+click → seek
       if (e.ctrlKey && playbackRef.current?.duration > 0) {
@@ -560,6 +574,21 @@ export default function SpectrogramExample() {
     };
 
     const onMouseMove = (e) => {
+      // EX10: axis drag zoom
+      const drag = specAxisDragRef.current;
+      if (drag) {
+        const viewport = viewportRef.current;
+        if (!viewport) return;
+        const pos = viewport.getCanvasPosition(e, webglRef.current);
+        const dx = pos.x - drag.startX, dy = pos.y - drag.startY;
+        const delta = drag.axis === 'x' ? -dx : dy;
+        const factor = Math.exp(delta * 0.01);
+        xAxisRef.current.setDomain(drag.xDomain);
+        yAxisRef.current.setDomain(drag.yDomain);
+        (drag.axis === 'x' ? xAxisRef : yAxisRef).current.scaleDomainFromMidpoint(factor);
+        dirtyRef.current = true;
+        return;
+      }
       const pan = panRef.current;
       if (!pan) return;
       const viewport = viewportRef.current;
@@ -574,7 +603,7 @@ export default function SpectrogramExample() {
       dirtyRef.current = true;
     };
 
-    const onMouseUp = () => { panRef.current = null; };
+    const onMouseUp = () => { specAxisDragRef.current = null; panRef.current = null; };
 
     // ── Waveform wheel + drag ───────────────────────────────────────────────
     const onWaveWheel = (e) => {
@@ -594,6 +623,17 @@ export default function SpectrogramExample() {
       const viewport = waveViewportRef.current;
       if (!viewport) return;
       const pos = viewport.getCanvasPosition(e, waveWebglRef.current);
+      // EX10: axis drag — must be checked before plot-area guard
+      const axisHit = waveAxisRendRef.current?.getAxisHit(pos.x, pos.y);
+      if (axisHit) {
+        waveAxisDragRef.current = {
+          axis: axisHit,
+          startX: pos.x, startY: pos.y,
+          xDomain: waveXAxisRef.current.getDomain(),
+          yDomain: waveYAxisRef.current.getDomain(),
+        };
+        return;  // skip pan
+      }
       if (!viewport.isInPlotArea(pos.x, pos.y)) return;
       // Ctrl+click → seek
       if (e.ctrlKey && playbackRef.current?.duration > 0) {
@@ -610,6 +650,21 @@ export default function SpectrogramExample() {
     };
 
     const onWaveMouseMove = (e) => {
+      // EX10: axis drag zoom
+      const drag = waveAxisDragRef.current;
+      if (drag) {
+        const viewport = waveViewportRef.current;
+        if (!viewport) return;
+        const pos = viewport.getCanvasPosition(e, waveWebglRef.current);
+        const dx = pos.x - drag.startX, dy = pos.y - drag.startY;
+        const delta = drag.axis === 'x' ? -dx : dy;
+        const factor = Math.exp(delta * 0.01);
+        waveXAxisRef.current.setDomain(drag.xDomain);
+        waveYAxisRef.current.setDomain(drag.yDomain);
+        (drag.axis === 'x' ? waveXAxisRef : waveYAxisRef).current.scaleDomainFromMidpoint(factor);
+        waveDirtyRef.current = true;
+        return;
+      }
       const pan = wavePanRef.current;
       if (!pan) return;
       const viewport = waveViewportRef.current;
@@ -624,7 +679,7 @@ export default function SpectrogramExample() {
       waveDirtyRef.current = true;
     };
 
-    const onWaveMouseUp = () => { wavePanRef.current = null; };
+    const onWaveMouseUp = () => { waveAxisDragRef.current = null; wavePanRef.current = null; };
 
     // ── Resize ─────────────────────────────────────────────────────────────
     const onResize = () => {
@@ -670,6 +725,21 @@ export default function SpectrogramExample() {
       }
     };
 
+    // EX10: spacebar → reset both panels to full range
+    const onKeyDown = (e) => {
+      if (e.repeat || ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+      if (e.key !== ' ') return;
+      e.preventDefault();
+      const sr  = loadedSampleRateRef.current;
+      const dur = samplesRef.current.length / sr;
+      if (!dur) return;
+      xAxisRef.current?.setDomain([0, dur]);
+      yAxisRef.current?.setDomain([0, sr / 2]);
+      waveXAxisRef.current?.setDomain([0, dur]);
+      waveYAxisRef.current?.setDomain([-1.1, 1.1]);
+      dirtyRef.current = waveDirtyRef.current = true;
+    };
+
     // ── Attach listeners ────────────────────────────────────────────────────
     wc.addEventListener('wheel',     onWheel,         { passive: false });
     wc.addEventListener('mousedown', onMouseDown);
@@ -680,6 +750,7 @@ export default function SpectrogramExample() {
     ww.addEventListener('mousemove', onWaveMouseMove);
     ww.addEventListener('mouseup',   onWaveMouseUp);
     window.addEventListener('resize', onResize);
+    window.addEventListener('keydown', onKeyDown);
 
     return () => {
       cancelAnimationFrame(initRaf);
@@ -694,6 +765,7 @@ export default function SpectrogramExample() {
       ww.removeEventListener('mousemove', onWaveMouseMove);
       ww.removeEventListener('mouseup',   onWaveMouseUp);
       window.removeEventListener('resize', onResize);
+      window.removeEventListener('keydown', onKeyDown);
       deckRef.current?.finalize();
       waveDeckRef.current?.finalize();
       playbackRef.current?.destroy();
@@ -1007,7 +1079,7 @@ export default function SpectrogramExample() {
         </button>
 
         <span style={{ marginLeft: 'auto', color: '#666' }}>
-          scroll=zoom · drag=pan · ctrl+click=seek
+          scroll=zoom · drag=pan · drag axis=zoom axis · space=reset zoom · ctrl+click=seek
         </span>
       </div>
 
