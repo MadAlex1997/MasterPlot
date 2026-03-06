@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 5.5
-**Last Updated:** 2026-03-03
-**Status:** All features complete (F1–F23, EX1–EX10, ARCH-A/B/C/D). No pending items.
+**Plan Version:** 5.7
+**Last Updated:** 2026-03-06
+**Status:** 3 features pending (F24, EX11, EX12). ARCH-E complete.
 
 ---
 
@@ -88,6 +88,10 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | EX9 | Spectrogram Overhaul | ✅ COMPLETED | feature/EX9 | 2026-03-01 |
 | F23 | Auto-Scale / Reset Zoom | ✅ COMPLETED | feature/F23-EX10 | 2026-03-03 |
 | EX10 | Spectrogram Axis Drag Zoom + Auto-Scale | ✅ COMPLETED | feature/F23-EX10 | 2026-03-03 |
+| ARCH-E | BroadcastChannel Popup Window Infrastructure | ✅ COMPLETED | feature/ARCH-E | 2026-03-06 |
+| F24 | Spectrogram Filter Popup Window | 🔲 PENDING | — | — |
+| EX11 | Spectrogram RectROI + Connected Label Popup | 🔲 PENDING | — | — |
+| EX12 | Stress Test Preset Segments | 🔲 PENDING | — | — |
 
 ---
 
@@ -272,6 +276,7 @@ Full spec: [docs/plan-archive.md#f18](docs/plan-archive.md#f18)
 - **2026-03-03 [Claude]**: EX4 completed (v5.3) — `ExampleApp.jsx` gains points dropdown (10k/100k/1M/5M/10M); on change: pauses live append, clears DataStore, resets domain, loads new points, resumes append; React holds no arrays. All features in PLAN.md now complete.
 - **2026-03-03 [Claude]**: F23 + EX10 added as PENDING (v5.4) — F23: `PlotController.autoScale()` + `setHomeDomain()` + spacebar binding (engine; all PlotController-based examples gain it automatically); EX10: axis drag zoom (both spectrogram and waveform panels) + spacebar reset for SpectrogramExample which bypasses PlotController. Implementation order: F23 → EX10.
 - **2026-03-03 [Claude]**: F23 + EX10 completed (v5.5) — F23: `_homeDomain`/`_autoScaleKey` in constructor, spacebar in `init()`, `autoScale()`/`setHomeDomain()` public methods, cleanup in `destroy()`; EX10: `specAxisDragRef`/`waveAxisDragRef`, axis-hit guards in both panels' `onMouseDown`/`onMouseMove`/`onMouseUp`, spacebar `onKeyDown` with cleanup; README updated; build passes zero errors. All features complete.
+- **2026-03-06 [Claude]**: ARCH-E completed (v5.7) — `PopupWindowManager` (EventEmitter, 500 ms poll, blocked-popup guard) + `usePopupChannel` React hook; `BackendAdapter.js` stub documents WebSocket transport-swap; `SpectrogramPopup.jsx` panel host shell with `?panel=`/`?channel=` routing; webpack entry `spectrogram-popup.js`/`spectrogram-popup.html`; build passes zero errors. F24 and EX11 now unblocked.
 
 ---
 
@@ -415,7 +420,134 @@ Full spec: [docs/plan-archive.md#ex9](docs/plan-archive.md#ex9)
 
 ## Pending Features
 
-All features complete. No pending items.
+**Mandatory implementation order:**
+
+```
+F24 → EX11  (ARCH-E complete; F24 and EX11 unblocked)
+EX12 (independent — no popup dependency)
+```
+
+---
+
+### ARCH-E [COMPLETED] BroadcastChannel Popup Window Infrastructure
+**Completed:** 2026-03-06 | **Branch:** feature/ARCH-E
+`PopupWindowManager` (EventEmitter, polls closed every 500 ms, returns false if blocked) + `usePopupChannel` React hook; `BackendAdapter.js` stub documents WebSocket transport swap; `SpectrogramPopup.jsx` + webpack entry `spectrogram-popup.js`/`spectrogram-popup.html` panel host shell with `?panel=`/`?channel=` URL routing; build passes zero errors.
+Full spec: [docs/plan-archive.md#arch-e](docs/plan-archive.md#arch-e)
+
+---
+
+### F24 [PENDING] Spectrogram Filter Popup Window
+
+**Depends on:** ARCH-E
+
+**Goal:** Move `FilterPanel` out of the waveform sidebar and into a dedicated connected popup window, reducing clutter in the main spectrogram view for the standard-analyst use case.
+
+**Single source of truth:** `FilterController` state lives entirely in the main window. The popup reflects and drives it via `BroadcastChannel`; it holds no independent filter state.
+
+**Files modified:**
+- `examples/SpectrogramExample.jsx`:
+  - Replace inline `FilterPanel` + waveform sidebar filter section with an "Open Filter Panel" button.
+  - Use `usePopupChannel('spectrogram-popup.html?panel=filter', 'spectrogram-filter', onMessage)` hook.
+  - On incoming `FILTER_STATE` message from popup: apply to `FilterController` and trigger re-render exactly as the existing Apply/Clear handlers do.
+  - On any local filter state change (Apply/Clear): send `{ type: 'FILTER_STATE', payload: currentFilterState }` to popup.
+  - Button label: "Open Filter Panel" initially; "Reopen Filter Panel" after popup is closed; disabled while popup is open (to avoid duplicate windows).
+  - If popup is closed by user: filter remains applied; button reverts to "Open Filter Panel".
+- `src/spectrogram-popup.js` / popup entry:
+  - When `?panel=filter`: render `FilterPanel` connected to a local mirror of filter state.
+  - On any control change in popup: send `{ type: 'FILTER_STATE', payload }` to main window.
+  - On incoming `FILTER_STATE` from main window: update local mirror (controlled component).
+  - Apply / Clear buttons in popup trigger `{ type: 'FILTER_APPLY' }` / `{ type: 'FILTER_CLEAR' }` messages; main window executes the actual DSP and echoes back the resulting `FILTER_STATE`.
+
+**BroadcastChannel messages (channel: `'spectrogram-filter'`):**
+
+| Direction | Type | Payload |
+|-----------|------|---------|
+| Main → Popup | `FILTER_STATE` | `{ filterType, cutoff, q, lowFreq, highFreq, applied }` |
+| Popup → Main | `FILTER_STATE` | same (on slider/input change) |
+| Popup → Main | `FILTER_APPLY` | `{}` |
+| Popup → Main | `FILTER_CLEAR` | `{}` |
+
+---
+
+### EX11 [PENDING] Spectrogram RectROI + Connected Label Popup
+
+**Depends on:** ARCH-E
+
+**Goal:** Add rectangular ROI drawing to the spectrogram panel (using the existing engine `RectROI`) and provide a connected popup window for listing, labeling, and navigating ROIs. Labels for the demo dataset are: `plane`, `bird`, `siren`.
+
+**Spectrogram ROI specifics:**
+- Uses existing `RectROI` with full versioning, serialization, and metadata — no new ROI types.
+- No `LinearRegion` nesting; all RectROIs are top-level on the spectrogram.
+- x-bounds: time in seconds; y-bounds: free-floating Hz values (not snapped to bins).
+- Labels stored in `roi.metadata.label` (string, one of `['plane', 'bird', 'siren']` for the demo).
+- 'R' key / "Draw ROI" button enters creation mode; two clicks set top-left and bottom-right corners.
+- ROI overlay rendered by `ROILayer` on the spectrogram deck.gl canvas.
+- `ROIController` wired to the spectrogram panel (currently it has none).
+
+**Files modified:**
+- `examples/SpectrogramExample.jsx`:
+  - Add `ROIController` wired to spectrogram panel.
+  - Add "Draw ROI" button + 'R' key listener for creation mode.
+  - Add "Open Label Panel" button using `usePopupChannel('spectrogram-popup.html?panel=labels', 'spectrogram-labels', onMessage)`.
+  - On `roisChanged` / `roiFinalized`: send `{ type: 'ROIS_CHANGED', payload: roiController.serializeAll() }` to popup.
+  - On `SELECT_ROI` message from popup: set selected ROI on plot; if "zoom to selected" is currently enabled in the popup (tracked via `ZOOM_TOGGLE` message), call `specXAxis.setDomain([roi.x1, roi.x2])` and `specYAxis.setDomain([roi.y1, roi.y2])` then redraw.
+  - On `DELETE_ROI` message: call `roiController.removeROI(id)`, emit `roisChanged`.
+  - On `SET_LABEL` message: set `roi.metadata.label = label`, emit `roisChanged`.
+  - Auto-select behavior: on `roiCreated` or canvas click that hits an ROI, send `{ type: 'AUTO_SELECT', payload: { id } }` to popup.
+- `src/spectrogram-popup.js` / popup entry — when `?panel=labels`: render ROI listing table.
+
+**ROI listing table (popup, `?panel=labels`):**
+
+| Column | Content |
+|--------|---------|
+| Time | `x1 s – x2 s` |
+| Freq | `y1 Hz – y2 Hz` |
+| Label | `<select>` with options: *(none)* / plane / bird / siren |
+| Delete | button → sends `DELETE_ROI` |
+
+- Clicking a row: sends `SELECT_ROI` to main → highlights ROI on plot; if "Zoom to selected" toggle is ON, also zooms.
+- "Zoom to selected" toggle: checkbox at top of popup; persists in popup local state only; sends `ZOOM_TOGGLE` message to main on change.
+- Auto-select: when popup receives `AUTO_SELECT` message, scroll that row into view and highlight it.
+
+**BroadcastChannel messages (channel: `'spectrogram-labels'`):**
+
+| Direction | Type | Payload |
+|-----------|------|---------|
+| Main → Popup | `ROIS_CHANGED` | `serializedROIs[]` (from `serializeAll()`) |
+| Main → Popup | `AUTO_SELECT` | `{ id }` |
+| Popup → Main | `SELECT_ROI` | `{ id }` |
+| Popup → Main | `SET_LABEL` | `{ id, label }` |
+| Popup → Main | `DELETE_ROI` | `{ id }` |
+| Popup → Main | `ZOOM_TOGGLE` | `{ enabled: bool }` |
+
+---
+
+### EX12 [PENDING] Stress Test Preset Segments
+
+**Depends on:** nothing (independent)
+
+**Goal:** Add long-duration synthetic audio segments to the spectrogram preset dropdown to benchmark STFT throughput, rendering performance, and browser memory behavior across devices. Results will inform future decisions on dynamic unloading/reloading strategies.
+
+**Durations:** 5 min, 10 min, 15 min, 30 min, 60 min.
+
+**Target sample rate:** 4 000 Hz (downsampled from 44 100 Hz).
+- Lowpass anti-aliasing filter (cutoff ~1 800 Hz) applied via `OfflineAudioContext` before downsampling.
+- Float32 memory budget: 5 min ≈ 1.2 M samples ≈ 4.8 MB; 60 min ≈ 14.4 M samples ≈ 58 MB — all feasible.
+
+**Generation algorithm:**
+1. Decode the currently selected preset WAV (or `plane1.wav` as default) via `AudioContext.decodeAudioData`.
+2. Resample to 4 000 Hz via `OfflineAudioContext` with a lowpass biquad node at 1 800 Hz.
+3. Randomly stitch copies of the downsampled clip end-to-end (with randomised starting offsets within the clip) until the target sample count is reached.
+4. Wrap in a new `AudioBuffer` at 4 000 Hz and hand off to the existing `loadAudioBuffer` path.
+
+**UI changes (`examples/SpectrogramExample.jsx`):**
+- Add an `<optgroup label="── Stress Test ──">` group below the existing individual file options in the preset `<select>`.
+- Options: `5 min`, `10 min`, `15 min`, `30 min`, `60 min`.
+- While generating: disable the dropdown and show a loading indicator (`"Generating 60 min…"`).
+- After generation: re-enable dropdown and proceed as a normal preset load.
+
+**Performance note (comment in code):**
+Document that a future enhancement (`DataStore` paging / tile-based STFT) could unload and reload segments dynamically based on the visible x-range, enabling arbitrarily long recordings without proportional memory use. Link to the `DataStore` rolling ring buffer API as the natural extension point.
 
 ---
 
@@ -430,3 +562,5 @@ Full spec: [docs/plan-archive.md#f23](docs/plan-archive.md#f23)
 **Completed:** 2026-03-03 | **Branch:** feature/F23-EX10
 Added `specAxisDragRef`/`waveAxisDragRef`; axis-hit check before plot-area guard in both `onMouseDown` handlers; restore-and-reapply zoom in both `onMouseMove` handlers; spacebar `onKeyDown` resets both panels to full duration × Nyquist / amplitude range; hint text updated.
 Full spec: [docs/plan-archive.md#ex10](docs/plan-archive.md#ex10)
+
+- **2026-03-06 [Claude]**: ARCH-E, F24, EX11, EX12 added as PENDING (v5.6). Motivation: move spectrogram controls into connected popup windows (BroadcastChannel) to reduce main-page clutter; add RectROI + label system to spectrogram; add stress-test preset segments (4 kHz, 5–60 min). Mandatory order: ARCH-E → F24, ARCH-E → EX11; EX12 is independent. Full specs in Pending Features section above.

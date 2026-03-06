@@ -14,7 +14,8 @@ module.exports = (env, argv) => {
       'live-signals':  './src/live-signals.js',
       'shared-data':   './src/shared-data.js',
       seismography:    './src/seismography.js',
-      'multi-sensor':  './src/multi-sensor.js',
+      'multi-sensor':        './src/multi-sensor.js',
+      'spectrogram-popup':   './src/spectrogram-popup.js',
     },
     output: {
       path: path.resolve(__dirname, 'dist'),
@@ -75,6 +76,11 @@ module.exports = (env, argv) => {
         template: './public/multi-sensor.html',
         filename: 'multi-sensor.html',
         chunks:   ['multi-sensor'],
+      }),
+      new HtmlWebpackPlugin({
+        template: './public/spectrogram-popup.html',
+        filename: 'spectrogram-popup.html',
+        chunks:   ['spectrogram-popup'],
       }),
       new CopyWebpackPlugin({
         patterns: [{ from: 'sounds', to: 'sounds' }],

@@ -802,3 +802,92 @@ Later (unscheduled):
 - High-resolution PNG export (`plotController.exportPNG(options)`)
 - Snapping constraints for ROIs
 - TypeScript migration
+
+---
+
+## Popup Window Infrastructure (ARCH-E)
+
+MasterPlot supports detached panel windows that stay bidirectionally in sync with the main plot via the browser's native `BroadcastChannel` API. All messages use the shared envelope:
+
+```js
+{ type: 'TYPE_NAME', payload: { ...data } }
+```
+
+Unknown `type` values are silently ignored on both sides for forward-compatibility.
+
+### PopupWindowManager
+
+Plain `EventEmitter` class — no React dependency.
+
+```js
+import { PopupWindowManager } from './src/popup/PopupWindowManager.js';
+
+const manager = new PopupWindowManager();
+manager.on('message', (msg) => console.log('from popup:', msg));
+manager.on('closed',  ()    => console.log('popup closed'));
+
+// Open popup and establish a BroadcastChannel
+const opened = manager.open(
+  'spectrogram-popup.html?panel=filter&channel=spectrogram-filter',
+  'spectrogram-filter',
+  'width=520,height=640'  // optional window.open features
+);
+if (!opened) {
+  // popup was blocked — inform the user
+}
+
+// Send a message to the popup
+manager.send({ type: 'FILTER_STATE', payload: { filterType: 'lowpass', cutoff: 1000 } });
+
+// Programmatically close (also clean up via manager.destroy())
+manager.close();
+```
+
+| Method / Property | Description |
+|---|---|
+| `open(url, channelName, windowFeatures?)` | Opens popup; returns `false` (+ console warning) if blocked |
+| `send({ type, payload })` | Posts message to popup via BroadcastChannel |
+| `close()` | Closes popup window and BroadcastChannel; emits `'closed'` |
+| `destroy()` | `close()` + `removeAllListeners()` — call on unmount if not using the hook |
+| `isOpen` | `true` while popup window is open |
+| Event `'message'` | Fired for each incoming message from popup |
+| Event `'closed'` | Fired when popup is closed (user or programmatic) |
+
+### usePopupChannel (React hook)
+
+```jsx
+import { usePopupChannel } from './src/popup/usePopupChannel.js';
+
+function MyComponent() {
+  const { open, send, close, isOpen } = usePopupChannel(
+    'spectrogram-popup.html?panel=filter&channel=spectrogram-filter',
+    'spectrogram-filter',
+    (msg) => {
+      if (msg.type === 'FILTER_APPLY') handleApply(msg.payload);
+    }
+  );
+
+  return (
+    <button onClick={open} disabled={isOpen}>
+      {isOpen ? 'Filter Panel Open' : 'Open Filter Panel'}
+    </button>
+  );
+}
+```
+
+The hook creates `PopupWindowManager` on mount, tears it down on unmount, and keeps `onMessage` stable via a ref. The popup is not opened automatically — call `open()` from a user gesture.
+
+### Popup page host (spectrogram-popup.html)
+
+The `spectrogram-popup.html` entry serves as the host shell for all spectrogram-related panels. It reads URL params to route to the correct panel and connect to the right channel:
+
+```
+spectrogram-popup.html?panel=filter&channel=spectrogram-filter  → FilterPanel (F24)
+spectrogram-popup.html?panel=labels&channel=spectrogram-labels  → ROI Label panel (EX11)
+```
+
+Popup detection (`window.opener !== null` or `?panel=` present) suppresses main-page chrome so the popup renders only the requested panel.
+
+### Future: BackendAdapter (transport swap)
+
+`src/integration/BackendAdapter.js` is a documented stub describing how the same `{ type, payload }` message envelope allows the identical popup UI to be driven by a remote WebSocket server instead of a local `BroadcastChannel` — with only a thin transport-layer swap. See the file for the full contract shape and rolling-buffer integration notes.

@@ -3538,3 +3538,42 @@ Example-only change to `ExampleApp.jsx`: adds a point-count dropdown (10k / 100k
 - Spacebar is a no-op when no audio is loaded ✅
 - Spacebar is a no-op when focus is inside `<input>`, `<textarea>`, or `<select>` ✅
 - No regression to existing pan, wheel zoom, playhead, or filter interactions ✅
+
+---
+
+## ARCH-E
+
+### ARCH-E [COMPLETED] BroadcastChannel Popup Window Infrastructure
+**Completed:** 2026-03-06 | **Branch:** feature/ARCH-E
+
+**Goal:** General-purpose infrastructure for spawning connected secondary browser windows from any MasterPlot page. Windows communicate bidirectionally via the browser's `BroadcastChannel` API. This enables panels (controls, labels, analysis) to be moved out of the main page to reduce clutter, while staying in sync with the plot.
+
+**Scope:** Engine/utility only. No example UI changes in this track.
+
+**New files created:**
+- `src/popup/PopupWindowManager.js` — plain EventEmitter class; `open(url, channelName, windowFeatures)` opens popup via `window.open()`, creates `BroadcastChannel`, polls `popup.closed` every 500 ms, emits `'closed'` on detection; `send({ type, payload })` posts to channel; `close()` closes both popup and channel; `isOpen` getter; returns `false` from `open()` if blocked by browser popup blocker and logs a console warning; no React dependency.
+- `src/popup/usePopupChannel.js` — React hook wrapping `PopupWindowManager`; `usePopupChannel(url, channelName, onMessage)` → `{ send, isOpen, open, close }`; manager created on mount, destroyed on unmount; `open()` is the trigger (not called automatically on mount); `onMessage` ref kept stable to avoid stale closure; BroadcastChannel listener removed and channel closed on unmount.
+- `src/integration/BackendAdapter.js` — stub/comment-only file documenting the REST/WebSocket contract shape for a future server-side analysis adapter; no executable logic beyond export placeholder; documents transport-swap design (same `{ type, payload }` envelope works over BroadcastChannel or WebSocket); documents rolling-buffer integration path with DataStore.
+- `examples/SpectrogramPopup.jsx` — React component for the popup host shell; reads `?panel=` and `?channel=` from URL; detects popup mode via `window.opener !== null || panel !== ''`; creates `BroadcastChannel(channelName)` when channel name provided and closes on unmount; `renderPanel()` switch routes to future panel components (F24 `filter`, EX11 `labels`); shows placeholder for unrecognized panel names.
+
+**New webpack entry:**
+- `src/spectrogram-popup.js` — entry point rendering `SpectrogramPopup`
+- `public/spectrogram-popup.html` — HTML template (identical style to spectrogram.html)
+- `webpack.config.js` — added `'spectrogram-popup'` entry + `HtmlWebpackPlugin` for `spectrogram-popup.html`
+
+**Message protocol convention (all channels):**
+```js
+{ type: 'TYPE_NAME', payload: { ...data } }
+```
+Both sides must silently ignore unknown `type` values for forward-compatibility.
+
+**Popup detection:** popup page detects it is secondary via `window.opener !== null` **or** the presence of a `?panel=` URL param. When detected, suppresses main-page chrome.
+
+**Acceptance criteria (all met):**
+- `PopupWindowManager` is a plain EventEmitter with no React imports ✅
+- `open()` returns `false` and logs a warning when blocked by popup blocker ✅
+- `usePopupChannel` cleans up channel and listeners on unmount ✅
+- `spectrogram-popup.html` renders with no JS errors when loaded directly ✅
+- `spectrogram-popup.html?panel=filter` shows "not yet implemented" placeholder ✅
+- Webpack build passes zero errors ✅
+- `BackendAdapter.js` documents the WebSocket transport-swap contract ✅
