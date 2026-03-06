@@ -40,6 +40,8 @@ import HistogramLUTPanel         from '../src/components/HistogramLUTPanel.jsx';
 import { PlaybackController }    from '../src/audio/PlaybackController.js';
 import { FilterController }      from '../src/audio/FilterController.js';
 import { usePopupChannel }       from '../src/popup/usePopupChannel.js';
+import { ROIController }         from '../src/plot/ROI/ROIController.js';
+import { ROILayer }              from '../src/plot/layers/ROILayer.js';
 
 // ── Preset sound files ─────────────────────────────────────────────────────────
 
@@ -188,6 +190,11 @@ export default function SpectrogramExample() {
   const specAxisDragRef = useRef(null);  // EX10: axis drag state for spectrogram panel
   const waveAxisDragRef = useRef(null);  // EX10: axis drag state for waveform panel
 
+  // ── EX11: Spectrogram ROI controller + label popup ─────────────────────────
+  const specRoiCtrlRef    = useRef(null);
+  const zoomToSelectedRef = useRef(false);
+  const sendToLabelsRef   = useRef(null);  // updated each render so mount-closure can access latest send
+
   const fileInputRef        = useRef(null);
   const loadedSampleRateRef = useRef(SAMPLE_RATE);  // actual sr of loaded audio
 
@@ -220,6 +227,7 @@ export default function SpectrogramExample() {
   const [playState,        setPlayState]        = useState('stopped'); // 'playing'|'paused'|'stopped'
   const [timeWindow,       setTimeWindow]       = useState(null);  // null = All
   const [filterEverOpened, setFilterEverOpened] = useState(false);
+  const [labelsEverOpened, setLabelsEverOpened] = useState(false);
 
   const addLog = (msg) => setLog(prev => [msg, ...prev].slice(0, 20));
 
@@ -271,6 +279,39 @@ export default function SpectrogramExample() {
     const timer = setTimeout(() => sendToFilter(buildFilterStateMsg(false)), 300);
     return () => clearTimeout(timer);
   }, [filterPopupOpen]);
+
+  // ── Labels popup channel (EX11) ────────────────────────────────────────────
+  const { open: openLabelsPopup, send: sendToLabels, isOpen: labelsPopupOpen } = usePopupChannel(
+    'spectrogram-popup.html?panel=labels&channel=spectrogram-labels',
+    'spectrogram-labels',
+    (msg) => {
+      const roiCtrl = specRoiCtrlRef.current;
+      if (!roiCtrl) return;
+      if (msg.type === 'SELECT_ROI') {
+        const roi = roiCtrl.getROI(msg.payload.id);
+        if (!roi) return;
+        roiCtrl._selectOnly(roi);
+        if (zoomToSelectedRef.current) {
+          xAxisRef.current?.setDomain([roi.x1, roi.x2]);
+          yAxisRef.current?.setDomain([roi.y1, roi.y2]);
+        }
+        dirtyRef.current = true;
+      } else if (msg.type === 'SET_LABEL') {
+        const roi = roiCtrl.getROI(msg.payload.id);
+        if (roi) {
+          roi.metadata = { ...roi.metadata, label: msg.payload.label || null };
+          roiCtrl.emit('roisChanged', { rois: roiCtrl.getAllROIs() });
+        }
+      } else if (msg.type === 'DELETE_ROI') {
+        roiCtrl.deleteROI(msg.payload.id);
+      } else if (msg.type === 'ZOOM_TOGGLE') {
+        zoomToSelectedRef.current = msg.payload.enabled;
+      }
+    },
+  );
+
+  // Keep sendToLabels accessible inside mount useEffect closure via ref
+  sendToLabelsRef.current = sendToLabels;
 
   // ── Shared audio buffer load helper ───────────────────────────────────────
 
@@ -393,6 +434,10 @@ export default function SpectrogramExample() {
     const axisRend = axisRendRef.current;
     if (!deck || !xAxis || !yAxis || !viewport) return;
 
+    const [xMin, xMax] = xAxis.getDomain();
+    const [yMin, yMax] = yAxis.getDomain();
+    const rois = specRoiCtrlRef.current?.getAllROIs() ?? [];
+
     const layers = [
       new SpectrogramLayer({
         id:            'spectrogram',
@@ -404,6 +449,16 @@ export default function SpectrogramExample() {
         lutController: lutControllerRef.current,
         colorTrigger:  colorTriggerRef.current,  // read from ref, not stale state
         windowFn:      windowFnRef.current,
+      }),
+      new ROILayer({
+        id: 'roi-layer',
+        rois,
+        plotXMin: xMin,
+        plotXMax: xMax,
+        plotYMin: yMin,
+        plotYMax: yMax,
+        xIsLog: false,
+        yIsLog: false,
       }),
     ];
 
@@ -514,6 +569,25 @@ export default function SpectrogramExample() {
       deckRef.current     = deck;
       axisRendRef.current = axisRend;
 
+      // ── EX11: Spectrogram ROI controller ───────────────────────────────────
+      const specRoiCtrl = new ROIController(viewport);
+      specRoiCtrl.init(wc);
+      specRoiCtrlRef.current = specRoiCtrl;
+
+      specRoiCtrl.on('roisChanged', () => {
+        dirtyRef.current = true;
+        sendToLabelsRef.current?.({
+          type: 'ROIS_CHANGED',
+          payload: specRoiCtrl.serializeAll(),
+        });
+      });
+      specRoiCtrl.on('roiCreated', ({ roi }) => {
+        sendToLabelsRef.current?.({ type: 'AUTO_SELECT', payload: { id: roi.id } });
+      });
+      specRoiCtrl.on('roiSelected', ({ roi }) => {
+        sendToLabelsRef.current?.({ type: 'AUTO_SELECT', payload: { id: roi.id } });
+      });
+
       // ── Waveform panel ──────────────────────────────────────────────────────
       const ww2 = waveWebglRef.current;
       const wa2 = waveAxisRef.current;
@@ -606,6 +680,10 @@ export default function SpectrogramExample() {
         return;  // skip pan
       }
       if (!viewport.isInPlotArea(pos.x, pos.y)) return;
+      // EX11: let ROIController handle if in creation mode or ROI is under cursor
+      const roiCtrl = specRoiCtrlRef.current;
+      if (roiCtrl && roiCtrl._mode !== 'idle') return;
+      if (roiCtrl && roiCtrl._hitTest(pos.x, pos.y)) return;
       // Ctrl+click → seek
       if (e.ctrlKey && playbackRef.current?.duration > 0) {
         playbackRef.current.seek(viewport.screenXToData(pos.x));
@@ -816,6 +894,7 @@ export default function SpectrogramExample() {
       deckRef.current?.finalize();
       waveDeckRef.current?.finalize();
       playbackRef.current?.destroy();
+      specRoiCtrlRef.current?.destroy();
     };
   }, []); // mount once
 
@@ -1125,8 +1204,42 @@ export default function SpectrogramExample() {
           {'\u23F9'}
         </button>
 
+        <span style={{ color: '#555' }}>|</span>
+
+        {/* EX11: ROI controls */}
+        <button
+          onClick={() => specRoiCtrlRef.current?.enterCreateMode('rect')}
+          style={{
+            background: '#1a1a2a', border: '1px solid #3a3a6a', borderRadius: 3,
+            color: '#aac', padding: '2px 8px', fontSize: 11,
+            cursor: 'pointer', fontFamily: 'monospace',
+          }}
+          title="Enter rect ROI creation mode (or press R)"
+        >
+          Draw ROI
+        </button>
+        <button
+          onClick={() => { openLabelsPopup(); setLabelsEverOpened(true); }}
+          disabled={labelsPopupOpen}
+          style={{
+            background: labelsPopupOpen ? '#1a1a1a' : '#1a1a2a',
+            border: `1px solid ${labelsPopupOpen ? '#333' : '#3a3a6a'}`,
+            borderRadius: 3,
+            color: labelsPopupOpen ? '#555' : '#aac',
+            padding: '2px 8px', fontSize: 11,
+            cursor: labelsPopupOpen ? 'not-allowed' : 'pointer',
+            fontFamily: 'monospace',
+          }}
+        >
+          {labelsPopupOpen
+            ? 'Label Panel Open'
+            : labelsEverOpened
+              ? 'Reopen Label Panel'
+              : 'Open Label Panel'}
+        </button>
+
         <span style={{ marginLeft: 'auto', color: '#666' }}>
-          scroll=zoom · drag=pan · drag axis=zoom axis · space=reset zoom · ctrl+click=seek
+          scroll=zoom · drag=pan · drag axis=zoom axis · space=reset zoom · ctrl+click=seek · R=draw ROI · D=delete
         </span>
       </div>
 

@@ -188,13 +188,161 @@ function FilterPanelPopup({ send, lastMessage }) {
 }
 
 /**
+ * LabelPanelPopup — ROI listing, labeling, and navigation popup (EX11).
+ *
+ * Displays all RectROIs from the spectrogram as a table with time/freq bounds,
+ * a label dropdown (plane / bird / siren), and a delete button.
+ * Clicking a row selects the ROI on the main plot (and optionally zooms to it).
+ *
+ * Message protocol (channel: 'spectrogram-labels'):
+ *   Main → Popup  ROIS_CHANGED  serializedROIs[]
+ *   Main → Popup  AUTO_SELECT   { id }
+ *   Popup → Main  SELECT_ROI    { id }
+ *   Popup → Main  SET_LABEL     { id, label }
+ *   Popup → Main  DELETE_ROI    { id }
+ *   Popup → Main  ZOOM_TOGGLE   { enabled: bool }
+ */
+function LabelPanelPopup({ send, lastMessage }) {
+  const [rois,        setRois]        = useState([]);
+  const [zoomEnabled, setZoomEnabled] = useState(false);
+  const [selectedId,  setSelectedId]  = useState(null);
+  const rowRefs = useRef({});
+
+  // Receive ROIS_CHANGED and AUTO_SELECT from main window
+  useEffect(() => {
+    if (!lastMessage) return;
+    const { type, payload } = lastMessage;
+    if (type === 'ROIS_CHANGED') {
+      setRois(payload);
+    } else if (type === 'AUTO_SELECT') {
+      setSelectedId(payload.id);
+      // Scroll the highlighted row into view after the next paint
+      setTimeout(() => rowRefs.current[payload.id]?.scrollIntoView({ block: 'nearest' }), 50);
+    }
+  }, [lastMessage]);
+
+  const handleSelectRow = (id) => {
+    setSelectedId(id);
+    send({ type: 'SELECT_ROI', payload: { id } });
+  };
+
+  const handleSetLabel = (id, label) => {
+    send({ type: 'SET_LABEL', payload: { id, label } });
+  };
+
+  const handleDelete = (id) => {
+    send({ type: 'DELETE_ROI', payload: { id } });
+  };
+
+  const handleZoomToggle = (e) => {
+    const enabled = e.target.checked;
+    setZoomEnabled(enabled);
+    send({ type: 'ZOOM_TOGGLE', payload: { enabled } });
+  };
+
+  const LABEL_OPTIONS = ['', 'plane', 'bird', 'siren'];
+  const rectRois = rois.filter(r => r.type === 'rect');
+
+  return (
+    <div>
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#aaa', fontSize: 12, cursor: 'pointer' }}>
+          <input type="checkbox" checked={zoomEnabled} onChange={handleZoomToggle} />
+          Zoom to selected
+        </label>
+      </div>
+
+      {rectRois.length === 0 ? (
+        <p style={{ ...styles.hint, fontSize: 12 }}>
+          No ROIs yet. Press <strong style={{ color: '#aac' }}>R</strong> or click{' '}
+          <strong style={{ color: '#aac' }}>Draw ROI</strong> on the spectrogram.
+        </p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid #2a2a2a' }}>
+              <th style={labelPanelStyles.th}>Time</th>
+              <th style={labelPanelStyles.th}>Freq</th>
+              <th style={labelPanelStyles.th}>Label</th>
+              <th style={labelPanelStyles.th}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rectRois.map(roi => {
+              const isSel = selectedId === roi.id;
+              return (
+                <tr
+                  key={roi.id}
+                  ref={el => { rowRefs.current[roi.id] = el; }}
+                  style={{
+                    cursor: 'pointer',
+                    background: isSel ? '#1a2535' : 'transparent',
+                    borderBottom: '1px solid #1a1a1a',
+                    outline: isSel ? '1px solid #3a5a85' : 'none',
+                  }}
+                  onClick={() => handleSelectRow(roi.id)}
+                >
+                  <td style={labelPanelStyles.td}>
+                    {roi.domain?.x
+                      ? `${roi.domain.x[0].toFixed(2)}s\u2013${roi.domain.x[1].toFixed(2)}s`
+                      : '—'}
+                  </td>
+                  <td style={labelPanelStyles.td}>
+                    {roi.domain?.y
+                      ? `${roi.domain.y[0].toFixed(0)}\u2013${roi.domain.y[1].toFixed(0)} Hz`
+                      : '—'}
+                  </td>
+                  <td style={labelPanelStyles.td} onClick={ev => ev.stopPropagation()}>
+                    <select
+                      value={roi.metadata?.label || ''}
+                      onChange={e => handleSetLabel(roi.id, e.target.value)}
+                      style={{
+                        background: '#1e1e1e', border: '1px solid #444', color: '#ccc',
+                        fontSize: 11, borderRadius: 3, padding: '1px 4px',
+                      }}
+                    >
+                      {LABEL_OPTIONS.map(l => (
+                        <option key={l} value={l}>{l || '(none)'}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td style={{ ...labelPanelStyles.td, textAlign: 'center' }} onClick={ev => ev.stopPropagation()}>
+                    <button
+                      onClick={() => handleDelete(roi.id)}
+                      style={{
+                        background: '#2a1a1a', border: '1px solid #5c2e2e', color: '#f55',
+                        borderRadius: 3, padding: '1px 6px', cursor: 'pointer', fontSize: 12,
+                      }}
+                      title="Delete ROI"
+                    >
+                      ×
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+const labelPanelStyles = {
+  th: { padding: '4px 8px', textAlign: 'left', color: '#666', fontWeight: 'normal', fontSize: 11 },
+  td: { padding: '5px 8px', color: '#ccc' },
+};
+
+/**
  * Route to the correct panel component by name.
- * F24 adds 'filter'; EX11 will add 'labels'.
+ * F24 adds 'filter'; EX11 adds 'labels'.
  */
 function renderPanel(panel, send, lastMessage) {
   switch (panel) {
     case 'filter':
       return <FilterPanelPopup send={send} lastMessage={lastMessage} />;
+    case 'labels':
+      return <LabelPanelPopup send={send} lastMessage={lastMessage} />;
     case '':
       return (
         <p style={styles.hint}>
@@ -204,8 +352,7 @@ function renderPanel(panel, send, lastMessage) {
     default:
       return (
         <p style={styles.hint}>
-          Panel <strong>"{panel}"</strong> is not yet implemented.
-          It will be added in a future feature (EX11).
+          Panel <strong>"{panel}"</strong> is not recognised.
         </p>
       );
   }

@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 5.8
+**Plan Version:** 5.9
 **Last Updated:** 2026-03-06
-**Status:** 2 features pending (EX11, EX12). F24 complete.
+**Status:** 1 feature pending (EX12). EX11 complete.
 
 ---
 
@@ -90,7 +90,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | EX10 | Spectrogram Axis Drag Zoom + Auto-Scale | ✅ COMPLETED | feature/F23-EX10 | 2026-03-03 |
 | ARCH-E | BroadcastChannel Popup Window Infrastructure | ✅ COMPLETED | feature/ARCH-E | 2026-03-06 |
 | F24 | Spectrogram Filter Popup Window | ✅ COMPLETED | feature/F24 | 2026-03-06 |
-| EX11 | Spectrogram RectROI + Connected Label Popup | 🔲 PENDING | — | — |
+| EX11 | Spectrogram RectROI + Connected Label Popup | ✅ COMPLETED | feature/EX11 | 2026-03-06 |
 | EX12 | Stress Test Preset Segments | 🔲 PENDING | — | — |
 
 ---
@@ -424,7 +424,6 @@ Full spec: [docs/plan-archive.md#ex9](docs/plan-archive.md#ex9)
 **Mandatory implementation order:**
 
 ```
-EX11  (ARCH-E + F24 complete; EX11 unblocked)
 EX12  (independent — no popup dependency)
 ```
 
@@ -444,56 +443,10 @@ Full spec: [docs/plan-archive.md#f24](docs/plan-archive.md#f24)
 
 ---
 
-### EX11 [PENDING] Spectrogram RectROI + Connected Label Popup
-
-**Depends on:** ARCH-E
-
-**Goal:** Add rectangular ROI drawing to the spectrogram panel (using the existing engine `RectROI`) and provide a connected popup window for listing, labeling, and navigating ROIs. Labels for the demo dataset are: `plane`, `bird`, `siren`.
-
-**Spectrogram ROI specifics:**
-- Uses existing `RectROI` with full versioning, serialization, and metadata — no new ROI types.
-- No `LinearRegion` nesting; all RectROIs are top-level on the spectrogram.
-- x-bounds: time in seconds; y-bounds: free-floating Hz values (not snapped to bins).
-- Labels stored in `roi.metadata.label` (string, one of `['plane', 'bird', 'siren']` for the demo).
-- 'R' key / "Draw ROI" button enters creation mode; two clicks set top-left and bottom-right corners.
-- ROI overlay rendered by `ROILayer` on the spectrogram deck.gl canvas.
-- `ROIController` wired to the spectrogram panel (currently it has none).
-
-**Files modified:**
-- `examples/SpectrogramExample.jsx`:
-  - Add `ROIController` wired to spectrogram panel.
-  - Add "Draw ROI" button + 'R' key listener for creation mode.
-  - Add "Open Label Panel" button using `usePopupChannel('spectrogram-popup.html?panel=labels', 'spectrogram-labels', onMessage)`.
-  - On `roisChanged` / `roiFinalized`: send `{ type: 'ROIS_CHANGED', payload: roiController.serializeAll() }` to popup.
-  - On `SELECT_ROI` message from popup: set selected ROI on plot; if "zoom to selected" is currently enabled in the popup (tracked via `ZOOM_TOGGLE` message), call `specXAxis.setDomain([roi.x1, roi.x2])` and `specYAxis.setDomain([roi.y1, roi.y2])` then redraw.
-  - On `DELETE_ROI` message: call `roiController.removeROI(id)`, emit `roisChanged`.
-  - On `SET_LABEL` message: set `roi.metadata.label = label`, emit `roisChanged`.
-  - Auto-select behavior: on `roiCreated` or canvas click that hits an ROI, send `{ type: 'AUTO_SELECT', payload: { id } }` to popup.
-- `src/spectrogram-popup.js` / popup entry — when `?panel=labels`: render ROI listing table.
-
-**ROI listing table (popup, `?panel=labels`):**
-
-| Column | Content |
-|--------|---------|
-| Time | `x1 s – x2 s` |
-| Freq | `y1 Hz – y2 Hz` |
-| Label | `<select>` with options: *(none)* / plane / bird / siren |
-| Delete | button → sends `DELETE_ROI` |
-
-- Clicking a row: sends `SELECT_ROI` to main → highlights ROI on plot; if "Zoom to selected" toggle is ON, also zooms.
-- "Zoom to selected" toggle: checkbox at top of popup; persists in popup local state only; sends `ZOOM_TOGGLE` message to main on change.
-- Auto-select: when popup receives `AUTO_SELECT` message, scroll that row into view and highlight it.
-
-**BroadcastChannel messages (channel: `'spectrogram-labels'`):**
-
-| Direction | Type | Payload |
-|-----------|------|---------|
-| Main → Popup | `ROIS_CHANGED` | `serializedROIs[]` (from `serializeAll()`) |
-| Main → Popup | `AUTO_SELECT` | `{ id }` |
-| Popup → Main | `SELECT_ROI` | `{ id }` |
-| Popup → Main | `SET_LABEL` | `{ id, label }` |
-| Popup → Main | `DELETE_ROI` | `{ id }` |
-| Popup → Main | `ZOOM_TOGGLE` | `{ enabled: bool }` |
+### EX11 [COMPLETED] Spectrogram RectROI + Connected Label Popup
+**Completed:** 2026-03-06 | **Branch:** feature/EX11
+`ROIController` wired to spectrogram panel with `ROILayer` overlay; "Draw ROI" button + 'R' key enter rect creation mode; `usePopupChannel('spectrogram-labels')` sends `ROIS_CHANGED`/`AUTO_SELECT` to popup; `LabelPanelPopup` (`?panel=labels`) shows time/freq/label table with zoom-to-selected toggle, row click → `SELECT_ROI`, label dropdown → `SET_LABEL`, delete button → `DELETE_ROI`.
+Full spec: [docs/plan-archive.md#ex11](docs/plan-archive.md#ex11)
 
 ---
 
@@ -539,3 +492,4 @@ Added `specAxisDragRef`/`waveAxisDragRef`; axis-hit check before plot-area guard
 Full spec: [docs/plan-archive.md#ex10](docs/plan-archive.md#ex10)
 
 - **2026-03-06 [Claude]**: ARCH-E, F24, EX11, EX12 added as PENDING (v5.6). Motivation: move spectrogram controls into connected popup windows (BroadcastChannel) to reduce main-page clutter; add RectROI + label system to spectrogram; add stress-test preset segments (4 kHz, 5–60 min). Mandatory order: ARCH-E → F24, ARCH-E → EX11; EX12 is independent. Full specs in Pending Features section above.
+- **2026-03-06 [Claude]**: EX11 completed (v5.9) — `ROIController` + `ROILayer` wired to spectrogram deck.gl panel; spectrogram `onMouseDown` guards for ROI creation/hit; `usePopupChannel('spectrogram-labels')` with `ROIS_CHANGED`/`AUTO_SELECT`/`SELECT_ROI`/`SET_LABEL`/`DELETE_ROI`/`ZOOM_TOGGLE` protocol; `LabelPanelPopup` component added to `SpectrogramPopup.jsx` (`case 'labels'`); "Draw ROI" + "Open Label Panel" buttons in spectrogram header. Build passes zero errors. Next: EX12 (independent).

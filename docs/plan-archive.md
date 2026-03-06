@@ -3609,3 +3609,58 @@ Both sides must silently ignore unknown `type` values for forward-compatibility.
 - `spectrogram-popup.html?panel=filter` shows "not yet implemented" placeholder ✅
 - Webpack build passes zero errors ✅
 - `BackendAdapter.js` documents the WebSocket transport-swap contract ✅
+
+---
+
+## EX11
+
+### EX11 [COMPLETED] Spectrogram RectROI + Connected Label Popup
+
+**Completed:** 2026-03-06 | **Branch:** feature/EX11
+
+**Goal:** Add rectangular ROI drawing to the spectrogram panel and provide a connected popup window for listing, labeling, and navigating ROIs. Labels: `plane`, `bird`, `siren`.
+
+**Spectrogram ROI specifics:**
+- Uses existing `RectROI` with full versioning, serialization, and metadata — no new ROI types.
+- No `LinearRegion` nesting; all RectROIs are top-level on the spectrogram.
+- x-bounds: time in seconds; y-bounds: free-floating Hz values (not snapped to bins).
+- Labels stored in `roi.metadata.label`.
+- 'R' key / "Draw ROI" button enters creation mode; two clicks set top-left and bottom-right corners.
+- ROI overlay rendered by `ROILayer` on the spectrogram deck.gl canvas.
+
+**Files modified:**
+- `examples/SpectrogramExample.jsx`:
+  - Added `ROIController` + `ROILayer` imports.
+  - Added `specRoiCtrlRef`, `zoomToSelectedRef`, `sendToLabelsRef` refs; `labelsEverOpened` state.
+  - Added `usePopupChannel('spectrogram-labels')` with full message handler.
+  - Mount useEffect: creates `ROIController(viewport)`, inits on spectrogram canvas, wires `roisChanged`/`roiCreated`/`roiSelected` events, added cleanup.
+  - `renderFrame`: includes `ROILayer` in deck.gl layer array.
+  - `onMouseDown`: guards against ROI creation mode and ROI hit before entering pan mode.
+  - Header: "Draw ROI" button + "Open Label Panel" button.
+- `examples/SpectrogramPopup.jsx`:
+  - Added `LabelPanelPopup` component (ROI table, zoom-to-selected toggle, label dropdown, delete button).
+  - Added `labelPanelStyles` constants.
+  - `renderPanel` switch: added `case 'labels'`.
+
+**BroadcastChannel messages (channel: `'spectrogram-labels'`):**
+
+| Direction | Type | Payload |
+|-----------|------|---------|
+| Main → Popup | `ROIS_CHANGED` | `serializedROIs[]` |
+| Main → Popup | `AUTO_SELECT` | `{ id }` |
+| Popup → Main | `SELECT_ROI` | `{ id }` |
+| Popup → Main | `SET_LABEL` | `{ id, label }` |
+| Popup → Main | `DELETE_ROI` | `{ id }` |
+| Popup → Main | `ZOOM_TOGGLE` | `{ enabled: bool }` |
+
+**Verification:**
+- ROI creation with 'R' key or "Draw ROI" button ✅
+- ROI overlay renders on spectrogram (fill + border + handles) ✅
+- Label popup opens via "Open Label Panel" button ✅
+- ROI table updates live via ROIS_CHANGED ✅
+- Row click → SELECT_ROI + optional zoom ✅
+- Label dropdown → SET_LABEL ✅
+- Delete button → DELETE_ROI ✅
+- Auto-select on roiCreated/roiSelected ✅
+- Pan is suppressed during ROI creation/drag ✅
+- Webpack build passes zero errors ✅

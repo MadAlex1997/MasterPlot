@@ -883,7 +883,7 @@ The `spectrogram-popup.html` entry serves as the host shell for all spectrogram-
 
 ```
 spectrogram-popup.html?panel=filter&channel=spectrogram-filter  → Filter Panel (F24) ✅
-spectrogram-popup.html?panel=labels&channel=spectrogram-labels  → ROI Label panel (EX11)
+spectrogram-popup.html?panel=labels&channel=spectrogram-labels  → ROI Label panel (EX11) ✅
 ```
 
 Popup detection (`window.opener !== null` or `?panel=` present) suppresses main-page chrome so the popup renders only the requested panel.
@@ -900,6 +900,23 @@ The **Filter Panel** lives in a connected popup window launched from the Spectro
 | `FILTER_CLEAR` | Popup → Main | `{}` — main restores original PCM, echoes back `FILTER_STATE` |
 
 **Anti-loop design:** When main receives `FILTER_STATE` from popup it mutates `fc.state` fields directly (no emit → no re-echo). When popup receives `FILTER_STATE` from main it sets `suppressRef.current = true` before emitting `'changed'` to the local `FilterController`, blocking the outbound `FILTER_STATE` during that update.
+
+### ROI Label Panel popup (EX11)
+
+The **ROI Label Panel** (launched from the spectrogram header's "Open Label Panel" button) lists all `RectROI`s drawn on the spectrogram. It is driven entirely by messages from the main window and holds no independent ROI state.
+
+Draw ROIs on the spectrogram with the **Draw ROI** button or the **R** key (two clicks: top-left then bottom-right). Delete selected ROI with **D**.
+
+| Message | Direction | Payload |
+|---------|-----------|---------|
+| `ROIS_CHANGED` | Main → Popup | `serializedROIs[]` — full snapshot after any ROI change |
+| `AUTO_SELECT` | Main → Popup | `{ id }` — highlight + scroll row after creation/canvas-click |
+| `SELECT_ROI` | Popup → Main | `{ id }` — select ROI on plot (+ zoom if toggle enabled) |
+| `SET_LABEL` | Popup → Main | `{ id, label }` — update `roi.metadata.label` |
+| `DELETE_ROI` | Popup → Main | `{ id }` — remove ROI |
+| `ZOOM_TOGGLE` | Popup → Main | `{ enabled: bool }` — enable/disable zoom-to-selected on SELECT_ROI |
+
+Each row shows time bounds (`x1 s – x2 s`), frequency bounds (`y1 – y2 Hz`), a label dropdown (`plane` / `bird` / `siren` / none), and a delete button. Clicking a row selects the ROI on the spectrogram; with "Zoom to selected" checked it also pans/zooms the x- and y-axes to the ROI bounds.
 
 ### Future: BackendAdapter (transport swap)
 
