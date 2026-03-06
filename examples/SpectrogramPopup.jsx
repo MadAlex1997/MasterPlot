@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import FilterPanel from '../src/components/FilterPanel.jsx';
+import { FilterController } from '../src/audio/FilterController.js';
 
 /**
  * SpectrogramPopup — host shell for spectrogram-related popup panels.
@@ -87,11 +89,112 @@ export default function SpectrogramPopup() {
 }
 
 /**
+ * FilterPanelPopup — popup-side filter panel (F24).
+ *
+ * Maintains a local FilterController mirror driven by BroadcastChannel messages
+ * from the main window.  User interactions (slider/dropdown changes) send
+ * FILTER_STATE to the main window.  Apply/Clear buttons send FILTER_APPLY /
+ * FILTER_CLEAR; the main window executes the DSP and echoes FILTER_STATE back.
+ *
+ * Message protocol (channel: 'spectrogram-filter'):
+ *   Main → Popup  FILTER_STATE  { filterType, cutoff, q, lowFreq, highFreq, applied, sampleRate }
+ *   Popup → Main  FILTER_STATE  same shape (on control change)
+ *   Popup → Main  FILTER_APPLY  {}
+ *   Popup → Main  FILTER_CLEAR  {}
+ */
+function FilterPanelPopup({ send, lastMessage }) {
+  const fcRef = useRef(null);
+  if (!fcRef.current) fcRef.current = new FilterController();
+
+  const suppressRef  = useRef(false);
+  const [sampleRate, setSampleRate] = useState(44100);
+  const [applying,   setApplying]   = useState(false);
+  const [hasData,    setHasData]    = useState(false);  // true once main sent at least one FILTER_STATE
+
+  // Forward local FC state changes to main window
+  useEffect(() => {
+    const fc = fcRef.current;
+    const onChange = (s) => {
+      if (suppressRef.current) return;
+      send({
+        type: 'FILTER_STATE',
+        payload: {
+          filterType: s.type,
+          cutoff:     s.frequency,
+          q:          s.Q,
+          lowFreq:    s.lowFreq,
+          highFreq:   s.highFreq,
+        },
+      });
+    };
+    fc.on('changed', onChange);
+    return () => fc.off('changed', onChange);
+  }, [send]);
+
+  // Apply incoming messages from main window
+  useEffect(() => {
+    if (!lastMessage) return;
+    const { type, payload } = lastMessage;
+    if (type === 'FILTER_STATE') {
+      const fc = fcRef.current;
+      suppressRef.current = true;
+      fc.state.type      = payload.filterType;
+      fc.state.frequency = payload.cutoff;
+      fc.state.Q         = payload.q;
+      fc.state.lowFreq   = payload.lowFreq;
+      fc.state.highFreq  = payload.highFreq;
+      fc.emit('changed', { ...fc.state });
+      suppressRef.current = false;
+      if (payload.sampleRate) setSampleRate(payload.sampleRate);
+      setApplying(false);  // main echoes FILTER_STATE after DSP completes
+      setHasData(true);
+    }
+  }, [lastMessage]);
+
+  const handleApply = () => {
+    setApplying(true);
+    send({ type: 'FILTER_APPLY', payload: {} });
+  };
+
+  const handleClear = () => {
+    send({ type: 'FILTER_CLEAR', payload: {} });
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {!hasData && (
+        <p style={{ ...styles.hint, fontSize: 11 }}>
+          Waiting for main window connection…
+        </p>
+      )}
+      <FilterPanel
+        controller={fcRef.current}
+        sampleRate={sampleRate}
+        onApply={handleApply}
+        applying={applying}
+      />
+      <button
+        onClick={handleClear}
+        style={{
+          background: '#222', border: '1px solid #555', borderRadius: 3,
+          color: '#fa8', padding: '4px 8px', fontSize: 11,
+          cursor: 'pointer', fontFamily: 'monospace',
+        }}
+      >
+        Clear DSP Filter
+      </button>
+    </div>
+  );
+}
+
+/**
  * Route to the correct panel component by name.
- * F24 will add 'filter', EX11 will add 'labels'.
+ * F24 adds 'filter'; EX11 will add 'labels'.
  */
 function renderPanel(panel, send, lastMessage) {
   switch (panel) {
+    case 'filter':
+      return <FilterPanelPopup send={send} lastMessage={lastMessage} />;
     case '':
       return (
         <p style={styles.hint}>
@@ -102,7 +205,7 @@ function renderPanel(panel, send, lastMessage) {
       return (
         <p style={styles.hint}>
           Panel <strong>"{panel}"</strong> is not yet implemented.
-          It will be added in a future feature (F24 / EX11).
+          It will be added in a future feature (EX11).
         </p>
       );
   }

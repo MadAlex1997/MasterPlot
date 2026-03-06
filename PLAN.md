@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 5.7
+**Plan Version:** 5.8
 **Last Updated:** 2026-03-06
-**Status:** 3 features pending (F24, EX11, EX12). ARCH-E complete.
+**Status:** 2 features pending (EX11, EX12). F24 complete.
 
 ---
 
@@ -89,7 +89,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | F23 | Auto-Scale / Reset Zoom | ✅ COMPLETED | feature/F23-EX10 | 2026-03-03 |
 | EX10 | Spectrogram Axis Drag Zoom + Auto-Scale | ✅ COMPLETED | feature/F23-EX10 | 2026-03-03 |
 | ARCH-E | BroadcastChannel Popup Window Infrastructure | ✅ COMPLETED | feature/ARCH-E | 2026-03-06 |
-| F24 | Spectrogram Filter Popup Window | 🔲 PENDING | — | — |
+| F24 | Spectrogram Filter Popup Window | ✅ COMPLETED | feature/F24 | 2026-03-06 |
 | EX11 | Spectrogram RectROI + Connected Label Popup | 🔲 PENDING | — | — |
 | EX12 | Stress Test Preset Segments | 🔲 PENDING | — | — |
 
@@ -276,6 +276,7 @@ Full spec: [docs/plan-archive.md#f18](docs/plan-archive.md#f18)
 - **2026-03-03 [Claude]**: EX4 completed (v5.3) — `ExampleApp.jsx` gains points dropdown (10k/100k/1M/5M/10M); on change: pauses live append, clears DataStore, resets domain, loads new points, resumes append; React holds no arrays. All features in PLAN.md now complete.
 - **2026-03-03 [Claude]**: F23 + EX10 added as PENDING (v5.4) — F23: `PlotController.autoScale()` + `setHomeDomain()` + spacebar binding (engine; all PlotController-based examples gain it automatically); EX10: axis drag zoom (both spectrogram and waveform panels) + spacebar reset for SpectrogramExample which bypasses PlotController. Implementation order: F23 → EX10.
 - **2026-03-03 [Claude]**: F23 + EX10 completed (v5.5) — F23: `_homeDomain`/`_autoScaleKey` in constructor, spacebar in `init()`, `autoScale()`/`setHomeDomain()` public methods, cleanup in `destroy()`; EX10: `specAxisDragRef`/`waveAxisDragRef`, axis-hit guards in both panels' `onMouseDown`/`onMouseMove`/`onMouseUp`, spacebar `onKeyDown` with cleanup; README updated; build passes zero errors. All features complete.
+- **2026-03-06 [Claude]**: F24 completed (v5.8) — `FilterPanelPopup` component added to `SpectrogramPopup.jsx` (`case 'filter'`); `usePopupChannel` wired in `SpectrogramExample.jsx`; inline `FilterPanel` + Clear button sidebar replaced with "Open/Reopen Filter Panel" button; `buildFilterStateMsg` sends state after Apply/Clear and 300 ms after popup opens; `applying`/`filterSampleRate` states removed (popup-side now owns them). Build passes zero errors. Next: EX11 (unblocked).
 - **2026-03-06 [Claude]**: ARCH-E completed (v5.7) — `PopupWindowManager` (EventEmitter, 500 ms poll, blocked-popup guard) + `usePopupChannel` React hook; `BackendAdapter.js` stub documents WebSocket transport-swap; `SpectrogramPopup.jsx` panel host shell with `?panel=`/`?channel=` routing; webpack entry `spectrogram-popup.js`/`spectrogram-popup.html`; build passes zero errors. F24 and EX11 now unblocked.
 
 ---
@@ -423,8 +424,8 @@ Full spec: [docs/plan-archive.md#ex9](docs/plan-archive.md#ex9)
 **Mandatory implementation order:**
 
 ```
-F24 → EX11  (ARCH-E complete; F24 and EX11 unblocked)
-EX12 (independent — no popup dependency)
+EX11  (ARCH-E + F24 complete; EX11 unblocked)
+EX12  (independent — no popup dependency)
 ```
 
 ---
@@ -436,36 +437,10 @@ Full spec: [docs/plan-archive.md#arch-e](docs/plan-archive.md#arch-e)
 
 ---
 
-### F24 [PENDING] Spectrogram Filter Popup Window
-
-**Depends on:** ARCH-E
-
-**Goal:** Move `FilterPanel` out of the waveform sidebar and into a dedicated connected popup window, reducing clutter in the main spectrogram view for the standard-analyst use case.
-
-**Single source of truth:** `FilterController` state lives entirely in the main window. The popup reflects and drives it via `BroadcastChannel`; it holds no independent filter state.
-
-**Files modified:**
-- `examples/SpectrogramExample.jsx`:
-  - Replace inline `FilterPanel` + waveform sidebar filter section with an "Open Filter Panel" button.
-  - Use `usePopupChannel('spectrogram-popup.html?panel=filter', 'spectrogram-filter', onMessage)` hook.
-  - On incoming `FILTER_STATE` message from popup: apply to `FilterController` and trigger re-render exactly as the existing Apply/Clear handlers do.
-  - On any local filter state change (Apply/Clear): send `{ type: 'FILTER_STATE', payload: currentFilterState }` to popup.
-  - Button label: "Open Filter Panel" initially; "Reopen Filter Panel" after popup is closed; disabled while popup is open (to avoid duplicate windows).
-  - If popup is closed by user: filter remains applied; button reverts to "Open Filter Panel".
-- `src/spectrogram-popup.js` / popup entry:
-  - When `?panel=filter`: render `FilterPanel` connected to a local mirror of filter state.
-  - On any control change in popup: send `{ type: 'FILTER_STATE', payload }` to main window.
-  - On incoming `FILTER_STATE` from main window: update local mirror (controlled component).
-  - Apply / Clear buttons in popup trigger `{ type: 'FILTER_APPLY' }` / `{ type: 'FILTER_CLEAR' }` messages; main window executes the actual DSP and echoes back the resulting `FILTER_STATE`.
-
-**BroadcastChannel messages (channel: `'spectrogram-filter'`):**
-
-| Direction | Type | Payload |
-|-----------|------|---------|
-| Main → Popup | `FILTER_STATE` | `{ filterType, cutoff, q, lowFreq, highFreq, applied }` |
-| Popup → Main | `FILTER_STATE` | same (on slider/input change) |
-| Popup → Main | `FILTER_APPLY` | `{}` |
-| Popup → Main | `FILTER_CLEAR` | `{}` |
+### F24 [COMPLETED] Spectrogram Filter Popup Window
+**Completed:** 2026-03-06 | **Branch:** feature/F24
+Moved `FilterPanel` out of the waveform sidebar into a connected popup (`?panel=filter&channel=spectrogram-filter`); `FilterController` remains in main window; popup mirrors state via BroadcastChannel; Apply/Clear messages trigger main-side DSP and echo back `FILTER_STATE`; anti-loop via direct `fc.state` mutation on main + `suppressRef` on popup side.
+Full spec: [docs/plan-archive.md#f24](docs/plan-archive.md#f24)
 
 ---
 

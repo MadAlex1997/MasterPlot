@@ -39,7 +39,7 @@ import { HistogramLUTController } from '../src/plot/layers/HistogramLUTControlle
 import HistogramLUTPanel         from '../src/components/HistogramLUTPanel.jsx';
 import { PlaybackController }    from '../src/audio/PlaybackController.js';
 import { FilterController }      from '../src/audio/FilterController.js';
-import FilterPanel               from '../src/components/FilterPanel.jsx';
+import { usePopupChannel }       from '../src/popup/usePopupChannel.js';
 
 // ── Preset sound files ─────────────────────────────────────────────────────────
 
@@ -218,11 +218,59 @@ export default function SpectrogramExample() {
   const [loading,          setLoading]          = useState(false);
   const [colorTrigger,     setColorTrigger]     = useState(0);
   const [playState,        setPlayState]        = useState('stopped'); // 'playing'|'paused'|'stopped'
-  const [applying,         setApplying]         = useState(false);
-  const [filterSampleRate, setFilterSampleRate] = useState(SAMPLE_RATE);
   const [timeWindow,       setTimeWindow]       = useState(null);  // null = All
+  const [filterEverOpened, setFilterEverOpened] = useState(false);
 
   const addLog = (msg) => setLog(prev => [msg, ...prev].slice(0, 20));
+
+  // ── Filter state sync helper ────────────────────────────────────────────────
+
+  const buildFilterStateMsg = (applied = false) => {
+    const fc = filterControllerRef.current;
+    return {
+      type: 'FILTER_STATE',
+      payload: {
+        filterType: fc.state.type,
+        cutoff:     fc.state.frequency,
+        q:          fc.state.Q,
+        lowFreq:    fc.state.lowFreq,
+        highFreq:   fc.state.highFreq,
+        applied,
+        sampleRate: loadedSampleRateRef.current,
+      },
+    };
+  };
+
+  // ── Filter popup channel (F24) ─────────────────────────────────────────────
+  // Single source of truth: FilterController lives here. Popup reflects and
+  // drives it via BroadcastChannel; it holds no independent filter state.
+
+  const { open: openFilterPopup, send: sendToFilter, isOpen: filterPopupOpen } = usePopupChannel(
+    'spectrogram-popup.html?panel=filter&channel=spectrogram-filter',
+    'spectrogram-filter',
+    (msg) => {
+      if (msg.type === 'FILTER_STATE') {
+        // Sync main FC state from popup; no re-echo (avoids loop; no main-side FilterPanel UI)
+        const fc = filterControllerRef.current;
+        fc.state.type      = msg.payload.filterType;
+        fc.state.frequency = msg.payload.cutoff;
+        fc.state.Q         = msg.payload.q;
+        fc.state.lowFreq   = msg.payload.lowFreq;
+        fc.state.highFreq  = msg.payload.highFreq;
+      } else if (msg.type === 'FILTER_APPLY') {
+        handleApplyFilter();
+      } else if (msg.type === 'FILTER_CLEAR') {
+        handleClearFilter();
+      }
+    },
+  );
+
+  // Send current filter state to popup after it opens (300 ms delay for BroadcastChannel connect)
+  useEffect(() => {
+    if (!filterPopupOpen) return;
+    const timer = setTimeout(() => sendToFilter(buildFilterStateMsg(false)), 300);
+    return () => clearTimeout(timer);
+  }, [filterPopupOpen]);
 
   // ── Shared audio buffer load helper ───────────────────────────────────────
 
@@ -244,7 +292,6 @@ export default function SpectrogramExample() {
     samplesRef.current   = pcm;
     sampleCntRef.current = pcm.length;
     originalSamplesRef.current = samplesRef.current.slice();  // snapshot for "Clear Filter"
-    setFilterSampleRate(sr);
     dataTriggerRef.current += 1;
     // Downsample for waveform
     const numWavePts = Math.floor(pcm.length / WAVEFORM_STEP);
@@ -888,7 +935,6 @@ export default function SpectrogramExample() {
 
   const handleApplyFilter = async () => {
     if (!samplesRef.current.length) return;
-    setApplying(true);
     try {
       const fc       = filterControllerRef.current;
       const filtered = await fc.applyToSamples(samplesRef.current, loadedSampleRateRef.current);
@@ -900,6 +946,7 @@ export default function SpectrogramExample() {
         await playbackRef.current.loadBuffer(filtered, loadedSampleRateRef.current);
       }
       addLog(`Filter: ${fc.state.type}  cutoff=${fc.state.frequency.toFixed(0)} Hz  Q=${fc.state.Q.toFixed(2)}`);
+      sendToFilter(buildFilterStateMsg(true));
 
       // EX9-3: auto-zoom spectrogram y-axis to filtered frequency range
       const sr   = loadedSampleRateRef.current;
@@ -921,7 +968,6 @@ export default function SpectrogramExample() {
     } catch (err) {
       addLog(`Filter error: ${err.message}`);
     }
-    setApplying(false);
   };
 
   const handleClearFilter = async () => {
@@ -937,6 +983,7 @@ export default function SpectrogramExample() {
     yAxisRef.current?.setDomain([0, nyq]);
     dirtyRef.current = true;
     addLog('Filter cleared — original audio restored');
+    sendToFilter(buildFilterStateMsg(false));
   };
 
   // ── Styles ────────────────────────────────────────────────────────────────
@@ -1105,36 +1152,39 @@ export default function SpectrogramExample() {
             <canvas ref={waveAxisRef}  style={{ ...canvasStyle, pointerEvents: 'none' }} />
           </div>
 
-          {/* Waveform sidebar: FilterPanel + Clear button */}
+          {/* Waveform sidebar: Filter popup launcher (F24) */}
           <div style={{
-            width: 180, display: 'flex', flexDirection: 'column',
-            borderLeft: '1px solid #333', flexShrink: 0, overflowY: 'auto',
+            width: 140, display: 'flex', flexDirection: 'column', alignItems: 'stretch',
+            borderLeft: '1px solid #333', flexShrink: 0, padding: '10px 8px', gap: 6,
           }}>
-            {/* DSP FilterPanel */}
-            <div style={{ flex: 1, overflow: 'scroll' }}>
-              <FilterPanel
-                controller={filterControllerRef.current}
-                sampleRate={filterSampleRate}
-                onApply={handleApplyFilter}
-                applying={applying}
-              />
-            </div>
-
-            {/* Clear Filter button */}
-            <div style={{ padding: '6px 10px', borderTop: '1px solid #2a2a2a' }}>
-              <button
-                onClick={handleClearFilter}
-                disabled={!originalSamplesRef.current}
-                style={{
-                  width: '100%',
-                  background: '#222', border: '1px solid #555', borderRadius: 3,
-                  color: originalSamplesRef.current ? '#fa8' : '#555',
-                  padding: '3px 8px', fontSize: 11, cursor: 'pointer', fontFamily: 'monospace',
-                }}
-              >
-                Clear DSP Filter
-              </button>
-            </div>
+            <div style={{ color: '#555', fontSize: 10, letterSpacing: 1 }}>FILTER</div>
+            <button
+              onClick={() => {
+                const opened = openFilterPopup();
+                if (opened) setFilterEverOpened(true);
+              }}
+              disabled={filterPopupOpen}
+              style={{
+                background: filterPopupOpen ? '#1a1a1a' : '#1a2a1a',
+                border: `1px solid ${filterPopupOpen ? '#333' : '#3a5a3a'}`,
+                borderRadius: 3,
+                color: filterPopupOpen ? '#555' : '#8d8',
+                padding: '4px 6px', fontSize: 11,
+                cursor: filterPopupOpen ? 'not-allowed' : 'pointer',
+                fontFamily: 'monospace', textAlign: 'center',
+              }}
+            >
+              {filterPopupOpen
+                ? 'Filter Panel Open'
+                : filterEverOpened
+                  ? 'Reopen Filter Panel'
+                  : 'Open Filter Panel'}
+            </button>
+            {filterPopupOpen && (
+              <div style={{ fontSize: 10, color: '#555', textAlign: 'center' }}>
+                controls in popup
+              </div>
+            )}
           </div>
         </div>
       </div>

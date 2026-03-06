@@ -5,6 +5,38 @@ All active/pending work is in [PLAN.md](../PLAN.md).
 
 ---
 
+## F24 [COMPLETED] Spectrogram Filter Popup Window
+
+**Branch:** `feature/F24`
+**Completed:** 2026-03-06
+**Depends on:** ARCH-E
+
+### Goal
+
+Move `FilterPanel` out of the waveform sidebar into a dedicated connected popup window, reducing main-page clutter. Single source of truth: `FilterController` state lives in the main window; the popup reflects and drives it via `BroadcastChannel`.
+
+### Files modified
+
+| File | Action |
+|------|--------|
+| `examples/SpectrogramExample.jsx` | Replaced inline `FilterPanel` + Clear button sidebar with "Open Filter Panel" button; added `usePopupChannel` hook (channel: `spectrogram-filter`); wired `onMessage` to sync FC state and dispatch Apply/Clear; `buildFilterStateMsg` helper; send FILTER_STATE after Apply/Clear and 300 ms after popup opens; removed `applying`/`filterSampleRate` states (now unused). |
+| `examples/SpectrogramPopup.jsx` | Added `FilterPanelPopup` component (local `FilterController` mirror, `suppressRef` anti-loop, `send`/`lastMessage` driven); added `case 'filter'` to `renderPanel`. |
+
+### BroadcastChannel messages (channel: `spectrogram-filter`)
+
+| Direction | Type | Payload |
+|-----------|------|---------|
+| Main → Popup | `FILTER_STATE` | `{ filterType, cutoff, q, lowFreq, highFreq, applied, sampleRate }` |
+| Popup → Main | `FILTER_STATE` | same (on slider/dropdown change) |
+| Popup → Main | `FILTER_APPLY` | `{}` |
+| Popup → Main | `FILTER_CLEAR` | `{}` |
+
+### Anti-loop design
+
+Main receives `FILTER_STATE` → directly mutates `fc.state` fields (no emit → no re-echo). Popup receives `FILTER_STATE` → sets `suppressRef.current = true` before mutating local FC state and emitting `'changed'`; `onChange` listener skips sending if suppressed.
+
+---
+
 ## F18 [COMPLETED] Feature: External Integration Interface Contracts
 
 **Branch:** `feature/integration-contract`

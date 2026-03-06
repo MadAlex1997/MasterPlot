@@ -882,11 +882,24 @@ The hook creates `PopupWindowManager` on mount, tears it down on unmount, and ke
 The `spectrogram-popup.html` entry serves as the host shell for all spectrogram-related panels. It reads URL params to route to the correct panel and connect to the right channel:
 
 ```
-spectrogram-popup.html?panel=filter&channel=spectrogram-filter  → FilterPanel (F24)
+spectrogram-popup.html?panel=filter&channel=spectrogram-filter  → Filter Panel (F24) ✅
 spectrogram-popup.html?panel=labels&channel=spectrogram-labels  → ROI Label panel (EX11)
 ```
 
 Popup detection (`window.opener !== null` or `?panel=` present) suppresses main-page chrome so the popup renders only the requested panel.
+
+### Filter Panel popup (F24)
+
+The **Filter Panel** lives in a connected popup window launched from the Spectrogram example's waveform sidebar. Single source of truth: `FilterController` state lives in the main window; the popup holds only a mirror.
+
+| Message | Direction | Payload |
+|---------|-----------|---------|
+| `FILTER_STATE` | Main → Popup | `{ filterType, cutoff, q, lowFreq, highFreq, applied, sampleRate }` |
+| `FILTER_STATE` | Popup → Main | same (on slider/dropdown change) |
+| `FILTER_APPLY` | Popup → Main | `{}` — main executes DSP, echoes back `FILTER_STATE` |
+| `FILTER_CLEAR` | Popup → Main | `{}` — main restores original PCM, echoes back `FILTER_STATE` |
+
+**Anti-loop design:** When main receives `FILTER_STATE` from popup it mutates `fc.state` fields directly (no emit → no re-echo). When popup receives `FILTER_STATE` from main it sets `suppressRef.current = true` before emitting `'changed'` to the local `FilterController`, blocking the outbound `FILTER_STATE` during that update.
 
 ### Future: BackendAdapter (transport swap)
 
