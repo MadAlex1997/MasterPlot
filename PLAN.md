@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 6.5
+**Plan Version:** 6.6
 **Last Updated:** 2026-03-07
-**Status:** DOC2 complete 2026-03-07. DOC3–DOC4 pending.
+**Status:** DOC3 complete 2026-03-07. DOC4 pending.
 
 ---
 
@@ -95,7 +95,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | F25 | Higher-Order Butterworth Filter (Cascaded Biquads) | ✅ COMPLETED | feature/F25 | 2026-03-06 |
 | DOC1 | Documentation: Architecture Overview    | ✅ COMPLETED | feature/DOC1 | 2026-03-07 |
 | DOC2 | Documentation: Getting Started Tutorial | ✅ COMPLETED | feature/DOC2 | 2026-03-07 |
-| DOC3 | Documentation: API Reference            | [PENDING] | — | — |
+| DOC3 | Documentation: API Reference            | ✅ COMPLETED | feature/DOC3 | 2026-03-07 |
 | DOC4 | Documentation: ROI System Deep-Dive     | [PENDING] | — | — |
 
 ---
@@ -489,6 +489,7 @@ Full spec: [docs/plan-archive.md#ex10](docs/plan-archive.md#ex10)
 - **2026-03-07 [Claude]**: DOC1–DOC4 added as PENDING (v6.3) — four documentation pages (Architecture Overview, Getting Started, API Reference, ROI Deep-Dive) as a single docs SPA served via webpack. Dev dependencies: `mermaid` (diagrams) + `prismjs` (syntax highlighting). Mandatory order: DOC1 → DOC2 → DOC3 → DOC4.
 - **2026-03-07 [Claude]**: DOC1 completed (v6.4) — docs SPA infrastructure created; `DocsPage.jsx` shell, shared `CodeBlock`/`MermaidDiagram`/`NavSidebar`, `ArchitecturePage.jsx` with all 6 spec sections (2-para intro + 3 Mermaid diagrams + coordinate table + data-flow code block), placeholder pages for DOC2–DOC4; webpack `docs` entry + `HtmlWebpackPlugin`; HubPage Documentation card group (green accent, 4 cards). Build passes zero errors. Next: DOC2 (unblocked).
 - **2026-03-07 [Claude]**: DOC2 completed (v6.5) — `GettingStartedPage.jsx` replaced placeholder with 7 numbered steps (Install / Mount / Live Append / Zoom+Pan / LinearRegion ROI / Events / Shared DataStore); each step has a `CodeBlock` + copy button, inline callout notes, y-axis convention note in step 4, constraint propagation note in step 5, live demo link in step 7. Build passes zero errors. Next: DOC3 (unblocked).
+- **2026-03-07 [Claude]**: DOC3 completed (v6.6) — `ApiReferencePage.jsx` replaced placeholder with full API tables for all 8 classes (PlotController 12 opts + 14 methods + 5 getters + 13 events; AxisController 4 opts + 11 methods + 2 events; ROIController 11 methods + 8 events + keybinds table; DataStore 8 methods + 2 events; PlotDataView 3 ctor params + 7 methods + 2 events + dirty-propagation callout; TraceGroup 4 opts + 9 methods + attr-priority code; SignalStore 9 methods + buildSignalLayers helper note; FilterController 6 state fields + 7 methods + 1 event + Butterworth Q code). Build passes zero errors. Next: DOC4 (unblocked).
 
 ---
 
@@ -518,24 +519,10 @@ Full spec: [docs/plan-archive.md#doc2](docs/plan-archive.md#doc2)
 
 ---
 
-### DOC3 [PENDING] Documentation: API Reference
-
-**Dependencies:** DOC1
-
-**Modified files:** `examples/docs/ApiReferencePage.jsx` (replace placeholder with full content)
-
-**Content — one `<h2>` per class, three subsections each: Constructor Options table | Methods table | Events table:**
-
-| Class | Constructor opts | Methods | Events |
-|---|---|---|---|
-| PlotController | 12 | 14 + 5 getters | 13 |
-| AxisController | 4 | 10 | 2 |
-| ROIController | — | 10 | 8 + keybinds table |
-| DataStore | 1 | 8 | 2 |
-| PlotDataView | 3 | 7 | 2 + dirty-propagation callout |
-| TraceGroup | 4 | 9 | — (polled each RAF tick) |
-| SignalStore | — | 8 | — + `buildSignalLayers` helper note |
-| FilterController | — | 7 state fields + 7 methods | 1 + Butterworth Q formula callout |
+### DOC3 [COMPLETED] Documentation: API Reference
+**Completed:** 2026-03-07 | **Branch:** feature/DOC3
+Replaced placeholder `ApiReferencePage.jsx` with full API tables for all 8 classes (PlotController, AxisController, ROIController, DataStore, PlotDataView, TraceGroup, SignalStore, FilterController); each class has Constructor / Methods / Events subsections plus callouts for keybinds, dirty-propagation rules, and Butterworth Q formula.
+Full spec: [docs/plan-archive.md#doc3](docs/plan-archive.md#doc3)
 
 ---
 
