@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 5.9
+**Plan Version:** 6.0
 **Last Updated:** 2026-03-06
-**Status:** 1 feature pending (EX12). EX11 complete.
+**Status:** All features complete. EX12 done 2026-03-06.
 
 ---
 
@@ -91,7 +91,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | ARCH-E | BroadcastChannel Popup Window Infrastructure | ✅ COMPLETED | feature/ARCH-E | 2026-03-06 |
 | F24 | Spectrogram Filter Popup Window | ✅ COMPLETED | feature/F24 | 2026-03-06 |
 | EX11 | Spectrogram RectROI + Connected Label Popup | ✅ COMPLETED | feature/EX11 | 2026-03-06 |
-| EX12 | Stress Test Preset Segments | 🔲 PENDING | — | — |
+| EX12 | Stress Test Preset Segments | ✅ COMPLETED | feature/EX12 | 2026-03-06 |
 
 ---
 
@@ -450,32 +450,10 @@ Full spec: [docs/plan-archive.md#ex11](docs/plan-archive.md#ex11)
 
 ---
 
-### EX12 [PENDING] Stress Test Preset Segments
-
-**Depends on:** nothing (independent)
-
-**Goal:** Add long-duration synthetic audio segments to the spectrogram preset dropdown to benchmark STFT throughput, rendering performance, and browser memory behavior across devices. Results will inform future decisions on dynamic unloading/reloading strategies.
-
-**Durations:** 5 min, 10 min, 15 min, 30 min, 60 min.
-
-**Target sample rate:** 4 000 Hz (downsampled from 44 100 Hz).
-- Lowpass anti-aliasing filter (cutoff ~1 800 Hz) applied via `OfflineAudioContext` before downsampling.
-- Float32 memory budget: 5 min ≈ 1.2 M samples ≈ 4.8 MB; 60 min ≈ 14.4 M samples ≈ 58 MB — all feasible.
-
-**Generation algorithm:**
-1. Decode the currently selected preset WAV (or `plane1.wav` as default) via `AudioContext.decodeAudioData`.
-2. Resample to 4 000 Hz via `OfflineAudioContext` with a lowpass biquad node at 1 800 Hz.
-3. Randomly stitch copies of the downsampled clip end-to-end (with randomised starting offsets within the clip) until the target sample count is reached.
-4. Wrap in a new `AudioBuffer` at 4 000 Hz and hand off to the existing `loadAudioBuffer` path.
-
-**UI changes (`examples/SpectrogramExample.jsx`):**
-- Add an `<optgroup label="── Stress Test ──">` group below the existing individual file options in the preset `<select>`.
-- Options: `5 min`, `10 min`, `15 min`, `30 min`, `60 min`.
-- While generating: disable the dropdown and show a loading indicator (`"Generating 60 min…"`).
-- After generation: re-enable dropdown and proceed as a normal preset load.
-
-**Performance note (comment in code):**
-Document that a future enhancement (`DataStore` paging / tile-based STFT) could unload and reload segments dynamically based on the visible x-range, enabling arbitrarily long recordings without proportional memory use. Link to the `DataStore` rolling ring buffer API as the natural extension point.
+### EX12 [COMPLETED] Stress Test Preset Segments
+**Completed:** 2026-03-06 | **Branch:** feature/EX12
+`STRESS_TEST_DURATIONS` (5/10/15/30/60 min) added as `<optgroup>` in preset dropdown; `handleStressTest()` fetches last preset, resamples to 4 kHz via `OfflineAudioContext` + 1 800 Hz lowpass, randomly stitches copies to target sample count, wraps in `AudioBuffer`, hands off to `loadAudioBuffer`; `generatingMsg` state shows progress; `lastPresetPathRef` tracks source for stress test.
+Full spec: [docs/plan-archive.md#ex12](docs/plan-archive.md#ex12)
 
 ---
 
@@ -493,3 +471,4 @@ Full spec: [docs/plan-archive.md#ex10](docs/plan-archive.md#ex10)
 
 - **2026-03-06 [Claude]**: ARCH-E, F24, EX11, EX12 added as PENDING (v5.6). Motivation: move spectrogram controls into connected popup windows (BroadcastChannel) to reduce main-page clutter; add RectROI + label system to spectrogram; add stress-test preset segments (4 kHz, 5–60 min). Mandatory order: ARCH-E → F24, ARCH-E → EX11; EX12 is independent. Full specs in Pending Features section above.
 - **2026-03-06 [Claude]**: EX11 completed (v5.9) — `ROIController` + `ROILayer` wired to spectrogram deck.gl panel; spectrogram `onMouseDown` guards for ROI creation/hit; `usePopupChannel('spectrogram-labels')` with `ROIS_CHANGED`/`AUTO_SELECT`/`SELECT_ROI`/`SET_LABEL`/`DELETE_ROI`/`ZOOM_TOGGLE` protocol; `LabelPanelPopup` component added to `SpectrogramPopup.jsx` (`case 'labels'`); "Draw ROI" + "Open Label Panel" buttons in spectrogram header. Build passes zero errors. Next: EX12 (independent).
+- **2026-03-06 [Claude]**: EX12 completed (v6.0) — `STRESS_TEST_DURATIONS` (5/10/15/30/60 min) added as `<optgroup>` in preset dropdown; `handleStressTest()` fetches + downsamples last preset to 4 kHz via `OfflineAudioContext` + 1 800 Hz lowpass biquad, randomly stitches copies, wraps in `AudioBuffer`, hands off to `loadAudioBuffer`; `generatingMsg` state shows progress; `lastPresetPathRef` tracks source. All PLAN.md features now complete.

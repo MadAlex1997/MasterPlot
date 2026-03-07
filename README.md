@@ -14,7 +14,7 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 
 ---
 
-## Current Capabilities (F1–F23 + EX1–EX10 + ARCH-A/B/C/D complete)
+## Current Capabilities (F1–F23 + EX1–EX12 + ARCH-A/B/C/D complete)
 
 ### Core Plotting Engine
 - **WebGL rendering** via deck.gl `OrthographicView` — no maps, no geospatial assumptions
@@ -84,7 +84,7 @@ ctrl.setHomeDomain([0, 10], [0, 100]);
 | **Event** | Emits `'autoScaled'` with `{ xDomain, yDomain }` |
 | **Opt out** | Pass `autoScaleKey: null` in constructor options to disable the spacebar binding entirely |
 
-### Spectrogram / Audio Analysis Example (EX9 + EX10)
+### Spectrogram / Audio Analysis Example (EX9 + EX10 + EX12)
 A full-featured spectrogram viewer is available at the demo (Spectrogram tab):
 
 | Feature | Details |
@@ -94,6 +94,7 @@ A full-featured spectrogram viewer is available at the demo (Spectrogram tab):
 | **Synchronized waveform** | PCM waveform shown below the spectrogram |
 | **Audio file loading** | Any format `AudioContext.decodeAudioData` supports (WAV, MP3, OGG, FLAC, etc.) |
 | **Preset sounds** | Dropdown loads 4 bundled WAV files (city blackbird, ringdove + car, plane 1, plane 2) from `/sounds`; no file picker needed |
+| **Stress test presets (EX12)** | `── Stress Test ──` optgroup in the preset dropdown generates 5 / 10 / 15 / 30 / 60 min segments at 4 kHz; source is downsampled from the last loaded preset (default: plane1.wav) via `OfflineAudioContext` with 1 800 Hz anti-alias lowpass, then randomly stitched to target length; label shows `Generating N min…` while in progress; hands off to the standard `loadAudioBuffer` path when done |
 | **Live append mode** | Chirp + noise generated every 500 ms; toggle on/off |
 | **HistogramLUT panel** | pyqtgraph-style dB amplitude histogram; draggable level_min / level_max handles (clamp to new dB range after filtering — no more disappearing handles); 6 LUT presets; Auto Level button |
 | **Audio playback** | Play / Pause / Stop; yellow dashed playhead line on both panels at 60 fps; Ctrl+click to seek on either panel |
@@ -601,7 +602,7 @@ examples/
   ExampleApp.jsx           — scatter/ROI/live-append + point-count dropdown + ROI tables (EX1/EX4)
   LiveSignalsExample.jsx   — three live signals + rolling window + ROI stats sidebar (EX8)
   MultiSensorExample.jsx   — 50 sensors × 10k pts via TraceGroup; visibility sidebar (EX7)
-  SpectrogramExample.jsx   — full audio analysis + preset sounds + window functions (EX2/EX9)
+  SpectrogramExample.jsx   — full audio analysis + preset sounds + window functions + stress-test generator (EX2/EX9/EX12)
   SharedDataExample.jsx    — two-plot shared DataStore + filtered DataView demo (F17)
   SeismographyExample.jsx  — 10 stacked channels, shared X-axis, vline picks + table (EX5)
 public/

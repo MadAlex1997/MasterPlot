@@ -5,6 +5,37 @@ All active/pending work is in [PLAN.md](../PLAN.md).
 
 ---
 
+## EX12 [COMPLETED] Stress Test Preset Segments
+
+**Branch:** `feature/EX12`
+**Completed:** 2026-03-06
+
+### Goal
+Add long-duration synthetic audio segments to the spectrogram preset dropdown to benchmark STFT throughput, rendering performance, and browser memory behavior.
+
+### Files Modified
+- `examples/SpectrogramExample.jsx` — added `STRESS_SR`, `STRESS_LOWPASS_HZ`, `DEFAULT_PRESET_PATH`, `STRESS_TEST_DURATIONS` constants; `lastPresetPathRef` ref; `generatingMsg` state; `handleStressTest()` async generator; modified `handlePresetLoad` to track last preset path and dispatch `stress:` prefix values; added `<optgroup label="── Stress Test ──">` to preset dropdown; `generatingMsg` label display.
+- `README.md` — updated capability header; added stress-test row to spectrogram table; updated file listing.
+- `PLAN.md` — marked EX12 COMPLETED; updated Feature Status Index; added changelog entry.
+
+### Implementation Details
+- **Durations:** 5, 10, 15, 30, 60 min options in `<optgroup label="── Stress Test ──">` below regular preset options.
+- **Target rate:** 8 000 Hz (`STRESS_SR`) — original spec said 4 000 Hz but `OfflineAudioContext` enforces a minimum of 8 000 Hz per the Web Audio API spec. Anti-aliasing lowpass at 3 600 Hz (`STRESS_LOWPASS_HZ`, below Nyquist = 4 000 Hz).
+- **Algorithm:** (1) `fetch` + `decodeAudioData` the last loaded preset WAV (default `sounds/plane1.wav`); (2) resample via `OfflineAudioContext(1, offlineLen, STRESS_SR)` with `BiquadFilterNode` (lowpass, 3 600 Hz) in the graph; (3) randomly stitch copies of the downsampled clip (random `startOffset` per copy) until `targetSamples = minutes × 60 × STRESS_SR` are filled; (4) wrap in `AudioContext.createBuffer` at `STRESS_SR`, call `outBuf.copyToChannel(output, 0)`, then hand to existing `loadAudioBuffer(outBuf, 'stress-Nmin')`.
+- **UI:** Dropdown disabled while `loading`; label area shows orange `Generating N min…` text while in progress (via `generatingMsg` state); clears to `'Preset'` when done.
+- **Memory note (code comment):** Documents that a future `DataStore` paging / tile-based STFT strategy could enable arbitrarily long recordings without proportional memory use, linking to the rolling ring buffer API.
+
+### Memory Budget
+| Duration | Samples @8 kHz | Float32 size |
+|---|---|---|
+| 5 min  | 2 400 000 | ≈ 9.6 MB |
+| 10 min | 4 800 000 | ≈ 19.2 MB |
+| 15 min | 7 200 000 | ≈ 28.8 MB |
+| 30 min | 14 400 000 | ≈ 57.6 MB |
+| 60 min | 28 800 000 | ≈ 115 MB |
+
+---
+
 ## F24 [COMPLETED] Spectrogram Filter Popup Window
 
 **Branch:** `feature/F24`

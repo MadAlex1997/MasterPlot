@@ -52,6 +52,27 @@ const PRESET_SOUNDS = [
   { label: 'plane 2',        path: 'sounds/plane2.wav' },
 ];
 
+// ── Stress test preset segments (EX12) ────────────────────────────────────────
+// Target sample rate: 8 000 Hz (minimum allowed by Web Audio API OfflineAudioContext).
+// Anti-alias lowpass at 3 600 Hz (safely below Nyquist = 4 000 Hz).
+// Float32 memory budget: 5 min ≈ 2.4 M samples ≈ 9.6 MB; 60 min ≈ 28.8 M samples ≈ 115 MB.
+//
+// NOTE: A future enhancement could use DataStore paging / tile-based STFT to unload and reload
+// segments dynamically based on the visible x-range, enabling arbitrarily long recordings without
+// proportional memory use.  See the DataStore rolling ring buffer API as the natural extension point.
+
+const STRESS_SR          = 8_000;   // target sample rate for stress-test buffers (min 8 kHz per Web Audio spec)
+const STRESS_LOWPASS_HZ  = 3_600;   // anti-aliasing lowpass before downsample (below Nyquist of 4 kHz)
+const DEFAULT_PRESET_PATH = 'sounds/plane1.wav';
+
+const STRESS_TEST_DURATIONS = [
+  { label: '5 min',  minutes: 5  },
+  { label: '10 min', minutes: 10 },
+  { label: '15 min', minutes: 15 },
+  { label: '30 min', minutes: 30 },
+  { label: '60 min', minutes: 60 },
+];
+
 // ── Playhead drawing helpers ───────────────────────────────────────────────────
 
 /**
@@ -197,6 +218,7 @@ export default function SpectrogramExample() {
 
   const fileInputRef        = useRef(null);
   const loadedSampleRateRef = useRef(SAMPLE_RATE);  // actual sr of loaded audio
+  const lastPresetPathRef   = useRef(DEFAULT_PRESET_PATH);  // EX12: source for stress test generation
 
   // ── HistogramLUT refs ──────────────────────────────────────────────────────
   const lutControllerRef  = useRef(null);
@@ -223,6 +245,7 @@ export default function SpectrogramExample() {
   const [windowSize,       setWindowSize]       = useState(1024);
   const [windowFn,         setWindowFn]         = useState('hann');
   const [loading,          setLoading]          = useState(false);
+  const [generatingMsg,    setGeneratingMsg]    = useState('');  // EX12: stress-test progress label
   const [colorTrigger,     setColorTrigger]     = useState(0);
   const [playState,        setPlayState]        = useState('stopped'); // 'playing'|'paused'|'stopped'
   const [timeWindow,       setTimeWindow]       = useState(null);  // null = All
@@ -440,15 +463,16 @@ export default function SpectrogramExample() {
 
     const layers = [
       new SpectrogramLayer({
-        id:            'spectrogram',
-        samples:       samplesRef.current,
-        sampleRate:    loadedSampleRateRef.current,
-        windowSize:    windowSizeRef.current,
-        hopSize:       windowSizeRef.current / 2,
-        dataTrigger:   dataTriggerRef.current,
-        lutController: lutControllerRef.current,
-        colorTrigger:  colorTriggerRef.current,  // read from ref, not stale state
-        windowFn:      windowFnRef.current,
+        id:              'spectrogram',
+        samples:         samplesRef.current,
+        sampleRate:      loadedSampleRateRef.current,
+        windowSize:      windowSizeRef.current,
+        hopSize:         windowSizeRef.current / 2,
+        dataTrigger:     dataTriggerRef.current,
+        lutController:   lutControllerRef.current,
+        colorTrigger:    colorTriggerRef.current,  // read from ref, not stale state
+        windowFn:        windowFnRef.current,
+        onStrideWarning: (msg) => addLog(`[spectrogram] ${msg}`),
       }),
       new ROILayer({
         id: 'roi-layer',
@@ -991,22 +1015,97 @@ export default function SpectrogramExample() {
   };
 
   const handlePresetLoad = async (e) => {
-    const path = e.target.value;
-    if (!path) return;
+    const val = e.target.value;
+    if (!val) return;
     e.target.value = '';  // reset dropdown immediately
+
+    // EX12: stress test option — delegate to generator
+    if (val.startsWith('stress:')) {
+      const minutes = parseInt(val.slice(7), 10);
+      await handleStressTest(minutes);
+      return;
+    }
+
+    lastPresetPathRef.current = val;  // EX12: remember source for stress test
     setLoading(true);
     clearInterval(intervalRef.current);
     setLiveAppend(false);
     try {
-      const resp        = await fetch(path);
+      const resp        = await fetch(val);
       const arrayBuffer = await resp.arrayBuffer();
       const audioCtx    = new AudioContext();
       const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
       audioCtx.close();
-      await loadAudioBuffer(audioBuffer, path.split('/').pop());
+      await loadAudioBuffer(audioBuffer, val.split('/').pop());
     } catch (err) {
       addLog(`Preset load error: ${err.message}`);
     }
+    setLoading(false);
+  };
+
+  // ── EX12: Stress test segment generator ───────────────────────────────────
+
+  /**
+   * Generate a long synthetic audio segment by:
+   *   1. Fetching + decoding the last loaded preset (default: plane1.wav).
+   *   2. Resampling to STRESS_SR (4 kHz) via OfflineAudioContext with a 1 800 Hz lowpass.
+   *   3. Randomly stitching copies of the downsampled clip until the target sample count.
+   *   4. Handing the resulting AudioBuffer to the existing loadAudioBuffer path.
+   */
+  const handleStressTest = async (minutes) => {
+    const targetSamples = minutes * 60 * STRESS_SR;
+    const sourcePath    = lastPresetPathRef.current;
+
+    setLoading(true);
+    setGeneratingMsg(`Generating ${minutes} min…`);
+    clearInterval(intervalRef.current);
+    setLiveAppend(false);
+
+    try {
+      // 1. Fetch + decode source preset
+      const resp        = await fetch(sourcePath);
+      const arrayBuffer = await resp.arrayBuffer();
+      const decodeCtx   = new AudioContext();
+      const rawBuffer   = await decodeCtx.decodeAudioData(arrayBuffer);
+      decodeCtx.close();
+
+      // 2. Resample to STRESS_SR with anti-aliasing lowpass via OfflineAudioContext
+      const offlineLen = Math.ceil(rawBuffer.duration * STRESS_SR);
+      const offlineCtx = new OfflineAudioContext(1, offlineLen, STRESS_SR);
+      const src        = offlineCtx.createBufferSource();
+      src.buffer       = rawBuffer;
+      const lpf        = offlineCtx.createBiquadFilter();
+      lpf.type         = 'lowpass';
+      lpf.frequency.value = STRESS_LOWPASS_HZ;
+      src.connect(lpf);
+      lpf.connect(offlineCtx.destination);
+      src.start(0);
+      const downsampled = await offlineCtx.startRendering();
+      const clipPCM     = downsampled.getChannelData(0);
+      const clipLen     = clipPCM.length;
+
+      // 3. Randomly stitch copies until targetSamples
+      const output = new Float32Array(targetSamples);
+      let pos = 0;
+      while (pos < targetSamples) {
+        const startOffset = Math.floor(Math.random() * clipLen);
+        const toCopy      = Math.min(clipLen - startOffset, targetSamples - pos);
+        output.set(clipPCM.subarray(startOffset, startOffset + toCopy), pos);
+        pos += toCopy;
+      }
+
+      // 4. Wrap in an AudioBuffer at STRESS_SR and hand off to existing load path
+      const outCtx = new AudioContext({ sampleRate: STRESS_SR });
+      const outBuf = outCtx.createBuffer(1, targetSamples, STRESS_SR);
+      outBuf.copyToChannel(output, 0);
+      outCtx.close();
+
+      await loadAudioBuffer(outBuf, `stress-${minutes}min`);
+    } catch (err) {
+      addLog(`Stress test error: ${err.message}`);
+    }
+
+    setGeneratingMsg('');
     setLoading(false);
   };
 
@@ -1138,9 +1237,11 @@ export default function SpectrogramExample() {
           Live append
         </label>
 
-        {/* Preset sound dropdown */}
+        {/* Preset sound dropdown (EX12: includes stress-test optgroup) */}
         <label style={checkboxLabelStyle}>
-          Preset
+          {generatingMsg
+            ? <span style={{ color: '#fa8' }}>{generatingMsg}</span>
+            : 'Preset'}
           <select
             defaultValue=""
             onChange={handlePresetLoad}
@@ -1151,6 +1252,11 @@ export default function SpectrogramExample() {
             {PRESET_SOUNDS.map(s => (
               <option key={s.path} value={s.path}>{s.label}</option>
             ))}
+            <optgroup label="── Stress Test ──">
+              {STRESS_TEST_DURATIONS.map(d => (
+                <option key={`stress:${d.minutes}`} value={`stress:${d.minutes}`}>{d.label}</option>
+              ))}
+            </optgroup>
           </select>
         </label>
 

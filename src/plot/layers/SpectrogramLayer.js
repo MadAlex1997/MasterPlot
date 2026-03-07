@@ -60,11 +60,21 @@ function viridisColor(t) {
 
 // ── STFT ─────────────────────────────────────────────────────────────────────
 
-function computeSTFT(samples, windowSize, hopSize, windowFn = 'hann') {
-  const numBins   = windowSize / 2;
-  const numFrames = Math.max(0, Math.floor((samples.length - windowSize) / hopSize) + 1);
+// Safe upper bound on OffscreenCanvas width. Browsers must support ≥ 16 384 px,
+// but we cap at 8 192 to stay well inside the limit on all devices.
+const MAX_SPECTROGRAM_WIDTH = 8192;
 
-  if (numFrames === 0) return null;
+function computeSTFT(samples, windowSize, hopSize, windowFn = 'hann') {
+  const numBins    = windowSize / 2;
+  const totalFrames = Math.max(0, Math.floor((samples.length - windowSize) / hopSize) + 1);
+
+  if (totalFrames === 0) return null;
+
+  // Stride: when the audio is too long to fit in MAX_SPECTROGRAM_WIDTH columns,
+  // sample every `stride`-th STFT frame instead of computing all of them.
+  // Temporal resolution is reduced proportionally; spectral resolution is unchanged.
+  const stride    = Math.ceil(totalFrames / MAX_SPECTROGRAM_WIDTH);
+  const numFrames = Math.ceil(totalFrames / stride);
 
   const fft   = new FFT(windowSize);
   const out   = fft.createComplexArray();
@@ -75,7 +85,7 @@ function computeSTFT(samples, windowSize, hopSize, windowFn = 'hann') {
   let globalMax = -Infinity;
 
   for (let f = 0; f < numFrames; f++) {
-    const offset = f * hopSize;
+    const offset = f * stride * hopSize;
 
     // Copy samples into frame buffer, then apply window function
     for (let i = 0; i < windowSize; i++) frame[i] = samples[offset + i];
@@ -97,7 +107,7 @@ function computeSTFT(samples, windowSize, hopSize, windowFn = 'hann') {
     }
   }
 
-  return { power, numFrames, numBins, globalMin, globalMax };
+  return { power, numFrames, numBins, globalMin, globalMax, stride, totalFrames };
 }
 
 // ── Image builder ─────────────────────────────────────────────────────────────
@@ -183,6 +193,11 @@ export class SpectrogramLayer extends CompositeLayer {
       if (samples && samples.length >= windowSize) {
         stftResult = computeSTFT(samples, windowSize, hopSize || windowSize / 2, windowFn);
         this.setState({ stftResult });
+        if (stftResult && stftResult.stride > 1) {
+          const msg = `Spectrogram: ${stftResult.totalFrames} frames → ${stftResult.numFrames} displayed (stride ×${stftResult.stride}, temporal resolution reduced)`;
+          console.warn(msg);
+          if (props.onStrideWarning) props.onStrideWarning(msg);
+        }
         if (props.lutController && stftResult) {
           // Synchronous: sets controller levels/histogram before buildImage below
           props.lutController.setSpectrogramData(
@@ -234,7 +249,8 @@ SpectrogramLayer.defaultProps = {
   dataTrigger:   { type: 'number',  value: 0      },  // increment to force re-STFT + re-upload
   lutController: { type: 'object',  value: null   },
   colorTrigger:  { type: 'number',  value: 0      },  // increment to force image rebuild only
-  windowFn:      { type: 'string',  value: 'hann' },  // FFT window function name
+  windowFn:        { type: 'string',   value: 'hann' },  // FFT window function name
+  onStrideWarning: { type: 'function', value: null   },  // called when frame-striding kicks in
 };
 
 export default SpectrogramLayer;
