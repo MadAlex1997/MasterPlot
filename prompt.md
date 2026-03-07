@@ -55,6 +55,16 @@ All implementation work follows the plan in `PLAN.md`. **Read that file first be
    - This keeps `PLAN.md` stable at ~600–700 lines regardless of project history
    - See the compact summary template in `PLAN.md` → "Protocol for Agents" → rule 7
 
+9. **Update the documentation site after every completed feature:**
+   - The project has a live documentation SPA at `docs.html` (built in DOC1–DOC4). After DOC1 is merged, agents must keep it current.
+   - For each completed feature, check whether any of the four doc sections need updating:
+     - **Architecture** (`examples/docs/ArchitecturePage.jsx`) — update Mermaid diagrams if a new controller, layer type, or event-bus connection was added
+     - **Getting Started** (`examples/docs/GettingStartedPage.jsx`) — update if default behaviour or key interaction patterns changed
+     - **API Reference** (`examples/docs/ApiReferencePage.jsx`) — add/update method rows, constructor option rows, or event rows for every public API change
+     - **ROI Deep-Dive** (`examples/docs/RoiDeepDivePage.jsx`) — update if ROI types, creation modes, versioning rules, or serialization shape changed
+   - A feature is **not complete** until the doc site reflects it (same rule as README + HubPage)
+   - If DOC1 has not yet been merged (i.e., `examples/docs/` does not exist), skip this step and note it in the PLAN.md changelog entry
+
 ---
 
 You are building a **production-grade scientific plotting engine** in:
