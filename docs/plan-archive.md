@@ -5,6 +5,29 @@ All active/pending work is in [PLAN.md](../PLAN.md).
 
 ---
 
+## DOC2 [COMPLETED] Documentation: Getting Started Tutorial
+
+**Branch:** `feature/DOC2`
+**Completed:** 2026-03-07
+
+### Modified files
+
+- `examples/docs/GettingStartedPage.jsx` — replaced placeholder with full 7-step tutorial
+
+### Content
+
+Seven numbered steps, each rendered as a `<h3>` with a numbered badge, one or more `CodeBlock` components (with copy buttons via the shared `CodeBlock` utility), and inline `calloutStyle` note boxes where relevant:
+
+1. **Install** — `git clone` + `npm install`; minimal webpack entry boilerplate (`src/myplot.js`); HTML template (`public/myplot.html`)
+2. **Mount a plot** — minimal `PlotCanvas` + `onInit` callback; 1 000 static points via `ctrl.appendData({ x, y, size, color })`; callout: React must never hold data arrays or controller in `useState`
+3. **Live data append** — `setInterval` + `appendData` every 2 s; `ctrl.setAutoExpand(true)`; callout: rolling mode via `enableRolling({ maxAgeMs: 30_000 })`
+4. **Zoom and pan** — wheel zoom + drag-pan built-in; `ctrl.setPanMode('drag'|'follow')`; spacebar → `autoScale()`; `setHomeDomain(x, y)`; callout: y-axis inverted range + sign convention reference to Architecture page
+5. **Add a LinearRegion ROI** — keyboard guide (L/R/D/V/H keys); programmatic creation via `new LinearRegion({ x1, x2 })` + `bumpVersion()` + `addROI()` + `onCreate()` + `emit('roisChanged')`; callout: constraint propagation + version bump on mouseup only when bounds changed
+6. **Listen to events** — `ctrl.on('roiFinalized')`, `ctrl.on('domainChanged')`, `ctrl.on('dataAppended')`, `ctrl.on('zoomChanged')`, `ctrl.on('roiCreated'/'roiDeleted'/'roiUpdated')`
+7. **Shared DataStore (advanced)** — two `PlotCanvas` instances sharing one module-level `DataStore`; zero data duplication; `dataStore` prop on `PlotCanvas`; live demo link → `shared-data.html`
+
+---
+
 ## EX12 [COMPLETED] Stress Test Preset Segments
 
 **Branch:** `feature/EX12`

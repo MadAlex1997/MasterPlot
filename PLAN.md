@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 6.1
+**Plan Version:** 6.5
 **Last Updated:** 2026-03-07
-**Status:** DOC1 complete 2026-03-07. DOC2–DOC4 pending.
+**Status:** DOC2 complete 2026-03-07. DOC3–DOC4 pending.
 
 ---
 
@@ -94,7 +94,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | EX12 | Stress Test Preset Segments | ✅ COMPLETED | feature/EX12 | 2026-03-06 |
 | F25 | Higher-Order Butterworth Filter (Cascaded Biquads) | ✅ COMPLETED | feature/F25 | 2026-03-06 |
 | DOC1 | Documentation: Architecture Overview    | ✅ COMPLETED | feature/DOC1 | 2026-03-07 |
-| DOC2 | Documentation: Getting Started Tutorial | [PENDING] | — | — |
+| DOC2 | Documentation: Getting Started Tutorial | ✅ COMPLETED | feature/DOC2 | 2026-03-07 |
 | DOC3 | Documentation: API Reference            | [PENDING] | — | — |
 | DOC4 | Documentation: ROI System Deep-Dive     | [PENDING] | — | — |
 
@@ -488,6 +488,7 @@ Full spec: [docs/plan-archive.md#ex10](docs/plan-archive.md#ex10)
 - **2026-03-06 [Claude]**: F25 completed (v6.2) — `order` (2/4/6/8) added to `FilterController` state; `setOrder(n)` + `_butterworthQValues(order)` added; `applyToSamples` cascades `Array.from(qs).map(...)` biquad nodes for lowpass/highpass (bug fix: `Float32Array.map` returns typed array, not object array — must use `Array.from` first); `getFrequencyResponse` multiplies per-section linear magnitudes via `for...of`; `FilterPanel` shows Order radio buttons for lowpass/highpass only; `order` field added to BroadcastChannel `FILTER_STATE` payload in both `buildFilterStateMsg` and popup `onChange` handler; main+popup receivers both sync `order` from payload; build passes zero errors.
 - **2026-03-07 [Claude]**: DOC1–DOC4 added as PENDING (v6.3) — four documentation pages (Architecture Overview, Getting Started, API Reference, ROI Deep-Dive) as a single docs SPA served via webpack. Dev dependencies: `mermaid` (diagrams) + `prismjs` (syntax highlighting). Mandatory order: DOC1 → DOC2 → DOC3 → DOC4.
 - **2026-03-07 [Claude]**: DOC1 completed (v6.4) — docs SPA infrastructure created; `DocsPage.jsx` shell, shared `CodeBlock`/`MermaidDiagram`/`NavSidebar`, `ArchitecturePage.jsx` with all 6 spec sections (2-para intro + 3 Mermaid diagrams + coordinate table + data-flow code block), placeholder pages for DOC2–DOC4; webpack `docs` entry + `HtmlWebpackPlugin`; HubPage Documentation card group (green accent, 4 cards). Build passes zero errors. Next: DOC2 (unblocked).
+- **2026-03-07 [Claude]**: DOC2 completed (v6.5) — `GettingStartedPage.jsx` replaced placeholder with 7 numbered steps (Install / Mount / Live Append / Zoom+Pan / LinearRegion ROI / Events / Shared DataStore); each step has a `CodeBlock` + copy button, inline callout notes, y-axis convention note in step 4, constraint propagation note in step 5, live demo link in step 7. Build passes zero errors. Next: DOC3 (unblocked).
 
 ---
 
@@ -510,21 +511,10 @@ Full spec: [docs/plan-archive.md#doc1](docs/plan-archive.md#doc1)
 
 ---
 
-### DOC2 [PENDING] Documentation: Getting Started Tutorial
-
-**Dependencies:** DOC1 (shared utilities + `docs` entry must exist)
-
-**Modified files:** `examples/docs/GettingStartedPage.jsx` (replace placeholder with full content)
-
-**Content — 7 steps, each with syntax-highlighted code block + copy button:**
-
-1. **Install** — `npm install` command; minimal webpack entry boilerplate; required HTML template
-2. **Mount a plot** — minimal `PlotCanvas` with `onInit` callback; static 1 000 points via `ctrl.appendData({ x: Float32Array, y: Float32Array })`
-3. **Live data append** — `setInterval` + `appendData` every 2 s; `ctrl.setAutoExpand(true)`; note that GPU buffers grow without full realloc
-4. **Zoom and pan** — built-in wheel zoom + drag pan (no setup needed); `ctrl.setPanMode('drag')` vs `'follow'`; spacebar triggers `autoScale()`
-5. **Add a LinearRegion ROI** — press L key; click twice to set x1/x2; describe constraint propagation if a RectROI child is present
-6. **Listen to events** — `ctrl.on('roiFinalized', ({ roi, version, domain }) => ...)` + `ctrl.on('domainChanged', ({ xDomain, yDomain }) => ...)` code sample
-7. **Shared DataStore (advanced)** — two `PlotCanvas` instances sharing one `DataStore` snippet; link to live SharedDataExample demo
+### DOC2 [COMPLETED] Documentation: Getting Started Tutorial
+**Completed:** 2026-03-07 | **Branch:** feature/DOC2
+Replaced placeholder `GettingStartedPage.jsx` with 7 numbered steps (Install / Mount / Live Append / Zoom+Pan / ROI / Events / Shared DataStore), each with a `CodeBlock` + copy button and inline callout notes; live SharedDataExample link included.
+Full spec: [docs/plan-archive.md#doc2](docs/plan-archive.md#doc2)
 
 ---
 
