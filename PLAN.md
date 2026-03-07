@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 6.6
+**Plan Version:** 6.7
 **Last Updated:** 2026-03-07
-**Status:** DOC3 complete 2026-03-07. DOC4 pending.
+**Status:** DOC4 complete 2026-03-07. All documentation pages done.
 
 ---
 
@@ -96,7 +96,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | DOC1 | Documentation: Architecture Overview    | ✅ COMPLETED | feature/DOC1 | 2026-03-07 |
 | DOC2 | Documentation: Getting Started Tutorial | ✅ COMPLETED | feature/DOC2 | 2026-03-07 |
 | DOC3 | Documentation: API Reference            | ✅ COMPLETED | feature/DOC3 | 2026-03-07 |
-| DOC4 | Documentation: ROI System Deep-Dive     | [PENDING] | — | — |
+| DOC4 | Documentation: ROI System Deep-Dive     | ✅ COMPLETED | feature/DOC4 | 2026-03-07 |
 
 ---
 
@@ -490,6 +490,7 @@ Full spec: [docs/plan-archive.md#ex10](docs/plan-archive.md#ex10)
 - **2026-03-07 [Claude]**: DOC1 completed (v6.4) — docs SPA infrastructure created; `DocsPage.jsx` shell, shared `CodeBlock`/`MermaidDiagram`/`NavSidebar`, `ArchitecturePage.jsx` with all 6 spec sections (2-para intro + 3 Mermaid diagrams + coordinate table + data-flow code block), placeholder pages for DOC2–DOC4; webpack `docs` entry + `HtmlWebpackPlugin`; HubPage Documentation card group (green accent, 4 cards). Build passes zero errors. Next: DOC2 (unblocked).
 - **2026-03-07 [Claude]**: DOC2 completed (v6.5) — `GettingStartedPage.jsx` replaced placeholder with 7 numbered steps (Install / Mount / Live Append / Zoom+Pan / LinearRegion ROI / Events / Shared DataStore); each step has a `CodeBlock` + copy button, inline callout notes, y-axis convention note in step 4, constraint propagation note in step 5, live demo link in step 7. Build passes zero errors. Next: DOC3 (unblocked).
 - **2026-03-07 [Claude]**: DOC3 completed (v6.6) — `ApiReferencePage.jsx` replaced placeholder with full API tables for all 8 classes (PlotController 12 opts + 14 methods + 5 getters + 13 events; AxisController 4 opts + 11 methods + 2 events; ROIController 11 methods + 8 events + keybinds table; DataStore 8 methods + 2 events; PlotDataView 3 ctor params + 7 methods + 2 events + dirty-propagation callout; TraceGroup 4 opts + 9 methods + attr-priority code; SignalStore 9 methods + buildSignalLayers helper note; FilterController 6 state fields + 7 methods + 1 event + Butterworth Q code). Build passes zero errors. Next: DOC4 (unblocked).
+- **2026-03-07 [Claude]**: DOC4 completed (v6.7) — `RoiDeepDivePage.jsx` replaced placeholder with 6 sections: Mermaid classDiagram (ROIBase → LinearRegion/RectROI/LineROI with property annotations); creation modes table (key/clicks/auto-parent rules); LineROI modes table (all 6 modes with ASCII orientation sketches); ConstraintEngine drag + mouseup sequence diagrams; versioning table (what does/doesn't trigger bumpVersion); serialization/external-sync round-trip code (serializeAll output shape, updateFromExternal version-gating, deserializeAll, full example). Build passes zero errors. All DOC pages complete.
 
 ---
 
@@ -526,16 +527,7 @@ Full spec: [docs/plan-archive.md#doc3](docs/plan-archive.md#doc3)
 
 ---
 
-### DOC4 [PENDING] Documentation: ROI System Deep-Dive
-
-**Dependencies:** DOC1
-
-**Modified files:** `examples/docs/RoiDeepDivePage.jsx` (replace placeholder with full content)
-
-**Content:**
-1. Mermaid `classDiagram`: ROI class hierarchy — ROIBase → LinearRegion, RectROI, LineROI; key property annotations per node
-2. Creation modes table — keyboard key → ROI type → number of clicks → auto-parent rule (vertical LineROI auto-parents into LinearRegion)
-3. LineROI modes — table of all 6 modes (vline / hline / vline-half-top / vline-half-bottom / hline-half-left / hline-half-right) with ASCII orientation diagram per mode
-4. ConstraintEngine — Mermaid `sequenceDiagram`: drag event → `applyConstraints(parent, delta)` → propagate to changed children → `roiUpdated` per child; mouseup → `walkChildren` → `bumpVersion()` + `roiFinalized` only when bounds differ from domain snapshot
-5. Versioning — `version` monotonic counter; `bumpVersion()` on mouseup; `domain` snapshot (JSON-safe `{ x: [x1,x2], y?: [y1,y2] }`); table: what does / does not trigger a version bump
-6. Serialization & external sync — `serializeAll()` output shape; `updateFromExternal()` version-gating (reject if `incoming.version <= current.version`); `deserializeAll()` restore; full round-trip code sample
+### DOC4 [COMPLETED] Documentation: ROI System Deep-Dive
+**Completed:** 2026-03-07 | **Branch:** feature/DOC4
+Replaced placeholder `RoiDeepDivePage.jsx` with 6 sections: classDiagram (ROIBase → LinearRegion/RectROI/LineROI with property annotations), creation modes table (key/clicks/auto-parent), LineROI modes table (all 6 modes with ASCII sketches), ConstraintEngine sequence diagrams (drag + mouseup), versioning table (what does/doesn't bump version), and serialization/external-sync round-trip code sample.
+Full spec: [docs/plan-archive.md#doc4](docs/plan-archive.md#doc4)

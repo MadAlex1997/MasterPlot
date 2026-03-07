@@ -3792,3 +3792,36 @@ examples/docs/RoiDeepDivePage.jsx      placeholder <section> (content added in D
 - Scrollable `<main>` content area (max-width 900px, 48px padding)
 
 **Build result:** `compiled with 2 warnings` (standard size warnings only, zero errors).
+
+---
+
+## DOC4
+
+### DOC4 [COMPLETED] Documentation: ROI System Deep-Dive
+
+**Completed:** 2026-03-07
+**Branch:** feature/DOC4
+
+**Goal:** Replace the placeholder `RoiDeepDivePage.jsx` with a complete, 6-section deep-dive on the ROI system.
+
+**Modified files:**
+- `examples/docs/RoiDeepDivePage.jsx` — full content replacing placeholder stub
+
+**Content implemented:**
+
+1. **Class hierarchy** — Mermaid `classDiagram`: `ROIBase → LinearRegion`, `ROIBase → RectROI`, `ROIBase → LineROI`; key property annotations per node (id/type/bounds, version/updatedAt/domain, orientation/mode/position/label, xLocked); property table with descriptions per class
+
+2. **Creation modes table** — keyboard key (L/R/V/H/D/Escape) → ROI type → number of clicks → click semantics → auto-parent rule; note on programmatic creation via `roi.bumpVersion()` + `rc.addROI(roi)` + `roi.onCreate()`
+
+3. **LineROI modes** — table of all 6 modes (`vline` / `hline` / `vline-half-top` / `vline-half-bottom` / `hline-half-left` / `hline-half-right`) with: orientation, rendered segment, label support, ASCII orientation sketch; callout on 25-char label cap and bounds convention (x1=x2=position for vertical, y1=y2=position for horizontal, ±Inf on the perpendicular axis)
+
+4. **ConstraintEngine** — two Mermaid `sequenceDiagram`s:
+   - *Drag (mouse-move)*: restore → applyDelta → applyConstraints(parent,delta) → shift+clamp children → `_syncPosition` for LineROI → emit `roiUpdated` for active ROI + each changed child
+   - *Commit (mouse-up)*: bumpVersion on active ROI → `roiFinalized` → walkChildren → compare bounds vs domain snapshot → bumpVersion + `roiFinalized` only when changed
+   - Callouts: restore-and-reapply pattern, xLocked children, `roiUpdated` vs `roiFinalized` distinction
+
+5. **Versioning** — prose on monotonic counter; `domain` snapshot shape table per type; "what triggers a version bump" table (7 rows: drag mouseup/mid-drag/ROI creation/programmatic bumpVersion/updateFromExternal accepted|rejected/zoom-pan); `bumpVersion()` code sample showing programmatic creation pattern
+
+6. **Serialization & external sync** — annotated `serializeAll()` output JSON example; `updateFromExternal()` version-gating table (3 rows: accepted/rejected/id-not-found); full round-trip code sample (serialize → localStorage → deserialize → updateFromExternal with version+1); warning callout on version discipline
+
+**Build result:** Build passes zero errors.
