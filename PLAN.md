@@ -2,7 +2,7 @@
 
 **Plan Version:** 6.0
 **Last Updated:** 2026-03-06
-**Status:** All features complete. EX12 done 2026-03-06.
+**Status:** All features complete. F25 done 2026-03-06.
 
 ---
 
@@ -92,6 +92,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | F24 | Spectrogram Filter Popup Window | ✅ COMPLETED | feature/F24 | 2026-03-06 |
 | EX11 | Spectrogram RectROI + Connected Label Popup | ✅ COMPLETED | feature/EX11 | 2026-03-06 |
 | EX12 | Stress Test Preset Segments | ✅ COMPLETED | feature/EX12 | 2026-03-06 |
+| F25 | Higher-Order Butterworth Filter (Cascaded Biquads) | ✅ COMPLETED | feature/F25 | 2026-03-06 |
 
 ---
 
@@ -424,8 +425,15 @@ Full spec: [docs/plan-archive.md#ex9](docs/plan-archive.md#ex9)
 **Mandatory implementation order:**
 
 ```
-EX12  (independent — no popup dependency)
+F25  (independent)
 ```
+
+---
+
+### F25 [COMPLETED] Higher-Order Butterworth Filter (Cascaded Biquads)
+**Completed:** 2026-03-06 | **Branch:** feature/F25
+`order` (2/4/6/8) added to `FilterController` state; `setOrder(n)`, `_butterworthQValues(order)` helper added; `applyToSamples` cascades `order/2` biquads for lowpass/highpass; `getFrequencyResponse` multiplies per-section linear magnitudes before converting to dB; bandpass/notch unchanged; `FilterPanel` shows Order radio buttons (2/4/6/8) for lowpass/highpass only; README updated.
+Full spec: [docs/plan-archive.md#f25](docs/plan-archive.md#f25)
 
 ---
 
@@ -472,3 +480,5 @@ Full spec: [docs/plan-archive.md#ex10](docs/plan-archive.md#ex10)
 - **2026-03-06 [Claude]**: ARCH-E, F24, EX11, EX12 added as PENDING (v5.6). Motivation: move spectrogram controls into connected popup windows (BroadcastChannel) to reduce main-page clutter; add RectROI + label system to spectrogram; add stress-test preset segments (4 kHz, 5–60 min). Mandatory order: ARCH-E → F24, ARCH-E → EX11; EX12 is independent. Full specs in Pending Features section above.
 - **2026-03-06 [Claude]**: EX11 completed (v5.9) — `ROIController` + `ROILayer` wired to spectrogram deck.gl panel; spectrogram `onMouseDown` guards for ROI creation/hit; `usePopupChannel('spectrogram-labels')` with `ROIS_CHANGED`/`AUTO_SELECT`/`SELECT_ROI`/`SET_LABEL`/`DELETE_ROI`/`ZOOM_TOGGLE` protocol; `LabelPanelPopup` component added to `SpectrogramPopup.jsx` (`case 'labels'`); "Draw ROI" + "Open Label Panel" buttons in spectrogram header. Build passes zero errors. Next: EX12 (independent).
 - **2026-03-06 [Claude]**: EX12 completed (v6.0) — `STRESS_TEST_DURATIONS` (5/10/15/30/60 min) added as `<optgroup>` in preset dropdown; `handleStressTest()` fetches + downsamples last preset to 4 kHz via `OfflineAudioContext` + 1 800 Hz lowpass biquad, randomly stitches copies, wraps in `AudioBuffer`, hands off to `loadAudioBuffer`; `generatingMsg` state shows progress; `lastPresetPathRef` tracks source. All PLAN.md features now complete.
+- **2026-03-06 [Claude]**: F25 added as PENDING (v6.1) — Higher-Order Butterworth Filter via cascaded biquads. Motivation: current single-biquad (2nd-order, Q=1.0 default) produces gentle rolloff that does not match Butterworth expectations. F25 adds `order` (2/4/6/8) to `FilterController` state, a `_butterworthQValues(order)` helper (formula: Q_k = 1/(2·cos((2k−1)π/(2N)))), cascades order/2 BiquadFilterNodes in `applyToSamples` and multiplies per-section magnitude in `getFrequencyResponse`. Order selector radio buttons added to `FilterPanel` for lowpass/highpass only; bandpass/notch unchanged. No new webpack entries or pages needed.
+- **2026-03-06 [Claude]**: F25 completed (v6.2) — `order` (2/4/6/8) added to `FilterController` state; `setOrder(n)` + `_butterworthQValues(order)` added; `applyToSamples` cascades `Array.from(qs).map(...)` biquad nodes for lowpass/highpass (bug fix: `Float32Array.map` returns typed array, not object array — must use `Array.from` first); `getFrequencyResponse` multiplies per-section linear magnitudes via `for...of`; `FilterPanel` shows Order radio buttons for lowpass/highpass only; `order` field added to BroadcastChannel `FILTER_STATE` payload in both `buildFilterStateMsg` and popup `onChange` handler; main+popup receivers both sync `order` from payload; build passes zero errors.

@@ -124,6 +124,7 @@ function FilterPanelPopup({ send, lastMessage }) {
           q:          s.Q,
           lowFreq:    s.lowFreq,
           highFreq:   s.highFreq,
+          order:      s.order,
         },
       });
     };
@@ -143,6 +144,7 @@ function FilterPanelPopup({ send, lastMessage }) {
       fc.state.Q         = payload.q;
       fc.state.lowFreq   = payload.lowFreq;
       fc.state.highFreq  = payload.highFreq;
+      if (payload.order != null) fc.state.order = payload.order;
       fc.emit('changed', { ...fc.state });
       suppressRef.current = false;
       if (payload.sampleRate) setSampleRate(payload.sampleRate);

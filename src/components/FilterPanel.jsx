@@ -97,6 +97,21 @@ export default function FilterPanel({ controller, sampleRate = 44100, onApply, a
 
       {isSingleCutoff && (
         <>
+          <label style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px 6px' }}>
+            <span style={{ color: '#555' }}>Order </span>
+            {[2, 4, 6, 8].map(n => (
+              <label key={n} style={{ marginRight: 4, cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="filter-order"
+                  value={n}
+                  checked={state.order === n}
+                  onChange={() => controller.setOrder(n)}
+                />
+                {n}
+              </label>
+            ))}
+          </label>
           <label>
             <span style={{ color: '#555' }}>{state.type === 'lowpass' ? 'Cutoff (low) ' : 'Cutoff (high) '}</span>
             <span style={{ color: '#aaa' }}>

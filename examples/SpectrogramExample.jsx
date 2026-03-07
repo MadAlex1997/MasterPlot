@@ -266,6 +266,7 @@ export default function SpectrogramExample() {
         q:          fc.state.Q,
         lowFreq:    fc.state.lowFreq,
         highFreq:   fc.state.highFreq,
+        order:      fc.state.order,
         applied,
         sampleRate: loadedSampleRateRef.current,
       },
@@ -288,6 +289,7 @@ export default function SpectrogramExample() {
         fc.state.Q         = msg.payload.q;
         fc.state.lowFreq   = msg.payload.lowFreq;
         fc.state.highFreq  = msg.payload.highFreq;
+        if (msg.payload.order != null) fc.state.order = msg.payload.order;
       } else if (msg.type === 'FILTER_APPLY') {
         handleApplyFilter();
       } else if (msg.type === 'FILTER_CLEAR') {

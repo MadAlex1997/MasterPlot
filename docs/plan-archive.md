@@ -3695,3 +3695,29 @@ Both sides must silently ignore unknown `type` values for forward-compatibility.
 - Auto-select on roiCreated/roiSelected ✅
 - Pan is suppressed during ROI creation/drag ✅
 - Webpack build passes zero errors ✅
+
+---
+
+## F25
+
+### F25 [COMPLETED] Higher-Order Butterworth Filter (Cascaded Biquads)
+**Completed:** 2026-03-06 | **Branch:** feature/F25
+
+**Goal:** Replace the single-biquad filter with a properly designed higher-order Butterworth by cascading multiple `BiquadFilterNode`s inside the existing `OfflineAudioContext` pipeline. Add an "Order" selector (2 / 4 / 6 / 8) to `FilterPanel`.
+
+**Files modified:**
+- `src/audio/FilterController.js` — `order: 2` added to state; `setOrder(n)` (validates against `[2,4,6,8]`); `_butterworthQValues(order)` returns `Float32Array` of per-section Q values; `applyToSamples` cascades `Array.from(qs).map(...)` biquad nodes for lowpass/highpass (critical: must use `Array.from` since `Float32Array.map` returns a typed array, not an object array); `getFrequencyResponse` multiplies per-section linear magnitudes via `for...of` then converts to dB.
+- `src/components/FilterPanel.jsx` — Order radio buttons (2/4/6/8) rendered for lowpass/highpass only, immediately above the cutoff slider section.
+- `examples/SpectrogramExample.jsx` — `order` added to `buildFilterStateMsg` payload; receiver adds `if (msg.payload.order != null) fc.state.order = msg.payload.order`.
+- `examples/SpectrogramPopup.jsx` — popup `onChange` includes `order: s.order` in `FILTER_STATE`; `FILTER_STATE` receiver syncs `fc.state.order`.
+- `README.md` — Butterworth order sub-bullet appended to Per-type DSP filters row.
+
+**Butterworth Q formula:** `Q_k = 1 / (2 * cos((2k − 1) * π / (2 * N)))` for `k = 1…N/2`
+
+Spot-checks:
+- order=2: [0.7071]
+- order=4: [0.5412, 1.3066]
+- order=6: [0.5176, 0.7071, 1.9319]
+- order=8: [0.5098, 0.6013, 0.9000, 2.5629]
+
+**Key bug fixed during implementation:** `Float32Array.prototype.map` returns a `Float32Array`, not an `Array`. Mapping over it to produce `BiquadFilterNode` objects silently coerces each node to `NaN`, making `source.connect(NaN)` throw `AudioNode.connect: Argument 1 is not valid`. Fixed by `Array.from(qs).map(...)`.
