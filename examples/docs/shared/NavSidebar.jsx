@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 const NAV_ITEMS = [
-  { id: 'architecture',    label: 'Architecture' },
-  { id: 'getting-started', label: 'Getting Started' },
-  { id: 'api-reference',   label: 'API Reference' },
-  { id: 'roi-deep-dive',   label: 'ROI Deep-Dive' },
+  { id: 'architecture',              label: 'Architecture' },
+  { id: 'getting-started',           label: 'Getting Started' },
+  { id: 'api-reference',             label: 'API Reference' },
+  { id: 'roi-deep-dive',             label: 'ROI Deep-Dive' },
+  { id: 'plotcontroller-deep-dive',  label: 'PlotController' },
 ];
 
 const styles = {

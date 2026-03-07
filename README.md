@@ -7,7 +7,7 @@
 
 ---
 
-**[Live Demo →](https://madalex1997.github.io/MasterPlot/)**
+**[Live Demo →](https://madalex1997.github.io/MasterPlot/)** &nbsp;|&nbsp; **[Documentation →](https://madalex1997.github.io/MasterPlot/docs.html)**
 
 A high-performance scientific plotting engine built on React, deck.gl (WebGL), and d3-scale.
 Designed for real-time data, large datasets (tested to 1M+ points), and audio/signal analysis workflows.
@@ -922,3 +922,17 @@ Each row shows time bounds (`x1 s – x2 s`), frequency bounds (`y1 – y2 Hz`),
 ### Future: BackendAdapter (transport swap)
 
 `src/integration/BackendAdapter.js` is a documented stub describing how the same `{ type, payload }` message envelope allows the identical popup UI to be driven by a remote WebSocket server instead of a local `BroadcastChannel` — with only a thin transport-layer swap. See the file for the full contract shape and rolling-buffer integration notes.
+
+---
+
+## Documentation Site (DOC1–DOC5)
+
+A live documentation SPA is served at [`docs.html`](https://madalex1997.github.io/MasterPlot/docs.html) alongside the demos. It contains five pages navigable from a sticky left sidebar:
+
+| Page | Contents |
+|------|----------|
+| **Architecture** | PlotController orchestration diagram, render loop sequence, event bus graph, coordinate systems table, GPU data-flow code |
+| **Getting Started** | 7-step tutorial: install, mount, live append, zoom/pan, LinearRegion ROI, events, shared DataStore |
+| **API Reference** | Full constructor options, methods, and events for all 8 public classes (PlotController, AxisController, ROIController, DataStore, PlotDataView, TraceGroup, SignalStore, FilterController) |
+| **ROI Deep-Dive** | Class hierarchy diagram, creation modes table, LineROI modes, ConstraintEngine drag + mouseup sequence, versioning rules, serialization round-trip code |
+| **PlotController Deep-Dive** | Initialization pipeline, two-canvas model, dirty-flag render loop, layer registry internals, three zoom interaction modes (wheel / right-click drag / axis drag) with restore-and-reapply pattern, coordinate space table + Y-axis inversion, appendData-to-GPU flowchart, ownership model, full events reference |

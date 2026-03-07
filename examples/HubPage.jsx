@@ -20,6 +20,11 @@ export default function HubPage() {
       title: 'ROI Deep-Dive',
       desc: 'Class hierarchy, LineROI modes, ConstraintEngine sequencing, versioning, and external sync.',
     },
+    {
+      href: 'docs.html#plotcontroller-deep-dive',
+      title: 'PlotController Deep-Dive',
+      desc: 'Init pipeline, two-canvas model, render loop, layer registry, three zoom modes, coordinate systems, data flow to GPU, ownership model, and full events reference.',
+    },
   ];
 
   const demos = [

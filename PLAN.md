@@ -97,6 +97,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | DOC2 | Documentation: Getting Started Tutorial | ✅ COMPLETED | feature/DOC2 | 2026-03-07 |
 | DOC3 | Documentation: API Reference            | ✅ COMPLETED | feature/DOC3 | 2026-03-07 |
 | DOC4 | Documentation: ROI System Deep-Dive     | ✅ COMPLETED | feature/DOC4 | 2026-03-07 |
+| DOC5 | Documentation: PlotController Deep-Dive | ✅ COMPLETED | feature/DOC5 | 2026-03-07 |
 
 ---
 
@@ -491,6 +492,8 @@ Full spec: [docs/plan-archive.md#ex10](docs/plan-archive.md#ex10)
 - **2026-03-07 [Claude]**: DOC2 completed (v6.5) — `GettingStartedPage.jsx` replaced placeholder with 7 numbered steps (Install / Mount / Live Append / Zoom+Pan / LinearRegion ROI / Events / Shared DataStore); each step has a `CodeBlock` + copy button, inline callout notes, y-axis convention note in step 4, constraint propagation note in step 5, live demo link in step 7. Build passes zero errors. Next: DOC3 (unblocked).
 - **2026-03-07 [Claude]**: DOC3 completed (v6.6) — `ApiReferencePage.jsx` replaced placeholder with full API tables for all 8 classes (PlotController 12 opts + 14 methods + 5 getters + 13 events; AxisController 4 opts + 11 methods + 2 events; ROIController 11 methods + 8 events + keybinds table; DataStore 8 methods + 2 events; PlotDataView 3 ctor params + 7 methods + 2 events + dirty-propagation callout; TraceGroup 4 opts + 9 methods + attr-priority code; SignalStore 9 methods + buildSignalLayers helper note; FilterController 6 state fields + 7 methods + 1 event + Butterworth Q code). Build passes zero errors. Next: DOC4 (unblocked).
 - **2026-03-07 [Claude]**: DOC4 completed (v6.7) — `RoiDeepDivePage.jsx` replaced placeholder with 6 sections: Mermaid classDiagram (ROIBase → LinearRegion/RectROI/LineROI with property annotations); creation modes table (key/clicks/auto-parent rules); LineROI modes table (all 6 modes with ASCII orientation sketches); ConstraintEngine drag + mouseup sequence diagrams; versioning table (what does/doesn't trigger bumpVersion); serialization/external-sync round-trip code (serializeAll output shape, updateFromExternal version-gating, deserializeAll, full example). Build passes zero errors. All DOC pages complete.
+- **2026-03-07 [Claude]**: DOC5 added as PENDING (v6.8) — PlotController Deep-Dive: 10-section internal walkthrough (init pipeline, two-canvas model, render loop + dirty-flag table, layer registry, three zoom modes + restore-and-reapply pattern, coordinate systems + Y-axis inversion, data flow appendData→GPU, ownership model, events reference). Adds one new component `PlotControllerDeepDivePage.jsx`; updates `DocsPage.jsx` sidebar and `HubPage.jsx`. No library source changes.
+- **2026-03-07 [Claude]**: DOC5 completed (v6.9) — `PlotControllerDeepDivePage.jsx` created; NavSidebar gains 5th entry 'PlotController'; DocsPage renders the new page; HubPage doc card group gains a 5th card. All 10 spec sections implemented with accurate source-derived details.
 
 ---
 
@@ -531,3 +534,10 @@ Full spec: [docs/plan-archive.md#doc3](docs/plan-archive.md#doc3)
 **Completed:** 2026-03-07 | **Branch:** feature/DOC4
 Replaced placeholder `RoiDeepDivePage.jsx` with 6 sections: classDiagram (ROIBase → LinearRegion/RectROI/LineROI with property annotations), creation modes table (key/clicks/auto-parent), LineROI modes table (all 6 modes with ASCII sketches), ConstraintEngine sequence diagrams (drag + mouseup), versioning table (what does/doesn't bump version), and serialization/external-sync round-trip code sample.
 Full spec: [docs/plan-archive.md#doc4](docs/plan-archive.md#doc4)
+
+---
+
+### DOC5 [COMPLETED] Documentation: PlotController Deep-Dive
+**Completed:** 2026-03-07 | **Branch:** feature/DOC5
+`PlotControllerDeepDivePage.jsx` created with 10 sections (init pipeline sequence diagram, two-canvas model, dirty-flag render loop table + sequence diagram, layer registry code, three zoom modes with restore-and-reapply code, four-space coordinate table + y-axis inversion, appendData-to-GPU flowchart, ownership flag table, full events reference table); NavSidebar, DocsPage, and HubPage updated.
+Full spec: [docs/plan-archive.md#doc5](docs/plan-archive.md#doc5)

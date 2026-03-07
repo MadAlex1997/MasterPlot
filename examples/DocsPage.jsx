@@ -4,6 +4,7 @@ import ArchitecturePage from './docs/ArchitecturePage';
 import GettingStartedPage from './docs/GettingStartedPage';
 import ApiReferencePage from './docs/ApiReferencePage';
 import RoiDeepDivePage from './docs/RoiDeepDivePage';
+import PlotControllerDeepDivePage from './docs/PlotControllerDeepDivePage';
 
 const styles = {
   root: {
@@ -49,7 +50,6 @@ const styles = {
     flex: 1,
     overflowY: 'auto',
     padding: '40px 48px',
-    maxWidth: 900,
   },
 };
 
@@ -67,6 +67,7 @@ export default function DocsPage() {
           <GettingStartedPage />
           <ApiReferencePage />
           <RoiDeepDivePage />
+          <PlotControllerDeepDivePage />
         </main>
       </div>
     </div>
