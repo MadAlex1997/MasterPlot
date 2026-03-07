@@ -3721,3 +3721,51 @@ Spot-checks:
 - order=8: [0.5098, 0.6013, 0.9000, 2.5629]
 
 **Key bug fixed during implementation:** `Float32Array.prototype.map` returns a `Float32Array`, not an `Array`. Mapping over it to produce `BiquadFilterNode` objects silently coerces each node to `NaN`, making `source.connect(NaN)` throw `AudioNode.connect: Argument 1 is not valid`. Fixed by `Array.from(qs).map(...)`.
+
+---
+
+## DOC1
+
+### DOC1 [COMPLETED] Documentation: Architecture Overview
+
+**Goal:** A single-page docs SPA (`docs.html`) with a left-sidebar nav covering all four doc sections. DOC1 implements the infrastructure and the Architecture section content.
+
+**New dev dependencies:**
+```
+npm install --save-dev mermaid prismjs
+```
+
+**New files:**
+```
+src/docs.js                            webpack entry; mounts <DocsPage />
+public/docs.html                       HtmlWebpackPlugin template
+examples/DocsPage.jsx                  shell: sticky left nav + <main> content area
+examples/docs/shared/
+  CodeBlock.jsx                        syntax-highlighted <pre> + copy-to-clipboard button
+                                       (imports prismjs + prismjs/themes/prism-tomorrow.css)
+  MermaidDiagram.jsx                   useEffect renders mermaid string → <svg> via mermaid.render()
+  NavSidebar.jsx                       sticky nav; highlights active section via IntersectionObserver
+examples/docs/ArchitecturePage.jsx     Section 1 content (6 subsections)
+examples/docs/GettingStartedPage.jsx   placeholder <section> (content added in DOC2)
+examples/docs/ApiReferencePage.jsx     placeholder <section> (content added in DOC3)
+examples/docs/RoiDeepDivePage.jsx      placeholder <section> (content added in DOC4)
+```
+
+**Modified files:**
+- `webpack.config.js` — added `docs` entry + `HtmlWebpackPlugin` for `public/docs.html`
+- `examples/HubPage.jsx` — added "Documentation" card group (green accent, 4 cards) linking to `docs.html#architecture`, `docs.html#getting-started`, `docs.html#api-reference`, `docs.html#roi-deep-dive`
+
+**ArchitecturePage.jsx content implemented:**
+1. What is MasterPlot? — 2-paragraph intro (controller-driven, React-agnostic, WebGL rendering via deck.gl)
+2. Mermaid `graph TD`: PlotController orchestration — PlotController at center; edges to AxisController×2, ViewportController, ROIController, DataStore, DataLayer Registry (→ ScatterLayer, SignalStore, TraceGroup), AxisRenderer, deck.gl Deck, ConstraintEngine
+3. Mermaid `sequenceDiagram`: Render loop — RAF tick → expireIfNeeded → getData (if DataView) → _buildLayers via registry → deck.setProps → GPU draw
+4. Mermaid `graph LR`: Event bus — which controllers emit which events; PlotController as relay to React
+5. Coordinate systems — 3-column table (data/screen/deck.gl world space); Y-axis inversion explanation; flipY: false; pan sign convention with code block
+6. Data flow prose + code block — appendData → DataStore Float32Array ring buffer → getGPUAttributes → layer accessors → deck.gl WebGL
+
+**DocsPage layout:**
+- Fixed 48px header bar with title + "← Back to hub" link
+- 200px sticky left sidebar (NavSidebar) with IntersectionObserver-driven active highlight
+- Scrollable `<main>` content area (max-width 900px, 48px padding)
+
+**Build result:** `compiled with 2 warnings` (standard size warnings only, zero errors).

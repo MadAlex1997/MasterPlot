@@ -1,4 +1,27 @@
 export default function HubPage() {
+  const docCards = [
+    {
+      href: 'docs.html#architecture',
+      title: 'Architecture Overview',
+      desc: 'PlotController orchestration, render loop, event bus, coordinate systems, and GPU data flow.',
+    },
+    {
+      href: 'docs.html#getting-started',
+      title: 'Getting Started',
+      desc: 'Install, mount a plot, live append, zoom/pan, ROI creation, event listening, shared DataStore.',
+    },
+    {
+      href: 'docs.html#api-reference',
+      title: 'API Reference',
+      desc: 'Full constructor options, methods, and events for all public classes.',
+    },
+    {
+      href: 'docs.html#roi-deep-dive',
+      title: 'ROI Deep-Dive',
+      desc: 'Class hierarchy, LineROI modes, ConstraintEngine sequencing, versioning, and external sync.',
+    },
+  ];
+
   const demos = [
     {
       href: 'example.html',
@@ -98,6 +121,9 @@ export default function HubPage() {
       <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 6 }}>
         <h1 style={styles.heading}>MasterPlot</h1>
         <p style={styles.sub}>Production-grade scientific plotting engine · WebGL</p>
+        <p style={{ fontSize: 11, color: '#6a3a2a', background: '#1a0e0a', border: '1px solid #4a2a1a', borderRadius: 4, padding: '4px 12px', margin: '4px auto 0' }}>
+          Prototype — not ready for production use
+        </p>
       </div>
 
       <div style={styles.grid}>
@@ -110,6 +136,23 @@ export default function HubPage() {
             <span style={styles.cardDesc}>{d.desc}</span>
           </a>
         ))}
+      </div>
+
+      <div style={{ width: '100%', maxWidth: 900 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 12 }}>
+          Documentation
+        </div>
+        <div style={styles.grid}>
+          {docCards.map(d => (
+            <a key={d.href} href={d.href} style={{ ...styles.card, borderColor: '#1e2e1e' }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = '#4d8'}
+              onMouseLeave={e => e.currentTarget.style.borderColor = '#1e2e1e'}
+            >
+              <span style={{ ...styles.cardTitle, color: '#4d8' }}>{d.title}</span>
+              <span style={styles.cardDesc}>{d.desc}</span>
+            </a>
+          ))}
+        </div>
       </div>
 
       <a

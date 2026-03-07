@@ -16,6 +16,7 @@ module.exports = (env, argv) => {
       seismography:    './src/seismography.js',
       'multi-sensor':        './src/multi-sensor.js',
       'spectrogram-popup':   './src/spectrogram-popup.js',
+      docs:                  './src/docs.js',
     },
     output: {
       path: path.resolve(__dirname, 'dist'),
@@ -81,6 +82,11 @@ module.exports = (env, argv) => {
         template: './public/spectrogram-popup.html',
         filename: 'spectrogram-popup.html',
         chunks:   ['spectrogram-popup'],
+      }),
+      new HtmlWebpackPlugin({
+        template: './public/docs.html',
+        filename: 'docs.html',
+        chunks:   ['docs'],
       }),
       new CopyWebpackPlugin({
         patterns: [{ from: 'sounds', to: 'sounds' }],

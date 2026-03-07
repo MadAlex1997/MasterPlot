@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 6.0
-**Last Updated:** 2026-03-06
-**Status:** All features complete. F25 done 2026-03-06.
+**Plan Version:** 6.1
+**Last Updated:** 2026-03-07
+**Status:** DOC1 complete 2026-03-07. DOC2–DOC4 pending.
 
 ---
 
@@ -93,6 +93,10 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | EX11 | Spectrogram RectROI + Connected Label Popup | ✅ COMPLETED | feature/EX11 | 2026-03-06 |
 | EX12 | Stress Test Preset Segments | ✅ COMPLETED | feature/EX12 | 2026-03-06 |
 | F25 | Higher-Order Butterworth Filter (Cascaded Biquads) | ✅ COMPLETED | feature/F25 | 2026-03-06 |
+| DOC1 | Documentation: Architecture Overview    | ✅ COMPLETED | feature/DOC1 | 2026-03-07 |
+| DOC2 | Documentation: Getting Started Tutorial | [PENDING] | — | — |
+| DOC3 | Documentation: API Reference            | [PENDING] | — | — |
+| DOC4 | Documentation: ROI System Deep-Dive     | [PENDING] | — | — |
 
 ---
 
@@ -482,3 +486,79 @@ Full spec: [docs/plan-archive.md#ex10](docs/plan-archive.md#ex10)
 - **2026-03-06 [Claude]**: EX12 completed (v6.0) — `STRESS_TEST_DURATIONS` (5/10/15/30/60 min) added as `<optgroup>` in preset dropdown; `handleStressTest()` fetches + downsamples last preset to 4 kHz via `OfflineAudioContext` + 1 800 Hz lowpass biquad, randomly stitches copies, wraps in `AudioBuffer`, hands off to `loadAudioBuffer`; `generatingMsg` state shows progress; `lastPresetPathRef` tracks source. All PLAN.md features now complete.
 - **2026-03-06 [Claude]**: F25 added as PENDING (v6.1) — Higher-Order Butterworth Filter via cascaded biquads. Motivation: current single-biquad (2nd-order, Q=1.0 default) produces gentle rolloff that does not match Butterworth expectations. F25 adds `order` (2/4/6/8) to `FilterController` state, a `_butterworthQValues(order)` helper (formula: Q_k = 1/(2·cos((2k−1)π/(2N)))), cascades order/2 BiquadFilterNodes in `applyToSamples` and multiplies per-section magnitude in `getFrequencyResponse`. Order selector radio buttons added to `FilterPanel` for lowpass/highpass only; bandpass/notch unchanged. No new webpack entries or pages needed.
 - **2026-03-06 [Claude]**: F25 completed (v6.2) — `order` (2/4/6/8) added to `FilterController` state; `setOrder(n)` + `_butterworthQValues(order)` added; `applyToSamples` cascades `Array.from(qs).map(...)` biquad nodes for lowpass/highpass (bug fix: `Float32Array.map` returns typed array, not object array — must use `Array.from` first); `getFrequencyResponse` multiplies per-section linear magnitudes via `for...of`; `FilterPanel` shows Order radio buttons for lowpass/highpass only; `order` field added to BroadcastChannel `FILTER_STATE` payload in both `buildFilterStateMsg` and popup `onChange` handler; main+popup receivers both sync `order` from payload; build passes zero errors.
+- **2026-03-07 [Claude]**: DOC1–DOC4 added as PENDING (v6.3) — four documentation pages (Architecture Overview, Getting Started, API Reference, ROI Deep-Dive) as a single docs SPA served via webpack. Dev dependencies: `mermaid` (diagrams) + `prismjs` (syntax highlighting). Mandatory order: DOC1 → DOC2 → DOC3 → DOC4.
+- **2026-03-07 [Claude]**: DOC1 completed (v6.4) — docs SPA infrastructure created; `DocsPage.jsx` shell, shared `CodeBlock`/`MermaidDiagram`/`NavSidebar`, `ArchitecturePage.jsx` with all 6 spec sections (2-para intro + 3 Mermaid diagrams + coordinate table + data-flow code block), placeholder pages for DOC2–DOC4; webpack `docs` entry + `HtmlWebpackPlugin`; HubPage Documentation card group (green accent, 4 cards). Build passes zero errors. Next: DOC2 (unblocked).
+
+---
+
+## Documentation Pages — Pending
+
+**Mandatory implementation order:**
+
+```
+DOC1 → DOC2 → DOC3 → DOC4
+```
+
+DOC1 creates the shared utilities and webpack entry that all subsequent pages depend on.
+
+---
+
+### DOC1 [COMPLETED] Documentation: Architecture Overview
+**Completed:** 2026-03-07 | **Branch:** feature/DOC1
+Docs SPA (`docs.html`): `DocsPage.jsx` shell (sticky left nav + main), shared `CodeBlock`/`MermaidDiagram`/`NavSidebar` utilities, `ArchitecturePage.jsx` with 6 sections (intro, 3 Mermaid diagrams, coordinate systems table, data-flow code), placeholder pages for DOC2–DOC4; `mermaid`+`prismjs` installed; webpack entry + HubPage Documentation card group added.
+Full spec: [docs/plan-archive.md#doc1](docs/plan-archive.md#doc1)
+
+---
+
+### DOC2 [PENDING] Documentation: Getting Started Tutorial
+
+**Dependencies:** DOC1 (shared utilities + `docs` entry must exist)
+
+**Modified files:** `examples/docs/GettingStartedPage.jsx` (replace placeholder with full content)
+
+**Content — 7 steps, each with syntax-highlighted code block + copy button:**
+
+1. **Install** — `npm install` command; minimal webpack entry boilerplate; required HTML template
+2. **Mount a plot** — minimal `PlotCanvas` with `onInit` callback; static 1 000 points via `ctrl.appendData({ x: Float32Array, y: Float32Array })`
+3. **Live data append** — `setInterval` + `appendData` every 2 s; `ctrl.setAutoExpand(true)`; note that GPU buffers grow without full realloc
+4. **Zoom and pan** — built-in wheel zoom + drag pan (no setup needed); `ctrl.setPanMode('drag')` vs `'follow'`; spacebar triggers `autoScale()`
+5. **Add a LinearRegion ROI** — press L key; click twice to set x1/x2; describe constraint propagation if a RectROI child is present
+6. **Listen to events** — `ctrl.on('roiFinalized', ({ roi, version, domain }) => ...)` + `ctrl.on('domainChanged', ({ xDomain, yDomain }) => ...)` code sample
+7. **Shared DataStore (advanced)** — two `PlotCanvas` instances sharing one `DataStore` snippet; link to live SharedDataExample demo
+
+---
+
+### DOC3 [PENDING] Documentation: API Reference
+
+**Dependencies:** DOC1
+
+**Modified files:** `examples/docs/ApiReferencePage.jsx` (replace placeholder with full content)
+
+**Content — one `<h2>` per class, three subsections each: Constructor Options table | Methods table | Events table:**
+
+| Class | Constructor opts | Methods | Events |
+|---|---|---|---|
+| PlotController | 12 | 14 + 5 getters | 13 |
+| AxisController | 4 | 10 | 2 |
+| ROIController | — | 10 | 8 + keybinds table |
+| DataStore | 1 | 8 | 2 |
+| PlotDataView | 3 | 7 | 2 + dirty-propagation callout |
+| TraceGroup | 4 | 9 | — (polled each RAF tick) |
+| SignalStore | — | 8 | — + `buildSignalLayers` helper note |
+| FilterController | — | 7 state fields + 7 methods | 1 + Butterworth Q formula callout |
+
+---
+
+### DOC4 [PENDING] Documentation: ROI System Deep-Dive
+
+**Dependencies:** DOC1
+
+**Modified files:** `examples/docs/RoiDeepDivePage.jsx` (replace placeholder with full content)
+
+**Content:**
+1. Mermaid `classDiagram`: ROI class hierarchy — ROIBase → LinearRegion, RectROI, LineROI; key property annotations per node
+2. Creation modes table — keyboard key → ROI type → number of clicks → auto-parent rule (vertical LineROI auto-parents into LinearRegion)
+3. LineROI modes — table of all 6 modes (vline / hline / vline-half-top / vline-half-bottom / hline-half-left / hline-half-right) with ASCII orientation diagram per mode
+4. ConstraintEngine — Mermaid `sequenceDiagram`: drag event → `applyConstraints(parent, delta)` → propagate to changed children → `roiUpdated` per child; mouseup → `walkChildren` → `bumpVersion()` + `roiFinalized` only when bounds differ from domain snapshot
+5. Versioning — `version` monotonic counter; `bumpVersion()` on mouseup; `domain` snapshot (JSON-safe `{ x: [x1,x2], y?: [y1,y2] }`); table: what does / does not trigger a version bump
+6. Serialization & external sync — `serializeAll()` output shape; `updateFromExternal()` version-gating (reject if `incoming.version <= current.version`); `deserializeAll()` restore; full round-trip code sample
