@@ -128,6 +128,9 @@ export class PlotController extends EventEmitter {
     // Auto-expand domain when new data is appended
     this._autoExpand = opts.autoExpand ?? true;
 
+    // Axis style overrides applied after init()
+    this._hideXAxis = opts.hideXAxis ?? false;
+
     // Zoom/pan interaction state
     this._isPanning    = false;
     this._panStart     = null;  // { screenX, screenY, xDomain, yDomain }
@@ -204,6 +207,7 @@ export class PlotController extends EventEmitter {
 
     // Initialize axis renderer
     this._axisRenderer = new AxisRenderer(axisCanvas, this._xAxis, this._yAxis, this._viewport);
+    if (this._hideXAxis) this._axisRenderer.setStyle({ hideXAxis: true });
 
     // Initialize ROI controller (attaches canvas listeners)
     this._roiController.init(webglCanvas);

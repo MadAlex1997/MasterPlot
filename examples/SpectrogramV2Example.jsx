@@ -35,7 +35,6 @@ import { FilterController }       from '../src/audio/FilterController.js';
 import { SignalStore }             from '../src/plot/layers/SignalDataLayer.js';
 import { LineROI }                 from '../src/plot/ROI/LineROI.js';
 import LUTPanel                   from '../ui/LUTPanel.jsx';
-import FilterPanel                from '../ui/FilterPanel.jsx';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -334,16 +333,15 @@ export default function SpectrogramV2Example() {
       if (globalMin < _globalMin) _globalMin = globalMin;
       if (globalMax > _globalMax) _globalMax = globalMax;
 
+      // Update LUT histogram + rescale levels on every tile arrival
+      _lutCtrl.setData(power, _globalMin, _globalMax);
+      _lutCtrl.autoLevel();
+
       _registerTileLayer(tileIndex);
       _specCtrl?.markDirty();
     };
 
     const onStftComplete = () => {
-      const firstTile = _tiles.get(0);
-      if (firstTile) {
-        _lutCtrl.setData(firstTile.power, _globalMin, _globalMax);
-        _lutCtrl.autoLevel();
-      }
       setStatus(
         `STFT complete · ${_tiles.size} tile(s) · ` +
         `${windowSizeRef.current}-pt window · ${srRef.current} Hz`
@@ -351,11 +349,45 @@ export default function SpectrogramV2Example() {
       _specCtrl?.markDirty();
     };
 
+    // Playhead drag on spectrogram → seek audio + sync waveform playhead
+    const onSpecRoiUpdated = ({ roi }) => {
+      if (!_playheadROI || roi.id !== _playheadROI.id) return;
+      const t = roi.position;
+      if (_wavePlayheadROI && _waveCtrl) {
+        _waveCtrl.roiController.updateFromExternal({
+          ..._wavePlayheadROI.serialize(),
+          position: t, domain: { x: [t, t] },
+          version: _wavePlayheadROI.version + 1, updatedAt: Date.now(),
+        });
+        _waveCtrl.markDirty();
+      }
+      _audioCtrl.seek(t);
+      setCurTime(t);
+    };
+
+    // Playhead drag on waveform → seek audio + sync spectrogram playhead
+    const onWaveRoiUpdated = ({ roi }) => {
+      if (!_wavePlayheadROI || roi.id !== _wavePlayheadROI.id) return;
+      const t = roi.position;
+      if (_playheadROI && _specCtrl) {
+        _specCtrl.roiController.updateFromExternal({
+          ..._playheadROI.serialize(),
+          position: t, domain: { x: [t, t] },
+          version: _playheadROI.version + 1, updatedAt: Date.now(),
+        });
+        _specCtrl.markDirty();
+      }
+      _audioCtrl.seek(t);
+      setCurTime(t);
+    };
+
     _audioCtrl.on('loaded',       onLoaded);
     _audioCtrl.on('stateChanged', onStateChanged);
     _audioCtrl.on('timeUpdate',   onTimeUpdate);
     _audioCtrl.on('tileReady',    onTileReady);
     _audioCtrl.on('stftComplete', onStftComplete);
+    _specCtrl.roiController.on('roiUpdated', onSpecRoiUpdated);
+    _waveCtrl.roiController.on('roiUpdated', onWaveRoiUpdated);
 
     return () => {
       _audioCtrl?.off('loaded',       onLoaded);
@@ -363,6 +395,8 @@ export default function SpectrogramV2Example() {
       _audioCtrl?.off('timeUpdate',   onTimeUpdate);
       _audioCtrl?.off('tileReady',    onTileReady);
       _audioCtrl?.off('stftComplete', onStftComplete);
+      _specCtrl?.roiController.off('roiUpdated', onSpecRoiUpdated);
+      _waveCtrl?.roiController.off('roiUpdated', onWaveRoiUpdated);
     };
   }, []); // mount once — _audioCtrl identity never changes
 
@@ -424,6 +458,20 @@ export default function SpectrogramV2Example() {
     );
     try {
       await _runSTFT();
+      // Rebuild waveform display with filtered samples
+      const filtered = await _audioCtrl.getFilteredSamples();
+      _buildWaveform(filtered, _audioCtrl.sampleRate);
+      const sig = _signals.getSignal('waveform');
+      let yMin = Infinity, yMax = -Infinity;
+      for (const pt of sig.path) {
+        if (pt[1] < yMin) yMin = pt[1];
+        if (pt[1] > yMax) yMax = pt[1];
+      }
+      const yPad = (yMax - yMin) * 0.1 || 0.1;
+      _waveCtrl.yAxis.setDomain([yMin - yPad, yMax + yPad]);
+      _waveCtrl.markDirty();
+      // Rebuild AudioBuffer so playback plays the filtered signal
+      await _audioCtrl.rebuildFilteredBuffer();
     } finally {
       setIsApplying(false);
     }
@@ -482,8 +530,9 @@ export default function SpectrogramV2Example() {
       } else if (type === 'FILTER_APPLY') {
         handleApplyFilter();
       } else if (type === 'FILTER_CLEAR') {
-        _audioCtrl.setFilterFn(null);
-        _runSTFT();
+        _filterCtrl.state.type = 'none';
+        _filterCtrl.emit('changed', { ..._filterCtrl.state });
+        handleApplyFilter();
       }
     }
   );
@@ -689,14 +738,14 @@ export default function SpectrogramV2Example() {
         <span style={{ marginLeft: 'auto', color: '#555', maxWidth: 400 }}>{status}</span>
       </div>
 
-      {/* ── Body row ─────────────────────────────────────────────────────── */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      {/* ── Body column ──────────────────────────────────────────────────── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-        {/* ── Left: spectrogram + waveform stacked ─────────────────────── */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* ── Spectrogram row: plot + LUT panel side by side — 60% ─────── */}
+        <div style={{ flex: 6, display: 'flex', borderBottom: '1px solid #222' }}>
 
-          {/* Spectrogram — 60% */}
-          <div style={{ flex: 6, display: 'flex', flexDirection: 'column', borderBottom: '1px solid #222' }}>
+          {/* Spectrogram plot */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ flexShrink: 0, fontSize: 10, color: '#444', padding: '2px 8px', letterSpacing: 1 }}>
               SPECTROGRAM — R: draw RectROI annotation · D: delete selected
             </div>
@@ -706,40 +755,24 @@ export default function SpectrogramV2Example() {
             </div>
           </div>
 
-          {/* Waveform — 40% */}
-          <div style={{ flex: 4, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ flexShrink: 0, fontSize: 10, color: '#444', padding: '2px 8px', letterSpacing: 1 }}>
-              WAVEFORM — pan/zoom synced with spectrogram x-axis
-            </div>
-            <div style={{ flex: 1, position: 'relative' }}>
-              <canvas ref={waveWebglRef} style={canvasAbs} />
-              <canvas ref={waveAxisRef}  style={{ ...canvasAbs, pointerEvents: 'none' }} />
-            </div>
-          </div>
+          {/* LUT panel — same height as spectrogram */}
+          <LUTPanel
+            lutController={_lutCtrl}
+            lutHistCtrl={_lutHistCtrl}
+            width={LUT_PANEL_W}
+            height="100%"
+          />
         </div>
 
-        {/* ── Right sidebar: LUT panel + Filter panel ──────────────────── */}
-        <div style={{
-          width: LUT_PANEL_W, display: 'flex', flexDirection: 'column',
-          flexShrink: 0, borderLeft: '1px solid #222', background: '#0a0a0a',
-        }}>
-          {/* LUT panel — fills remaining space */}
-          <div style={{ flex: 1, overflow: 'hidden' }}>
-            <LUTPanel
-              lutController={_lutCtrl}
-              lutHistCtrl={_lutHistCtrl}
-              width={LUT_PANEL_W}
-              height="100%"
-            />
+        {/* ── Waveform — full width, 40% ────────────────────────────────── */}
+        <div style={{ flex: 4, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flexShrink: 0, fontSize: 10, color: '#444', padding: '2px 8px', letterSpacing: 1 }}>
+            WAVEFORM — pan/zoom synced with spectrogram x-axis
           </div>
-
-          {/* Filter panel — fixed height */}
-          <FilterPanel
-            controller={_filterCtrl}
-            sampleRate={srRef.current}
-            onApply={handleApplyFilter}
-            applying={isApplying}
-          />
+          <div style={{ flex: 1, position: 'relative' }}>
+            <canvas ref={waveWebglRef} style={canvasAbs} />
+            <canvas ref={waveAxisRef}  style={{ ...canvasAbs, pointerEvents: 'none' }} />
+          </div>
         </div>
       </div>
     </div>

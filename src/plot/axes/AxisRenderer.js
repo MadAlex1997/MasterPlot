@@ -51,6 +51,11 @@ export class AxisRenderer {
     this._exportMode = hide;
   }
 
+  /** Merge partial style overrides (e.g. { hideXAxis: true }) */
+  setStyle(partial) {
+    Object.assign(this._style, partial);
+  }
+
   // ─── Main render ─────────────────────────────────────────────────────────────
 
   /**
@@ -84,7 +89,7 @@ export class AxisRenderer {
     ctx.strokeRect(pa.x, pa.y, pa.width, pa.height);
 
     // X-axis ticks
-    this._renderXTicks(ctx, pa);
+    if (!this._style.hideXAxis) this._renderXTicks(ctx, pa);
 
     // Y-axis ticks
     this._renderYTicks(ctx, pa);

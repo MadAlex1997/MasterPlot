@@ -46,9 +46,9 @@ export class LUTHistogramController {
     this._plotController = new PlotController({
       disableDefaultDataLayer: true,
       disablePanZoom:          true,
+      hideXAxis:               true,
       xDomain: [0, 1],                   // updated after first data
       yDomain: [globalMin, globalMax],
-      xLabel:  'count',
       yLabel:  'value',
       autoExpand: false,
     });

@@ -161,6 +161,18 @@ export class AudioController extends EventEmitter {
     return result instanceof Float32Array ? result : new Float32Array(result);
   }
 
+  /**
+   * Rebuild the AudioBuffer using filtered samples (or raw if no filter is set).
+   * Call after setFilterFn() + filter changes to update what the user hears.
+   */
+  async rebuildFilteredBuffer() {
+    if (!this._samples || !this._audioContext) return;
+    const filtered = await this.getFilteredSamples();
+    const buf = this._audioContext.createBuffer(1, filtered.length, this._sampleRate);
+    buf.getChannelData(0).set(filtered);
+    this._audioBuffer = buf;
+  }
+
   // ── Playback ─────────────────────────────────────────────────────────────────
 
   /** Start or resume playback. Optional offsetSec overrides saved position. */
