@@ -51,8 +51,6 @@ import { buildBitmapFromGrid } from './_buildBitmapFromGrid.js';
 const DEFAULT_MAX_ARRAY_PIXELS = 16_777_216; // 4096 × 4096
 
 export class BitmapDataLayer extends CompositeLayer {
-  static get layerName() { return 'BitmapDataLayer'; }
-
   initializeState() {
     // undefined = not yet resolved; null = resolved to empty (invalid/null source)
     this.setState({ image: undefined });
