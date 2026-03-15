@@ -784,6 +784,12 @@ function BitmapDataLayerSection() {
         Import: <code style={inlineCode}>{"import { BitmapDataLayer } from '../src/plot/layers/BitmapDataLayer.js'"}</code>
       </p>
 
+      <p style={pStyle}>
+        Live demos:{' '}
+        <a href="../spectrogram-v2.html" style={{ color: '#7df' }}>Spectrogram V2 (EX-Spec)</a> — tiled STFT tiles as BitmapDataLayers.{' '}
+        <a href="../bitmap.html" style={{ color: '#7df' }}>Bitmap Layers (EX16)</a> — local file, generated heatmap, and URL image.
+      </p>
+
       <h4 style={h4Style}>Props</h4>
       <table style={tableStyle}>
         <thead><tr><Th>Prop</Th><Th>Type</Th><Th>Default</Th><Th>Description</Th></tr></thead>

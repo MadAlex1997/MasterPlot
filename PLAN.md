@@ -107,7 +107,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | EX17 | SpectrogramV2 Waveform Controls Panel (layout fix) | ✅ COMPLETED | feature/EX17-EX14-EX15 | 2026-03-15 |
 | EX14 | Reintroduce Stress-Test Audio Files | ✅ COMPLETED | feature/EX17-EX14-EX15 | 2026-03-15 |
 | EX15 | First-Load Help Icon (Controls Overlay) | ✅ COMPLETED | feature/EX17-EX14-EX15 | 2026-03-15 |
-| EX16 | Non-Spectrogram BitmapDataLayer Example | 🔲 PENDING | — | — |
+| EX16 | Non-Spectrogram BitmapDataLayer Example | ✅ COMPLETED | feature/EX16 | 2026-03-15 |
 | DOC6 | Documentation Update (Phase 4 complete) | 🔲 PENDING | — | — |
 | CLEANUP | Remove Legacy Spectrogram Code | 🔲 PENDING | — | — |
 
@@ -251,26 +251,10 @@ Full spec: [docs/plan-archive.md#ex15](docs/plan-archive.md#ex15)
 
 ---
 
-### EX16 [PENDING] Non-Spectrogram BitmapDataLayer Example
-
-**Branch:** `feature/EX16`
-**Depends on:** EX15
-
-Demonstrate `BitmapDataLayer` outside of the audio/spectrogram context using three sub-panels or a tabbed UI on a single page, each sourcing an image differently:
-
-1. **Local image** — user picks a file via `<input type="file">`; decoded with `createImageBitmap`; displayed in a `BitmapDataLayer` with configurable `bitMapping`.
-2. **Generated array** — a `Float32Array` heatmap synthesised in JS (e.g. 2D Gaussian or Mandelbrot excerpt, 256×256); displayed with a `LUTPanel` sidebar so the user can adjust levels and colormap live.
-3. **URL image** — loads a small publicly available scientific raster (e.g. a NASA Blue Marble tile via a CORS-enabled CDN URL); displayed with `bitMapping` set to geographic bounds for illustration.
-
-**New files:**
-- `examples/BitmapExample.jsx`
-- `examples/src/bitmap.js`
-- `public/bitmap.html`
-- Webpack entry + HtmlWebpackPlugin in `webpack.config.js`
-
-**Update:** `HubPage.jsx` (add Bitmap Example card), `README.md`, `examples/docs/ApiReferencePage.jsx` (BitmapDataLayer usage examples if not already present).
-
-**Verification:** all three panels render; LUT panel on the array panel recolorizes in real time; no console errors; `npm run build` zero errors.
+### EX16 [COMPLETED] Non-Spectrogram BitmapDataLayer Example
+**Completed:** 2026-03-15 | **Branch:** feature/EX16
+Created `examples/BitmapExample.jsx` + `examples/src/bitmap.js` + `public/bitmap.html`: three stacked panels — (1) local file via `createImageBitmap` with configurable `bitMapping` controls sidebar; (2) 256×256 Float32 sum-of-Gaussians heatmap with `LUTPanel` sidebar (level handles + colormap select + Auto Level); (3) URL image (NASA Blue Marble tile) with geographic lon/lat `bitMapping.bounds`; webpack entry + HtmlWebpackPlugin added; HubPage card added; README Bitmap section added; ApiReferencePage demo links added; build zero errors.
+Full spec: [docs/plan-archive.md#ex16](docs/plan-archive.md#ex16)
 
 ---
 
@@ -327,6 +311,7 @@ Comprehensive pass over all four documentation SPA pages to reflect everything a
 - **2026-03-15 [Claude]**: EX17 completed (v7.9) — waveform controls panel: 160 px panel mirrors LUTPanel column; playback buttons + time display + Filter ↗ + Labels ↗ moved from header to controls panel; dead "Recompute STFT" button removed; x-axes visually aligned; build zero errors.
 - **2026-03-15 [Claude]**: EX14 completed (v7.10) — `generateStressAudio(60, 22050)` synthesises chirp + pink noise + AM tones; "Stress (60 s)" preset added; `handlePresetChange` routes `stress:N` path to generator + `loadBuffer`; no new files; build zero errors.
 - **2026-03-15 [Claude]**: EX15 completed (v7.11) — `ui/HelpOverlay.jsx` created; added to ExampleApp, LiveSignalsExample, MultiSensorExample, SeismographyExample, SharedDataExample, SpectrogramV2Example with unique storageKey + per-page controls list; `position:relative` added to each outer container; build zero errors. Next: EX16 (unblocked).
+- **2026-03-15 [Claude]**: EX16 completed (v7.12) — `examples/BitmapExample.jsx` + `examples/src/bitmap.js` + `public/bitmap.html`; three panels: local file (createImageBitmap + configurable bitMapping sidebar), 256×256 Float32 Gaussian heatmap (LUTPanel with live level handles + colormap select), URL image (NASA tile with geographic bounds); webpack entry + HtmlWebpackPlugin; HubPage card; README section; ApiReferencePage demo links; build zero errors. Next: DOC6 (unblocked).
 - **2026-03-15 [Claude]**: Added EX17 (SpectrogramV2 waveform layout fix + controls panel) (v7.8) — slots between EX-Spec and EX14; removes dead Recompute STFT button; moves playback+popup controls to 160 px panel next to waveform to align x-axes.
 - **2026-03-15 [Claude]**: Added EX14/EX15/EX16/DOC6 from Features.md (v7.7) — inserted before CLEANUP; mandatory order updated to `EX-Spec → EX14 → EX15 → EX16 → DOC6 → CLEANUP`.
 - **2026-03-14 [Claude]**: EX-Spec completed (v7.6) — `examples/SpectrogramV2Example.jsx` + entry `examples/src/spectrogramV2.js` + `public/spectrogram-v2.html` + `webpack.config.js` entry + HtmlWebpackPlugin; module-level state pattern (React owns no geometry); AudioController `tileReady` → `_registerTileLayer` → `BitmapDataLayer` per tile; shared `LUTController` with `_colorTrigger` bump on `levelChanged`/`lutChanged`; `LUTHistogramController` + `LUTPanel` sidebar; `FilterPanel` sidebar with `setFilterFn` bridge + Recompute STFT; waveform `PlotController` (SignalStore PathLayer) with x-domain domainChanged sync; playhead vline LineROI updated via `updateFromExternal` on `timeUpdate`; R key → RectROI annotation; HubPage V2 card added + legacy card renamed; ArchitecturePage Phase 4 diagram + prose; ApiReferencePage LUTController/LUTHistogramController/BitmapDataLayer/AudioController sections; README AudioController + EX-Spec sections; build zero errors. Next: CLEANUP (unblocked).

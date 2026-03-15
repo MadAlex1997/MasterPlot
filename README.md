@@ -310,6 +310,40 @@ lutCtrl.on('levelChanged', () => { colorTrigger++; specCtrl.markDirty(); });
 
 ---
 
+#### Bitmap Layers Example (EX16)
+
+Live demo at `bitmap.html` — three panels showing `BitmapDataLayer` without audio:
+
+| Panel | Source type | Notes |
+|-------|-------------|-------|
+| 1 — Local Image | `ImageBitmap` via `createImageBitmap(file)` | User picks a local file; configurable `bitMapping` origin/size controls in sidebar |
+| 2 — Generated Heatmap | `Float32Array` (256×256 sum-of-Gaussians) | `channels: 'gray'`, `dtype: 'float32'`; full `LUTPanel` sidebar with draggable level handles |
+| 3 — URL Image | URL string (NASA Blue Marble tile) | `bitMapping.bounds: [-180,-90,180,90]`; axes show longitude/latitude |
+
+```js
+// Panel 2 — generated Float32 heatmap with LUTController
+const heatmap = generateGaussianHeatmap(256, 256);   // Float32Array
+const lutCtrl = new LUTController(256);
+const lutHistCtrl = new LUTHistogramController({ lutController: lutCtrl });
+lutCtrl.setData(heatmap, 0, 1);    // sets up histogram + auto-levels
+
+lutCtrl.on('levelChanged', () => { colorTrigger++; ctrl.markDirty(); });
+lutCtrl.on('lutChanged',   () => { colorTrigger++; ctrl.markDirty(); });
+
+ctrl.registerDataLayer('heatmap', () =>
+  new BitmapDataLayer({
+    source: heatmap,
+    bitMapping: { bounds: [0, 0, 256, 256] },
+    channels: 'gray', dtype: 'float32',
+    width: 256, height: 256,
+    lutController: lutCtrl,
+    colorTrigger,
+  })
+);
+```
+
+---
+
 ## TraceGroup (F22)
 
 `TraceGroup` is a generic multi-trace data layer that partitions bulk point data by a string tag into per-tag `Float32Array` buffers, and plugs into `PlotController` via `registerDataLayer`.

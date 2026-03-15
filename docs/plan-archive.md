@@ -4531,3 +4531,32 @@ ui/FilterPanel.jsx  →  audioCtrl.setFilterFn bridge
 **Hub page:** Add "Spectrogram V2" card. Keep existing "Spectrogram" card with "(legacy)" suffix until CLEANUP.
 
 **Verification:** Load audio → tiles appear. Adjust LUT → colors update in real-time. Play → playhead moves. Draw RectROI → overlays spectrogram. Waveform x-axis synced.
+
+---
+
+## EX16
+
+### EX16 — Non-Spectrogram BitmapDataLayer Example
+
+**Branch:** `feature/EX16`
+**Completed:** 2026-03-15
+**Depends on:** EX15
+
+Demonstrate `BitmapDataLayer` outside of the audio/spectrogram context using three vertically-stacked panels on a single page, each sourcing an image differently:
+
+1. **Local image** — user picks a file via `<input type="file">`; decoded with `createImageBitmap`; displayed in a `BitmapDataLayer` with configurable `bitMapping` (origin x/y, width, height); sidebar shows computed bounds.
+2. **Generated array** — a `Float32Array` heatmap synthesised in JS (256×256 sum-of-Gaussians); displayed with `channels: 'gray'`, `dtype: 'float32'`; full `LUTPanel` sidebar so the user can adjust levels and colormap live via draggable hline handles.
+3. **URL image** — loads a small CORS-accessible raster (NASA Blue Marble / OSM tile); displayed with `bitMapping.bounds` set to geographic bounds `[-180,-90,180,90]`; axes labelled Longitude/Latitude.
+
+**New files:**
+- `examples/BitmapExample.jsx` — three-panel React component with module-level PlotController state
+- `examples/src/bitmap.js` — webpack entry
+- `public/bitmap.html` — HTML template
+
+**Modified:**
+- `webpack.config.js` — added `bitmap` entry + `HtmlWebpackPlugin`
+- `examples/HubPage.jsx` — added Bitmap Layers (EX16) card
+- `README.md` — added Bitmap Layers Example section with code snippet
+- `examples/docs/ApiReferencePage.jsx` — added demo links to BitmapDataLayer section
+
+**Verification:** all three panels render; LUT panel on array panel recolorizes in real time; `npm run build` zero errors (2 size warnings only, same as all other entries).
