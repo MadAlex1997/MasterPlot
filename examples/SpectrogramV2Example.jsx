@@ -284,8 +284,23 @@ export default function SpectrogramV2Example() {
       _addPlayheadROI();
     });
 
+    // Ctrl+click on spectrogram → set playhead at clicked time
+    const specCanvas = specWebglRef.current;
+    const onSpecClick = (e) => {
+      if (!e.ctrlKey || !_specCtrl || !_audioCtrl) return;
+      e.preventDefault();
+      const t = _specCtrl.viewport.screenXToData(e.offsetX);
+      const dur = _audioCtrl.duration || 0;
+      const clamped = Math.max(0, Math.min(dur, t));
+      _audioCtrl.seek(clamped);
+      _movePlayhead(clamped);
+      setCurTime(clamped);
+    };
+    specCanvas?.addEventListener('click', onSpecClick);
+
     return () => {
       cancelAnimationFrame(rafId);
+      specCanvas?.removeEventListener('click', onSpecClick);
       _destroyState();
     };
   }, []); // mount once
@@ -314,6 +329,10 @@ export default function SpectrogramV2Example() {
       _specCtrl.xAxis.setDomain(d);
       _specCtrl.yAxis.setDomain([0, sr / 2]);
       _specCtrl.markDirty();
+
+      // Register home domains so Space → autoScale() snaps to full extents
+      _specCtrl.setHomeDomain([0, dur], [0, sr / 2]);
+      _waveCtrl.setHomeDomain([0, dur], [yMin - yPad, yMax + yPad]);
 
       setStatus('Audio loaded — computing STFT…');
       _runSTFT();
@@ -475,6 +494,7 @@ export default function SpectrogramV2Example() {
       }
       const yPad = (yMax - yMin) * 0.1 || 0.1;
       _waveCtrl.yAxis.setDomain([yMin - yPad, yMax + yPad]);
+      _waveCtrl.setHomeDomain([0, _audioCtrl.duration], [yMin - yPad, yMax + yPad]);
       _waveCtrl.markDirty();
       // Rebuild AudioBuffer so playback plays the filtered signal
       await _audioCtrl.rebuildFilteredBuffer();
@@ -588,6 +608,8 @@ export default function SpectrogramV2Example() {
         if (roi) {
           roi.metadata = { ...(roi.metadata || {}), label: payload.label };
           roi.bumpVersion();
+          // Emit roisChanged so the popup receives updated metadata
+          _specCtrl.roiController.emit('roisChanged', { rois: _specCtrl.roiController.getAllROIs() });
         }
       } else if (type === 'DELETE_ROI') {
         _specCtrl?.roiController.deleteROI(payload.id);
@@ -754,7 +776,7 @@ export default function SpectrogramV2Example() {
           {/* Spectrogram plot */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ flexShrink: 0, fontSize: 10, color: '#444', padding: '2px 8px', letterSpacing: 1 }}>
-              SPECTROGRAM — R: draw RectROI annotation · D: delete selected
+              SPECTROGRAM — R: draw RectROI · D: delete selected · Ctrl+click: set playhead · Space: autoscale
             </div>
             <div style={{ flex: 1, position: 'relative' }}>
               <canvas ref={specWebglRef} style={canvasAbs} />

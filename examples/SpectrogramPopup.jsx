@@ -156,6 +156,7 @@ function FilterPanelPopup({ send, lastMessage }) {
   const handleApply = () => {
     setApplying(true);
     send({ type: 'FILTER_APPLY', payload: {} });
+    setApplying(false);
   };
 
   const handleClear = () => {
