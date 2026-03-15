@@ -101,7 +101,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | ARCH-F | Project Restructure (src/ purity) | ✅ COMPLETED | feature/ARCH-F | 2026-03-14 |
 | F27 | Generic BitmapDataLayer | ✅ COMPLETED | feature/F27 | 2026-03-14 |
 | F28 | LUTController + LUTHistogramController | ✅ COMPLETED | feature/F28 | 2026-03-14 |
-| F29 | LUTPanel React Component | 🔲 PENDING | — | — |
+| F29 | LUTPanel React Component | ✅ COMPLETED | feature/F29 | 2026-03-14 |
 | F30 | AudioController | 🔲 PENDING | — | — |
 | EX-Spec | Spectrogram V2 Example | 🔲 PENDING | — | — |
 | CLEANUP | Remove Legacy Spectrogram Code | 🔲 PENDING | — | — |
@@ -204,33 +204,10 @@ Owns an internal `PlotController` configured as a read-only histogram viewer. Ba
 
 ---
 
-### F29 [PENDING] LUTPanel React Component
-
-**Branch:** `feature/F28-F29` (same branch as F28)
-**Depends on:** F28
-
-**New file:** `ui/LUTPanel.jsx` — fresh component, not derived from `HistogramLUTPanel.jsx`
-
-**Props:** `lutController`, `lutHistCtrl`, `width` (default 160), `height` (default '100%')
-
-**Layout:**
-```
-┌──────────────────────────┬──┐
-│  PlotCanvas              │  │
-│  (histogram bars +       │LU│
-│   hline level handles)   │T │
-│                          │gd│
-├──────────────────────────┤  │
-│  [Colormap ▼] [Auto]     │  │
-└──────────────────────────┴──┘
-```
-
-- Left: `PlotCanvas` bound to `lutHistCtrl.plotController` via `onInit`
-- Right strip: 12 px LUT gradient canvas (2D), redraws on `lutController.on('lutChanged')`
-- Bottom: colormap `<select>` + "Auto Level" `<button>`
-- Level adjustment is via hline LineROIs inside the plot — no React drag handlers needed
-
-**Verification:** Colormap dropdown updates gradient strip and connected BitmapDataLayer. Auto Level snaps to 2nd/98th percentile. Build zero errors.
+### F29 [COMPLETED] LUTPanel React Component
+**Completed:** 2026-03-14 | **Branch:** feature/F29
+Created `ui/LUTPanel.jsx`: props `lutController`/`lutHistCtrl`/`width`(160)/`height`('100%'); left area = two raw canvases wired via `lutHistCtrl.init(wc, ac)`; right = 12 px LUT gradient canvas redrawn on `lutChanged`; bottom = colormap `<select>` + Auto Level `<button>`; level adjustment via hline LineROIs inside the plot; build zero errors.
+Full spec: [docs/plan-archive.md#f29](docs/plan-archive.md#f29)
 
 ---
 
@@ -358,3 +335,4 @@ ui/FilterPanel.jsx  →  audioCtrl.setFilterFn bridge
 - **2026-03-14 [Claude]**: ARCH-F completed (v7.1) — 9 webpack entry JS files moved from `src/` to `examples/src/`; `FilterPanel.jsx` and `HistogramLUTPanel.jsx` moved from `src/components/` to `ui/`; `src/components/` now holds only `PlotCanvas.jsx`; build passes zero errors. Next: F27 (unblocked).
 - **2026-03-14 [Claude]**: F27 completed (v7.2) — `BitmapDataLayer.js` and `_buildBitmapFromGrid.js` created; accepts URL/ImageBitmap/TypedArray sources; `bitMapping` exclusive bounds vs origin+scale; per-layer `lutController` duck-typed; gray/rgb/rgba/gray+alpha channel handling; build zero errors. Next: F28 (unblocked).
 - **2026-03-14 [Claude]**: F28 completed (v7.3) — `LUTController.js` (generalizes HistogramLUTController; `setData`/`setSpectrogramData` alias; `version` getter; `levelChanged`/`lutChanged`/`dataChanged` events) and `LUTHistogramController.js` (internal PlotController with `disablePanZoom:true`; SolidPolygonLayer histogram bars; hline LineROIs for level handles; bidirectional LUT↔ROI wiring); `PlotController.disablePanZoom` option added; build zero errors. Next: F29 (unblocked).
+- **2026-03-14 [Claude]**: F29 completed (v7.4) — `ui/LUTPanel.jsx` (fresh component; props: `lutController`/`lutHistCtrl`/`width`/`height`; two raw canvases wired to `lutHistCtrl.init()`; 12 px LUT gradient with ResizeObserver + `lutChanged` listener; colormap select from `LUTController.presetNames`; Auto Level button; level drag via hline ROIs in plot); build zero errors. Next: F30 (unblocked).

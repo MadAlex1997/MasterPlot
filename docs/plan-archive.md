@@ -4387,3 +4387,39 @@ ctrl.registerDataLayer('heatmap', () =>
 ```
 
 **Verification:** Build zero errors. Layer accepts URL images, Float32Array heatmaps, and Uint8Array RGBA sources. LUT levels change triggers recolorization via `colorTrigger`.
+
+---
+
+## F29 [COMPLETED] LUTPanel React Component
+
+**Branch:** `feature/F29`
+**Completed:** 2026-03-14
+**Depends on:** F28
+
+**New file:** `ui/LUTPanel.jsx` — fresh component, not derived from `HistogramLUTPanel.jsx`
+
+**Props:** `lutController`, `lutHistCtrl`, `width` (default 160), `height` (default '100%')
+
+**Layout:**
+```
+┌──────────────────────────┬──┐
+│  histogram canvases      │  │
+│  (bars + hline handles)  │LU│
+│  driven by lutHistCtrl   │T │
+│  .init(wc, ac)           │gd│
+├──────────────────────────┤  │
+│  [Colormap ▼]  [Auto]    │  │
+└──────────────────────────┴──┘
+```
+
+- Left: two raw `<canvas>` elements (webgl + axis) wired directly to `lutHistCtrl.init()` — does NOT use `PlotCanvas` component (which creates its own PlotController)
+- Right strip (12 px): LUT gradient canvas (2D), uses ResizeObserver + redraws on `lutController.on('lutChanged')`
+- Bottom: colormap `<select>` bound to `LUTController.presetNames` + "Auto Level" `<button>`
+- Level adjustment is via hline LineROIs inside the plot — no React drag handlers
+
+**Implementation notes:**
+- `useEffect([], [])` mounts once: `requestAnimationFrame` → sizes canvases → `lutHistCtrl.init(wc, ac)`; cleanup calls `lutHistCtrl.destroy()`
+- Gradient canvas sized via `ResizeObserver` → `canvas.width = GRAD_W; canvas.height = canvas.offsetHeight`
+- `setPreset` state is a React display-only mirror of `lutController.state.lutName`; the source of truth is the controller
+
+**Verification:** Colormap dropdown updates gradient strip and connected BitmapDataLayer. Auto Level snaps to 2nd/98th percentile. Build zero errors.

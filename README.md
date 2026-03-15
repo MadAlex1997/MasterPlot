@@ -14,7 +14,7 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 
 ---
 
-## Current Capabilities (F1–F23 + EX1–EX12 + ARCH-A/B/C/D complete)
+## Current Capabilities (F1–F23 + F27–F29 + EX1–EX12 + ARCH-A/B/C/D/F complete)
 
 ### Core Plotting Engine
 - **WebGL rendering** via deck.gl `OrthographicView` — no maps, no geospatial assumptions
@@ -166,6 +166,80 @@ Fifty sensors × 10,000 points each (500k total points), each sensor colour-code
 | **Visibility sidebar** | Scrollable checkbox list; toggling a sensor calls `setTraceVisible()` + bumps a React counter — only the sidebar re-renders, not the canvas |
 | **Show All / Hide All** | Bulk visibility controls; empty canvas on "Hide All", all 50 traces return on "Show All" |
 | **React owns zero arrays** | All data lives at module level; `_traceGroup = null` on unmount |
+
+---
+
+### Phase 4 — Bitmap / LUT Layer (F27–F29, ARCH-F)
+
+#### BitmapDataLayer (F27)
+
+Generic `CompositeLayer` that renders any 2D image (URL, `ImageBitmap`, or typed-array grid) at an arbitrary data-space bounding rectangle. Useful for heatmaps, spectrograms, tile layers, and image overlays.
+
+| Prop | Type | Description |
+|---|---|---|
+| `imageData` | `string \| ImageBitmap \| TypedArray` | Image source — URL (fetched), ImageBitmap (direct), or numeric grid |
+| `bitMapping` | `{ bounds: [x0,y0,x1,y1] }` or `{ origin: [x0,y0], scale: [sx,sy] }` | Data-space placement; two forms are equivalent |
+| `channels` | `'rgba' \| 'rgb' \| 'gray' \| 'gray+alpha'` | Channel layout of typed-array grids |
+| `width`, `height` | `number` | Grid dimensions (typed-array source only) |
+| `lutController` | `LUTController` | Optional per-layer LUT; colorizes grayscale grids; reacts to `version` |
+| `colorTrigger` | `number` | Increment to force recolorization without new data |
+| `dataTrigger` | `number` | Increment to force image re-resolution |
+
+`_buildBitmapFromGrid` (`src/plot/layers/_buildBitmapFromGrid.js`) is the shared CPU colorizer — handles rgba/rgb direct copy, gray→LUT/Viridis colorize, gray+alpha.
+
+#### LUTController (F28a)
+
+Generalization of the legacy `HistogramLUTController`. Pure JS `EventEmitter` — no React.
+
+```js
+import { LUTController } from './src/plot/layers/LUTController.js';
+
+const lut = new LUTController(256);   // 256 histogram bins
+lut.setData(flatArray, globalMin, globalMax);  // compute histogram + auto-level on first call
+lut.setLUT('plasma');          // switch colormap preset
+lut.setLevels(min, max);       // set contrast window
+lut.autoLevel(2, 98);          // snap to 2nd/98th percentile
+lut.getLUTArray();             // Uint8Array[1024] RGBA lookup table
+lut.version;                   // monotonic counter — use as colorTrigger
+```
+
+**Events:** `levelChanged({ level_min, level_max })`, `lutChanged(presetName)`, `dataChanged({ bins, edges, globalMin, globalMax })`
+
+**Presets:** `viridis`, `grayscale`, `plasma`, `inferno`, `magma`, `hot`
+
+#### LUTHistogramController (F28b)
+
+Owns an internal `PlotController` configured as a read-only histogram viewer. Histogram bars are horizontal `SolidPolygonLayer` rectangles; level handles are draggable `hline` LineROIs. Intended as the backing controller for `LUTPanel`.
+
+```js
+import { LUTHistogramController } from './src/plot/LUTHistogramController.js';
+
+const histCtrl = new LUTHistogramController({ lutController: lut, bins: 256 });
+histCtrl.init(webglCanvas, axisCanvas);   // call once canvases are in DOM
+histCtrl.plotController;                  // the internal PlotController instance
+histCtrl.destroy();                       // cleanup
+```
+
+Dragging a hline → `roiUpdated` → `lutController.setLevels()` → `levelChanged` → connected `BitmapDataLayer` recolorizes. `autoLevel()` moves the hlines to match.
+
+**`PlotController.disablePanZoom` option:** new constructor option that suppresses wheel and drag-pan/zoom handlers while keeping ROI drag active. Used by `LUTHistogramController`.
+
+#### LUTPanel (F29)
+
+React convenience component combining the histogram plot, LUT gradient strip, colormap dropdown, and Auto Level button in one panel. Lives in `ui/` (not library code — users may build their own UI on top of `LUTController` events).
+
+```jsx
+import LUTPanel from './ui/LUTPanel.jsx';
+
+<LUTPanel
+  lutController={lut}         // LUTController instance
+  lutHistCtrl={histCtrl}      // LUTHistogramController instance
+  width={160}                 // panel width in px (default 160)
+  height="100%"               // CSS height (default '100%')
+/>
+```
+
+**Layout:** histogram plot (left) + 12 px LUT gradient strip (right) + colormap `<select>` + Auto Level `<button>` (bottom). Level adjustment is via hline LineROIs inside the plot — no React drag handlers.
 
 ---
 
@@ -560,51 +634,58 @@ npm run build    # production bundle in dist/
 ## File Structure
 
 ```
-src/
+src/                              ← library code only
   plot/
-    PlotController.js     — central controller + render loop
-    DataStore.js          — GPU typed array buffers
-    PlotDataView.js       — lazy derived view (filter / histogram / snapshot)
-    ViewportController.js — coordinate transforms
+    PlotController.js             — central controller + render loop
+    DataStore.js                  — GPU typed array buffers
+    PlotDataView.js               — lazy derived view (filter / histogram / snapshot)
+    ViewportController.js         — coordinate transforms
+    LUTHistogramController.js     — internal PlotController histogram viewer for LUTPanel (F28b)
     ROI/
-      ROIBase.js          — abstract base class
-      RectROI.js          — draggable/resizable rectangle
-      LinearRegion.js     — vertical strip
-      LineROI.js          — single-pixel line (6 modes, optional label)
-      ROIController.js    — interaction handler
-      ConstraintEngine.js — parent-child constraint enforcement
+      ROIBase.js                  — abstract base class
+      RectROI.js                  — draggable/resizable rectangle
+      LinearRegion.js             — vertical strip
+      LineROI.js                  — single-pixel line (6 modes, optional label)
+      ROIController.js            — interaction handler
+      ConstraintEngine.js         — parent-child constraint enforcement
     layers/
-      ScatterLayer.js          — deck.gl scatter (instanced)
-      LineLayer.js             — deck.gl polylines
-      ROILayer.js              — deck.gl composite ROI renderer
-      SpectrogramLayer.js      — STFT + WebGL texture spectrogram
-      HistogramLUTController.js — dB histogram + LUT remapping
-      SignalDataLayer.js        — SignalStore + buildSignalLayers for line plots (ARCH-D)
-      TraceGroup.js             — multi-trace scatter partitioner with palette cycling (F22)
-      PlotLayer.js              — optional CompositeLayer wrapper (ARCH-B)
+      ScatterLayer.js             — deck.gl scatter (instanced)
+      LineLayer.js                — deck.gl polylines
+      ROILayer.js                 — deck.gl composite ROI renderer
+      BitmapDataLayer.js          — generic bitmap layer; URL/ImageBitmap/TypedArray (F27)
+      _buildBitmapFromGrid.js     — CPU colorizer for typed-array grids (F27)
+      LUTController.js            — colormap + level + histogram controller (F28a)
+      SpectrogramLayer.js         — legacy STFT + WebGL texture (to be removed in CLEANUP)
+      HistogramLUTController.js   — legacy; use LUTController (to be removed in CLEANUP)
+      SignalDataLayer.js          — SignalStore + buildSignalLayers for line plots (ARCH-D)
+      TraceGroup.js               — multi-trace scatter partitioner with palette cycling (F22)
+      PlotLayer.js                — optional CompositeLayer wrapper (ARCH-B)
     axes/
-      AxisController.js   — d3-scale wrapper
-      AxisRenderer.js     — canvas 2D ticks + labels
+      AxisController.js           — d3-scale wrapper
+      AxisRenderer.js             — canvas 2D ticks + labels
   audio/
-    PlaybackController.js — Web Audio API playback + seek
-    FilterController.js   — offline biquad DSP + frequency response
+    PlaybackController.js         — Web Audio API playback + seek
+    FilterController.js           — offline biquad DSP + frequency response
   components/
-    PlotCanvas.jsx        — React wrapper (canvas + controller lifecycle)
-    HistogramLUTPanel.jsx — histogram + level handles + LUT preset UI
-    FilterPanel.jsx       — filter type, cutoff, Q controls + response curve
+    PlotCanvas.jsx                — React wrapper (canvas + controller lifecycle)
   integration/
-    ExternalDataAdapter.js — interface contract for external data sources (F18)
-    ExternalROIAdapter.js  — interface contract for ROI persistence/sync (F18)
-    MockDataAdapter.js     — random data generator mock (F18)
-    MockROIAdapter.js      — localStorage-backed ROI persistence mock (F18)
-examples/
-  HubPage.jsx              — demo navigation hub
-  ExampleApp.jsx           — scatter/ROI/live-append + point-count dropdown + ROI tables (EX1/EX4)
-  LiveSignalsExample.jsx   — three live signals + rolling window + ROI stats sidebar (EX8)
-  MultiSensorExample.jsx   — 50 sensors × 10k pts via TraceGroup; visibility sidebar (EX7)
-  SpectrogramExample.jsx   — full audio analysis + preset sounds + window functions + stress-test generator (EX2/EX9/EX12)
-  SharedDataExample.jsx    — two-plot shared DataStore + filtered DataView demo (F17)
-  SeismographyExample.jsx  — 10 stacked channels, shared X-axis, vline picks + table (EX5)
+    ExternalDataAdapter.js        — interface contract for external data sources (F18)
+    ExternalROIAdapter.js         — interface contract for ROI persistence/sync (F18)
+    MockDataAdapter.js            — random data generator mock (F18)
+    MockROIAdapter.js             — localStorage-backed ROI persistence mock (F18)
+ui/                               ← optional React UI extensions (not library code)
+  LUTPanel.jsx                    — histogram + LUT gradient + colormap dropdown + Auto Level (F29)
+  FilterPanel.jsx                 — filter type, cutoff, Q controls + response curve
+  HistogramLUTPanel.jsx           — legacy; use LUTPanel (to be removed in CLEANUP)
+examples/                         ← example page components
+  src/                            ← webpack entry JS files (one per HTML page)
+  HubPage.jsx                     — demo navigation hub
+  ExampleApp.jsx                  — scatter/ROI/live-append + point-count dropdown + ROI tables (EX1/EX4)
+  LiveSignalsExample.jsx          — three live signals + rolling window + ROI stats sidebar (EX8)
+  MultiSensorExample.jsx          — 50 sensors × 10k pts via TraceGroup; visibility sidebar (EX7)
+  SpectrogramExample.jsx          — full audio analysis + preset sounds + window functions (EX2/EX9/EX12)
+  SharedDataExample.jsx           — two-plot shared DataStore + filtered DataView demo (F17)
+  SeismographyExample.jsx         — 10 stacked channels, shared X-axis, vline picks + table (EX5)
 public/
   index.html
 ```
