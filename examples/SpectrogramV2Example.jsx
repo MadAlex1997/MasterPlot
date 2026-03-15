@@ -84,6 +84,7 @@ function _ensureState() {
 
   _specCtrl = new PlotController({
     disableDefaultDataLayer: true,
+    panMode:"drag",
     xDomain: [0, 10],
     yDomain: [0, 1000],
     xLabel:  'time (s)',
@@ -93,6 +94,7 @@ function _ensureState() {
 
   _waveCtrl = new PlotController({
     disableDefaultDataLayer: true,
+    panMode:"drag",
     xDomain: [0, 10],
     yDomain: [-1.2, 1.2],
     xLabel:  'time (s)',
