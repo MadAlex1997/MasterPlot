@@ -12,9 +12,10 @@
  *     256×256 Float32Array synthesised in JS (sum of 2D Gaussians).
  *     LUTPanel sidebar for real-time colormap + level adjustment.
  *
- *   Panel 3 — URL Image
- *     Loads a small CORS-accessible NASA Blue Marble tile; displays it with
- *     bitMapping set to geographic bounds (longitude/latitude) for illustration.
+ *   Panel 3 — URL Image (CDS HiPS2FITS / 2MASS K-band all-sky)
+ *     Fetched from the CDS HiPS2FITS service (powers Aladin Lite; CORS-enabled);
+ *     full-sky 2MASS K-band NIR in galactic CAR projection; bitMapping set to
+ *     galactic coordinate bounds (l/b).
  */
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
@@ -30,19 +31,18 @@ import HelpOverlay                from '../ui/HelpOverlay.jsx';
 const LUT_PANEL_W   = 160;   // px — LUT sidebar width (panel 2 only)
 const HEATMAP_SIZE  = 256;   // generated heatmap dimensions (square)
 
-// NASA Blue Marble Next Generation — a small 512×256 PNG served from a
-// CORS-enabled endpoint (tile from NASA GIBS open imagery service).
-// This URL is publicly accessible and does not require authentication.
-const NASA_IMAGE_URL =
-  'https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73726/world.topo.bathy.200401.3x5400x2700.jpg';
+// CDS HiPS2FITS — full-sky 2MASS K-band in galactic equirectangular projection.
+// Powered by the same server as Aladin Lite; explicitly CORS-enabled for web use.
+// Survey: 2MASS K-band (near-infrared); shows dust lanes + galactic structure.
+// Docs: https://aladin.cds.unistra.fr/hips2fits/
+const STARMAP_URL =
+  'https://alasky.cds.unistra.fr/hips-image-services/hips2fits?' +
+  'hips=CDS%2FP%2F2MASS%2FK&width=800&height=400' +
+  '&fov=360&projection=CAR&coordsys=galactic&format=jpg&ra=0&dec=0';
 
-// Fallback smaller tile in case the large image is slow to load
-const NASA_TILE_URL =
-  'https://tile.openstreetmap.org/1/0/0.png';
-
-// Geographic bounds for the NASA image (whole-world equirectangular):
-// [left (lon), bottom (lat), right (lon), top (lat)]
-const NASA_BOUNDS = [-180, -90, 180, 90];
+// Galactic coordinate bounds [l_min, b_min, l_max, b_max].
+// Matches the CAR projection output: l 0°–360°, b −90°–+90°.
+const STARMAP_BOUNDS = [0, -90, 360, 90];
 
 // ── Gaussian heatmap generator ────────────────────────────────────────────────
 
@@ -141,14 +141,18 @@ function useImgPanel() {
   return { imgBitmap, fileName, mapping, setMapping, handleFile };
 }
 
+const TABS = [
+  { id: 'local',   label: 'Local Image',          sub: 'ImageBitmap via createImageBitmap' },
+  { id: 'heatmap', label: 'Generated Heatmap',     sub: 'Float32 array + LUTPanel' },
+  { id: 'starmap', label: '2MASS K-band All-Sky',  sub: 'URL fetch → CDS HiPS2FITS' },
+];
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function BitmapExample() {
   _ensureState();
 
-  const imgInitRef  = useRef(null);
-  const heatInitRef = useRef(null);
-  const urlInitRef  = useRef(null);
+  const [activeTab, setActiveTab] = useState('local');
 
   const imgWcRef  = useRef(null);
   const imgAcRef  = useRef(null);
@@ -259,23 +263,28 @@ export default function BitmapExample() {
   }, []);
 
   // ── Panel 3 — init ──────────────────────────────────────────────────────────
+  // Pre-fetch the image via browser fetch (respects CORS) → ImageBitmap so we
+  // never hand a URL string to deck.gl's loaders.gl (which lacks the browser's
+  // credential/cache context and can fail even on CORS-enabled servers).
 
   useEffect(() => {
     if (!urlWcRef.current || !urlAcRef.current) return;
 
     const ctrl = new PlotController({
-      xDomain: [NASA_BOUNDS[0], NASA_BOUNDS[2]],  // -180 to 180
-      yDomain: [NASA_BOUNDS[1], NASA_BOUNDS[3]],  // -90 to 90
-      xLabel: 'Longitude °',
-      yLabel: 'Latitude °',
+      xDomain: [STARMAP_BOUNDS[0], STARMAP_BOUNDS[2]],  // 0 to 360
+      yDomain: [STARMAP_BOUNDS[1], STARMAP_BOUNDS[3]],  // -90 to 90
+      xLabel: 'Galactic Longitude (°)',
+      yLabel: 'Galactic Latitude (°)',
       disableDefaultDataLayer: true,
     });
     _urlCtrl = ctrl;
 
-    requestAnimationFrame(() => {
+    let destroyed = false;
+
+    requestAnimationFrame(async () => {
       const wc = urlWcRef.current;
       const ac = urlAcRef.current;
-      if (!wc || !ac) return;
+      if (!wc || !ac || destroyed) return;
       wc.width  = wc.offsetWidth  || 640;
       wc.height = wc.offsetHeight || 400;
       ac.width  = wc.width;
@@ -284,45 +293,85 @@ export default function BitmapExample() {
 
       setUrlLoadStatus('loading');
 
-      ctrl.registerDataLayer('world-map', () =>
-        new BitmapDataLayer({
-          source:     NASA_TILE_URL,
-          bitMapping: { bounds: NASA_BOUNDS },
-        })
-      );
-      ctrl.markDirty();
-      setUrlLoadStatus('loaded');
+      try {
+        const resp   = await fetch(STARMAP_URL, { mode: 'cors' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const blob   = await resp.blob();
+        const bitmap = await createImageBitmap(blob);
+        if (destroyed) return;
+
+        ctrl.registerDataLayer('star-map', () =>
+          new BitmapDataLayer({
+            source:     bitmap,
+            bitMapping: { bounds: STARMAP_BOUNDS },
+          })
+        );
+        ctrl.markDirty();
+        setUrlLoadStatus('loaded');
+      } catch (err) {
+        if (!destroyed) setUrlLoadStatus('error');
+        console.warn('BitmapExample panel 3: could not load star map —', err.message);
+      }
     });
 
-    return () => { ctrl.destroy(); _urlCtrl = null; };
+    return () => { destroyed = true; ctrl.destroy(); _urlCtrl = null; };
   }, []);
-
-  // ── Stable onInit references (no-op — direct init above) ────────────────────
 
   // ── Layout ──────────────────────────────────────────────────────────────────
 
   const canvasStyle = { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' };
 
+  // All three panels are always mounted so canvases have real dimensions at init.
+  // Inactive panels are hidden via visibility:hidden (not display:none) so the
+  // canvas offsetWidth/Height remain valid for PlotController.
+  const tabPanel = (id) => ({
+    position:      'absolute',
+    inset:         0,
+    display:       'flex',
+    flexDirection: 'column',
+    visibility:    activeTab === id ? 'visible' : 'hidden',
+    pointerEvents: activeTab === id ? 'auto'    : 'none',
+  });
+
   return (
     <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', width: '100%', height: '100%', background: '#0d0d0d', color: '#e0e0e0', fontFamily: 'monospace' }}>
 
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div style={{ flexShrink: 0, padding: '8px 16px', background: '#111', borderBottom: '1px solid #2a2a2a', display: 'flex', alignItems: 'center', gap: 16 }}>
-        <span style={{ fontWeight: 700, fontSize: 14, color: '#7df' }}>BitmapDataLayer Example (EX16)</span>
-        <span style={{ fontSize: 11, color: '#555' }}>URL / Local File / Generated Array — three display modes</span>
+      {/* ── Header + tab bar ────────────────────────────────────────────────── */}
+      <div style={{ flexShrink: 0, background: '#111', borderBottom: '1px solid #2a2a2a' }}>
+        <div style={{ padding: '8px 16px 0', display: 'flex', alignItems: 'baseline', gap: 16 }}>
+          <span style={{ fontWeight: 700, fontSize: 14, color: '#7df' }}>BitmapDataLayer Example (EX16)</span>
+          <span style={{ fontSize: 11, color: '#444' }}>three source types</span>
+        </div>
+        <div style={{ display: 'flex', gap: 2, padding: '6px 12px 0' }}>
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
+              padding: '5px 14px',
+              background:    activeTab === t.id ? '#0d0d0d' : 'transparent',
+              border:        '1px solid',
+              borderColor:   activeTab === t.id ? '#2a2a2a' : 'transparent',
+              borderBottom:  activeTab === t.id ? '1px solid #0d0d0d' : '1px solid transparent',
+              borderRadius:  '4px 4px 0 0',
+              color:         activeTab === t.id ? '#7df' : '#555',
+              fontFamily:    'monospace',
+              fontSize:      12,
+              cursor:        'pointer',
+              display:       'flex',
+              flexDirection: 'column',
+              alignItems:    'flex-start',
+              gap:           1,
+            }}>
+              <span style={{ fontWeight: 700 }}>{t.label}</span>
+              <span style={{ fontSize: 10, color: activeTab === t.id ? '#445' : '#333' }}>{t.sub}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* ── Three panels stacked vertically ─────────────────────────────────── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* ── Tab content area ────────────────────────────────────────────────── */}
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
 
-        {/* ── Panel 1: Local Image ───────────────────────────────────────────── */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', borderBottom: '1px solid #2a2a2a', minHeight: 0 }}>
-          <PanelHeader>
-            Panel 1 — Local Image
-            <span style={{ marginLeft: 12, fontSize: 11, color: '#555' }}>
-              Pick a local image file; it will be rendered as a BitmapDataLayer with configurable mapping.
-            </span>
-          </PanelHeader>
+        {/* ── Tab 1: Local Image ──────────────────────────────────────────────── */}
+        <div style={tabPanel('local')}>
           <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
             {/* Plot */}
             <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
@@ -335,15 +384,10 @@ export default function BitmapExample() {
               )}
             </div>
             {/* Controls */}
-            <div style={{ width: 200, flexShrink: 0, background: '#111', borderLeft: '1px solid #2a2a2a', padding: 12, display: 'flex', flexDirection: 'column', gap: 10, fontSize: 12 }}>
+            <div style={{ width: 200, flexShrink: 0, background: '#111', borderLeft: '1px solid #2a2a2a', padding: 12, display: 'flex', flexDirection: 'column', gap: 10, fontSize: 12, overflowY: 'auto' }}>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <span style={{ color: '#888' }}>Select image file</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFile}
-                  style={{ fontSize: 11, color: '#ccc' }}
-                />
+                <input type="file" accept="image/*" onChange={handleFile} style={{ fontSize: 11, color: '#ccc' }} />
               </label>
               {fileName && (
                 <div style={{ color: '#4d8', fontSize: 11, wordBreak: 'break-all' }}>{fileName}</div>
@@ -384,21 +428,13 @@ export default function BitmapExample() {
           </div>
         </div>
 
-        {/* ── Panel 2: Generated Heatmap ─────────────────────────────────────── */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', borderBottom: '1px solid #2a2a2a', minHeight: 0 }}>
-          <PanelHeader>
-            Panel 2 — Generated Float32 Heatmap
-            <span style={{ marginLeft: 12, fontSize: 11, color: '#555' }}>
-              256×256 sum-of-Gaussians array with live LUTPanel (drag handles to adjust levels).
-            </span>
-          </PanelHeader>
+        {/* ── Tab 2: Generated Heatmap ────────────────────────────────────────── */}
+        <div style={tabPanel('heatmap')}>
           <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-            {/* Plot */}
             <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
               <canvas ref={heatWcRef} style={canvasStyle} />
               <canvas ref={heatAcRef} style={{ ...canvasStyle, pointerEvents: 'none' }} />
             </div>
-            {/* LUT sidebar */}
             <LUTPanel
               lutController={_lutCtrl}
               lutHistCtrl={_lutHistCtrl}
@@ -408,22 +444,15 @@ export default function BitmapExample() {
           </div>
         </div>
 
-        {/* ── Panel 3: URL Image ─────────────────────────────────────────────── */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          <PanelHeader>
-            Panel 3 — URL Image (NASA Blue Marble OSM tile)
-            <span style={{ marginLeft: 12, fontSize: 11, color: '#555' }}>
-              Loaded from a CORS-accessible URL; bitMapping set to geographic bounds (lon/lat).
-              {urlLoadStatus === 'loading' && <span style={{ color: '#fa0', marginLeft: 8 }}>loading…</span>}
-              {urlLoadStatus === 'loaded'  && <span style={{ color: '#4d8', marginLeft: 8 }}>loaded</span>}
-              {urlLoadStatus === 'error'   && <span style={{ color: '#f66', marginLeft: 8 }}>load error</span>}
-            </span>
-          </PanelHeader>
+        {/* ── Tab 3: URL / Star map ───────────────────────────────────────────── */}
+        <div style={tabPanel('starmap')}>
           <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
             <canvas ref={urlWcRef} style={canvasStyle} />
             <canvas ref={urlAcRef} style={{ ...canvasStyle, pointerEvents: 'none' }} />
             <div style={{ position: 'absolute', bottom: 4, left: 8, fontSize: 10, color: '#444', pointerEvents: 'none' }}>
-              x: longitude °  |  y: latitude °  |  bounds: {NASA_BOUNDS.join(', ')}
+              {urlLoadStatus === 'loading' && <span style={{ color: '#fa0' }}>loading…  </span>}
+              {urlLoadStatus === 'error'   && <span style={{ color: '#f66' }}>load error  </span>}
+              l: galactic longitude °  |  b: galactic latitude °  |  2MASS K-band (CDS HiPS2FITS)  |  bounds: {STARMAP_BOUNDS.join(', ')}
             </div>
           </div>
         </div>
@@ -434,26 +463,16 @@ export default function BitmapExample() {
         storageKey="masterplot-help-ex16-bitmap"
         title="BitmapDataLayer Example Controls"
         controls={[
-          { key: 'Scroll',        description: 'Zoom in / out (all panels)' },
-          { key: 'Drag',          description: 'Pan the view (all panels)' },
-          { key: 'Right-drag',    description: 'Box-zoom (all panels)' },
-          { key: 'Panel 1 — file picker', description: 'Load a local image file as BitmapDataLayer' },
-          { key: 'Panel 1 — mapping inputs', description: 'Adjust bitMapping bounds in data space' },
-          { key: 'Panel 2 — LUT handles', description: 'Drag hline handles to adjust level_min / level_max' },
-          { key: 'Panel 2 — colormap', description: 'Switch colormap preset via dropdown' },
-          { key: 'Panel 2 — Auto Level', description: 'Run percentile auto-leveling (2 %–98 %)' },
+          { key: 'Scroll',                   description: 'Zoom in / out' },
+          { key: 'Drag',                     description: 'Pan the view' },
+          { key: 'Right-drag',               description: 'Box-zoom' },
+          { key: 'Tab 1 — file picker',      description: 'Load a local image as BitmapDataLayer' },
+          { key: 'Tab 1 — mapping inputs',   description: 'Adjust bitMapping bounds in data space' },
+          { key: 'Tab 2 — LUT handles',      description: 'Drag hline handles to adjust level_min / level_max' },
+          { key: 'Tab 2 — colormap',         description: 'Switch colormap preset via dropdown' },
+          { key: 'Tab 2 — Auto Level',       description: 'Run percentile auto-leveling (2 %–98 %)' },
         ]}
       />
-    </div>
-  );
-}
-
-// ── Small helper components ───────────────────────────────────────────────────
-
-function PanelHeader({ children }) {
-  return (
-    <div style={{ flexShrink: 0, padding: '4px 12px', background: '#0f0f0f', borderBottom: '1px solid #1e1e1e', fontSize: 12, fontWeight: 700, color: '#aaa', display: 'flex', alignItems: 'center' }}>
-      {children}
     </div>
   );
 }
