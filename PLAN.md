@@ -102,7 +102,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | F27 | Generic BitmapDataLayer | ✅ COMPLETED | feature/F27 | 2026-03-14 |
 | F28 | LUTController + LUTHistogramController | ✅ COMPLETED | feature/F28 | 2026-03-14 |
 | F29 | LUTPanel React Component | ✅ COMPLETED | feature/F29 | 2026-03-14 |
-| F30 | AudioController | 🔲 PENDING | — | — |
+| F30 | AudioController | ✅ COMPLETED | feature/F30 | 2026-03-14 |
 | EX-Spec | Spectrogram V2 Example | 🔲 PENDING | — | — |
 | CLEANUP | Remove Legacy Spectrogram Code | 🔲 PENDING | — | — |
 
@@ -211,60 +211,10 @@ Full spec: [docs/plan-archive.md#f29](docs/plan-archive.md#f29)
 
 ---
 
-### F30 [PENDING] AudioController
-
-**Branch:** `feature/F30`
-**Depends on:** ARCH-F (file location); conceptually independent of F27–F29
-
-**New file:** `src/audio/AudioController.js`
-
-Replaces scattered audio management across `PlaybackController.js`, `FilterController.js`, and `SpectrogramExample.jsx`. `PlaybackController.js` and `FilterController.js` are **not deleted** — kept for backwards compat until CLEANUP.
-
-**Public API:**
-```js
-// Loading
-await audioCtrl.loadFile(arrayBuffer)          // decode via Web Audio API → emit 'loaded'
-audioCtrl.loadBuffer(samples, sampleRate)       // direct Float32Array → emit 'loaded'
-audioCtrl.appendSamples(newSamples)             // streaming append
-
-// Filter — stateless transform function
-audioCtrl.setFilterFn((samples, sr) => Float32Array)
-// Default: null (no filter). Bridge to FilterController:
-//   audioCtrl.setFilterFn((s, sr) => filterCtrl.applyToSamples(s, sr))
-audioCtrl.getFilteredSamples()                  // returns filtered Float32Array (or raw)
-
-// Playback
-audioCtrl.play(offsetSec?)
-audioCtrl.pause()
-audioCtrl.stop()
-audioCtrl.seek(timeSec)
-audioCtrl.get currentTime
-audioCtrl.get duration
-audioCtrl.get isPlaying
-audioCtrl.get sampleRate
-
-// STFT / tile generation
-audioCtrl.computeSTFT({ windowSize, hopSize, windowFn, tileWidthSec })
-// Emits 'tileReady' per tile, then 'stftComplete'
-
-// Streaming
-audioCtrl.setStreamingInterval(ms)              // default 500; appendSamples triggers last-tile recompute
-```
-
-**Events:**
-- `'loaded'` — `{ duration, sampleRate, samples: Float32Array }`
-- `'stateChanged'` — `{ state: 'playing'|'paused'|'stopped' }`
-- `'timeUpdate'` — `{ currentTime }` (~10 Hz during playback)
-- `'tileReady'` — `{ tileIndex, power: Float32Array, width, height, globalMin, globalMax, bounds: [tStart, 0, tEnd, nyquist] }`
-- `'stftComplete'`, `'streamingTick'`
-
-**Filter compatibility:** `FilterController.js` unchanged. `ui/FilterPanel.jsx` continues using it unchanged. Bridge via `setFilterFn`:
-```js
-audioCtrl.setFilterFn((s, sr) => filterCtrl.applyToSamples(s, sr));
-```
-DSP is therefore replaceable (WebAssembly later) without touching FilterPanel or FilterController.
-
-**Verification:** Load file → play/pause/seek. Run STFT → `tileReady` fires per tile with correct `bounds`. Streaming append → last tile re-emits. Build zero errors.
+### F30 [COMPLETED] AudioController
+**Completed:** 2026-03-14 | **Branch:** feature/F30
+Created `src/audio/AudioController.js`: unified audio controller absorbing PlaybackController + STFT/tile logic; `loadFile(arrayBuffer)` / `loadBuffer(samples, sr)` / `appendSamples()`; stateless `setFilterFn` bridge (compatible with FilterController); `play`/`pause`/`stop`/`seek` with `timeUpdate` at ~10 Hz; tiled STFT via `computeSTFT({windowSize, hopSize, windowFn, tileWidthSec})` emitting `tileReady` per tile + `stftComplete`; streaming timer recomputes last tile on `appendSamples`; build zero errors.
+Full spec: [docs/plan-archive.md#f30](docs/plan-archive.md#f30)
 
 ---
 
@@ -336,3 +286,4 @@ ui/FilterPanel.jsx  →  audioCtrl.setFilterFn bridge
 - **2026-03-14 [Claude]**: F27 completed (v7.2) — `BitmapDataLayer.js` and `_buildBitmapFromGrid.js` created; accepts URL/ImageBitmap/TypedArray sources; `bitMapping` exclusive bounds vs origin+scale; per-layer `lutController` duck-typed; gray/rgb/rgba/gray+alpha channel handling; build zero errors. Next: F28 (unblocked).
 - **2026-03-14 [Claude]**: F28 completed (v7.3) — `LUTController.js` (generalizes HistogramLUTController; `setData`/`setSpectrogramData` alias; `version` getter; `levelChanged`/`lutChanged`/`dataChanged` events) and `LUTHistogramController.js` (internal PlotController with `disablePanZoom:true`; SolidPolygonLayer histogram bars; hline LineROIs for level handles; bidirectional LUT↔ROI wiring); `PlotController.disablePanZoom` option added; build zero errors. Next: F29 (unblocked).
 - **2026-03-14 [Claude]**: F29 completed (v7.4) — `ui/LUTPanel.jsx` (fresh component; props: `lutController`/`lutHistCtrl`/`width`/`height`; two raw canvases wired to `lutHistCtrl.init()`; 12 px LUT gradient with ResizeObserver + `lutChanged` listener; colormap select from `LUTController.presetNames`; Auto Level button; level drag via hline ROIs in plot); build zero errors. Next: F30 (unblocked).
+- **2026-03-14 [Claude]**: F30 completed (v7.5) — `src/audio/AudioController.js` (unified audio controller; `loadFile(arrayBuffer)` via Web Audio decodeAudioData + `loadBuffer(samples, sr)` direct + `appendSamples` streaming; stateless `setFilterFn` bridge compatible with FilterController.applyToSamples; play/pause/stop/seek with `timeUpdate` at ~10 Hz; tiled STFT via `computeSTFT({windowSize, hopSize, windowFn, tileWidthSec=30})` emitting `tileReady` per fixed-width tile + `stftComplete`; streaming timer recomputes last tile on each `appendSamples` tick; `destroy()` cleans all timers + AudioContext); build zero errors. Next: EX-Spec (unblocked).

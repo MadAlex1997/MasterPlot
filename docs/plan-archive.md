@@ -4423,3 +4423,73 @@ ctrl.registerDataLayer('heatmap', () =>
 - `setPreset` state is a React display-only mirror of `lutController.state.lutName`; the source of truth is the controller
 
 **Verification:** Colormap dropdown updates gradient strip and connected BitmapDataLayer. Auto Level snaps to 2nd/98th percentile. Build zero errors.
+
+---
+
+## F30
+
+### F30 — AudioController
+
+**Branch:** `feature/F30`
+**Completed:** 2026-03-14
+**Depends on:** ARCH-F (file location); conceptually independent of F27–F29
+
+**New file:** `src/audio/AudioController.js`
+
+Unified audio management controller. Absorbs responsibilities from `PlaybackController.js` (playback state machine) and the STFT/tile logic previously embedded in `SpectrogramExample.jsx`. Both existing files are kept unchanged for backwards compat until CLEANUP.
+
+**Public API:**
+```js
+// Loading
+await audioCtrl.loadFile(arrayBuffer)          // decode via Web Audio API → emit 'loaded'
+await audioCtrl.loadBuffer(samples, sampleRate) // direct Float32Array → emit 'loaded'
+audioCtrl.appendSamples(newSamples)             // streaming append
+
+// Filter — stateless transform function
+audioCtrl.setFilterFn((samples, sr) => Float32Array)
+// Default: null (no filter). Bridge to FilterController:
+//   audioCtrl.setFilterFn((s, sr) => filterCtrl.applyToSamples(s, sr))
+await audioCtrl.getFilteredSamples()            // returns filtered Float32Array (or raw)
+
+// Playback
+await audioCtrl.play(offsetSec?)
+audioCtrl.pause()
+audioCtrl.stop()
+audioCtrl.seek(timeSec)
+audioCtrl.get currentTime   // live position (seconds)
+audioCtrl.get duration      // total duration (seconds)
+audioCtrl.get isPlaying     // boolean
+audioCtrl.get sampleRate    // Hz
+
+// STFT / tile generation
+await audioCtrl.computeSTFT({ windowSize, hopSize, windowFn, tileWidthSec })
+// Emits 'tileReady' per tile, then 'stftComplete'
+
+// Streaming
+audioCtrl.setStreamingInterval(ms)   // default 500; appendSamples triggers last-tile recompute
+
+// Lifecycle
+audioCtrl.destroy()
+```
+
+**Events:**
+- `'loaded'` — `{ duration, sampleRate, samples: Float32Array }`
+- `'stateChanged'` — `{ state: 'playing'|'paused'|'stopped' }`
+- `'timeUpdate'` — `{ currentTime }` (~10 Hz during playback, via setInterval 100 ms)
+- `'tileReady'` — `{ tileIndex, power: Float32Array, width, height, globalMin, globalMax, bounds: [tStart, 0, tEnd, nyquist] }`
+- `'stftComplete'`
+- `'streamingTick'`
+
+**STFT tile strategy (Option B — fixed-width time segments):**
+- `tileWidthSec` seconds of STFT frames per tile (default 30 s)
+- `computeSTFT` loops over tiles, calling internal `_computeTileSTFT` per tile (synchronous radix-2 FFT via `fft.js` + `fft-windowing`)
+- `appendSamples` sets `_pendingAppend = true` and starts the streaming timer if `_stftConfig` is set
+- Streaming timer fires every `_streamingInterval` ms → calls `_recomputeLastTile()` (async, applies filterFn) → emits `tileReady` for last tile index with updated bounds
+
+**Filter compatibility:** `FilterController.js` unchanged; bridge:
+```js
+audioCtrl.setFilterFn((s, sr) => filterCtrl.applyToSamples(s, sr));
+```
+DSP is replaceable (WebAssembly etc.) without touching FilterPanel or FilterController.
+
+**Verification:** Load file → play/pause/seek. Run STFT → `tileReady` fires per tile with correct `bounds`. Streaming append → last tile re-emits. `destroy()` clears all timers. Build zero errors.
