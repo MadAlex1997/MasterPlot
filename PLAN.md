@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 6.7
-**Last Updated:** 2026-03-07
-**Status:** DOC4 complete 2026-03-07. All documentation pages done.
+**Plan Version:** 7.0
+**Last Updated:** 2026-03-14
+**Status:** Phase 4 (Bitmap/LUT Refactor) added 2026-03-14. ARCH-F through CLEANUP pending.
 
 ---
 
@@ -98,6 +98,13 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | DOC3 | Documentation: API Reference            | ✅ COMPLETED | feature/DOC3 | 2026-03-07 |
 | DOC4 | Documentation: ROI System Deep-Dive     | ✅ COMPLETED | feature/DOC4 | 2026-03-07 |
 | DOC5 | Documentation: PlotController Deep-Dive | ✅ COMPLETED | feature/DOC5 | 2026-03-07 |
+| ARCH-F | Project Restructure (src/ purity) | ✅ COMPLETED | feature/ARCH-F | 2026-03-14 |
+| F27 | Generic BitmapDataLayer | 🔲 PENDING | — | — |
+| F28 | LUTController + LUTHistogramController | 🔲 PENDING | — | — |
+| F29 | LUTPanel React Component | 🔲 PENDING | — | — |
+| F30 | AudioController | 🔲 PENDING | — | — |
+| EX-Spec | Spectrogram V2 Example | 🔲 PENDING | — | — |
+| CLEANUP | Remove Legacy Spectrogram Code | 🔲 PENDING | — | — |
 
 ---
 
@@ -430,8 +437,292 @@ Full spec: [docs/plan-archive.md#ex9](docs/plan-archive.md#ex9)
 **Mandatory implementation order:**
 
 ```
-F25  (independent)
+ARCH-F → F27 → F28 → F29 → F30 → EX-Spec → CLEANUP
 ```
+
+---
+
+## Phase 4 — Bitmap / LUT Refactor
+
+**Motivation:** `SpectrogramLayer` bundles STFT computation, image building, LUT lookup, and bitmap rendering into one monolithic layer, and `SpectrogramExample` bypasses `PlotController` entirely (two raw Deck instances). The goal is to decompose these into generic composable primitives so any 2D image or numeric array (heatmaps, image segments, tile layers, spectrograms from any source) can be displayed through `PlotController` with a shared LUT histogram panel.
+
+---
+
+### ARCH-F [COMPLETED] Project Restructure (src/ purity)
+**Completed:** 2026-03-14 | **Branch:** feature/ARCH-F
+Moved 9 webpack entry JS files from `src/` to `examples/src/`; moved `FilterPanel.jsx` and `HistogramLUTPanel.jsx` from `src/components/` to `ui/`; updated all import paths and `webpack.config.js` entries; `src/components/` now contains only `PlotCanvas.jsx`; build passes zero errors.
+Full spec: [docs/plan-archive.md#arch-f](docs/plan-archive.md#arch-f)
+
+---
+
+### F27 [PENDING] Generic BitmapDataLayer
+
+**Branch:** `feature/F27`
+**Depends on:** ARCH-F
+
+**New files:**
+- `src/plot/layers/BitmapDataLayer.js` — deck.gl CompositeLayer
+- `src/plot/layers/_buildBitmapFromGrid.js` — shared CPU colorization util (extracted from `SpectrogramLayer.buildImage`)
+
+**Goal:** A deck.gl `CompositeLayer` that accepts any 2D image or numeric array and renders it as a spatially positioned `BitmapLayer`. The STFT/spectrogram pipeline no longer lives inside a layer.
+
+**Props:**
+```js
+{
+  id,
+  source,          // URL | ImageBitmap | ImageData | HTMLCanvasElement | TypedArray
+  bitMapping,      // EXCLUSIVE: { bounds:[l,b,r,t] } OR { origin:[x0,y0], scale:[dx,dy] }
+  channels,        // 'gray'|'rgb'|'rgba'|'gray+alpha'  (default: 'rgba')
+  dtype,           // 'float32'|'float64'|'uint8'|'uint16'|'int16'|'int32'  (default: 'uint8')
+  lutController,   // LUTController | null — applies LUT to single-channel data
+  dataTrigger,     // monotonic int — forces re-upload on increment
+  colorTrigger,    // monotonic int — forces recolorization only (no re-upload)
+  maxArrayPixels,  // size cap for TypedArray sources (default: 16_777_216 = 4096×4096)
+}
+```
+
+**`bitMapping` — mutually exclusive, calculates the missing form:**
+- `bounds → origin = [l, b]`, `scale = [(r-l)/width, (t-b)/height]`
+- `origin+scale → bounds = [x0, y0, x0+dx*width, y0+dy*height]`
+- Throws if both or neither are provided
+
+**Source resolution (`_resolveSource`):**
+
+| source type | channels | dtype | action |
+|---|---|---|---|
+| URL string | any | any | pass directly to BitmapLayer (deck.gl fetches) |
+| ImageBitmap / ImageData / HTMLCanvasElement | any | any | pass directly |
+| TypedArray | 'rgba' | 'uint8' | reinterpret as RGBA ImageData |
+| TypedArray | 'gray' | float or int | CPU colorize via LUTController (Viridis fallback) → ImageBitmap |
+| TypedArray | 'rgb' | 'uint8' | build ImageData with alpha=255 |
+| TypedArray | 'gray+alpha' | 'uint8' | build ImageData |
+
+- If `width * height > maxArrayPixels` → `console.warn`, return `[]`
+- Image cached in layer state; rebuilt only when `dataTrigger` or `colorTrigger` changes
+
+**Multiple `BitmapDataLayer` registrations on one `PlotController` are supported; each carries its own `lutController` reference.**
+
+**Usage:**
+```js
+myLutCtrl.on('levelChanged', () => { colorTriggerRef.current++; ctrl.markDirty(); });
+
+ctrl.registerDataLayer('heatmap', () =>
+  new BitmapDataLayer({
+    source: myFloatArray,
+    bitMapping: { bounds: [0, 0, 100, 50] },
+    channels: 'gray',
+    dtype: 'float32',
+    lutController: myLutCtrl,
+    dataTrigger: dataTriggerRef.current,
+    colorTrigger: colorTriggerRef.current,
+  })
+);
+```
+
+**Verification:** Load a URL image, a Float32Array heatmap, and an RGBA Uint8Array in a single PlotController. Adjust LUT levels; heatmap recolorizes. Build zero errors.
+
+---
+
+### F28 [PENDING] LUTController + LUTHistogramController
+
+**Branch:** `feature/F28-F29`
+**Depends on:** F27
+
+**New files:**
+- `src/plot/layers/LUTController.js`
+- `src/plot/LUTHistogramController.js`
+
+**Modified:** `src/plot/PlotController.js` — add `disablePanZoom` constructor option
+
+---
+
+#### F28a — LUTController
+
+Generalization of `HistogramLUTController.js`. All existing behavior preserved; naming widened.
+
+**Changes from `HistogramLUTController`:**
+- `setData(flatArray, globalMin, globalMax)` replaces `setSpectrogramData` (old name kept as alias until CLEANUP)
+- `version` getter — monotonic counter incremented on every `levelChanged` or `lutChanged`; use as `colorTrigger`
+- Event `dataChanged` emitted after `setData` (replaces `histogramReady`)
+- All 6 LUT presets, `autoLevel`, `getLUTArray`, `setLevels`, `setLUT` unchanged
+
+**Events:** `levelChanged`, `lutChanged`, `dataChanged`
+
+---
+
+#### F28b — LUTHistogramController
+
+Owns an internal `PlotController` configured as a read-only histogram viewer. Backing controller for `LUTPanel.jsx`.
+
+**Constructor:** `new LUTHistogramController({ lutController, bins = 256 })`
+
+**Internal `PlotController` configuration:**
+- `disableDefaultDataLayer: true`
+- `disablePanZoom: true` (new opt — see below)
+- `xDomain: [globalMin, globalMax]` — value axis, updated on `dataChanged`
+- `yDomain: [0, maxCount]` — count axis, auto-scaled to histogram peak
+- Registers `'histogram-bars'` layer using `SolidPolygonLayer` — one rectangle per bin
+- `ROIController` holds two `LineROI` objects in `hline` mode for `level_min` and `level_max`
+
+**Public API:** `init(webglCanvas, axisCanvas)`, `destroy()`, `get plotController()`
+
+**Event wiring:**
+- `lutController.on('dataChanged')` → recompute bins → `markDirty()`
+- `lutController.on('levelChanged')` → move hlines → `markDirty()`
+- HLine `roiUpdated` (drag) → `lutController.setLevels(min, max)` → `levelChanged` → connected BitmapDataLayer bumps `colorTrigger`
+- HLine `roiFinalized` (mouseUp) → same; this is the commit event (deferred server-side requests use this)
+
+**`PlotController.disablePanZoom` option:**
+- `this._disablePanZoom = opts.disablePanZoom ?? false` in constructor
+- In `init()`: skip `_onWheel` listener when flag set
+- In `_onMouseDown`: skip pan/right-drag-zoom path when flag set; ROI hit-test runs normally
+
+**Verification:** Drag hlines → connected BitmapDataLayer recolorizes in real-time. `autoLevel()` moves hlines. Histogram bars reflect actual data distribution.
+
+---
+
+### F29 [PENDING] LUTPanel React Component
+
+**Branch:** `feature/F28-F29` (same branch as F28)
+**Depends on:** F28
+
+**New file:** `ui/LUTPanel.jsx` — fresh component, not derived from `HistogramLUTPanel.jsx`
+
+**Props:** `lutController`, `lutHistCtrl`, `width` (default 160), `height` (default '100%')
+
+**Layout:**
+```
+┌──────────────────────────┬──┐
+│  PlotCanvas              │  │
+│  (histogram bars +       │LU│
+│   hline level handles)   │T │
+│                          │gd│
+├──────────────────────────┤  │
+│  [Colormap ▼] [Auto]     │  │
+└──────────────────────────┴──┘
+```
+
+- Left: `PlotCanvas` bound to `lutHistCtrl.plotController` via `onInit`
+- Right strip: 12 px LUT gradient canvas (2D), redraws on `lutController.on('lutChanged')`
+- Bottom: colormap `<select>` + "Auto Level" `<button>`
+- Level adjustment is via hline LineROIs inside the plot — no React drag handlers needed
+
+**Verification:** Colormap dropdown updates gradient strip and connected BitmapDataLayer. Auto Level snaps to 2nd/98th percentile. Build zero errors.
+
+---
+
+### F30 [PENDING] AudioController
+
+**Branch:** `feature/F30`
+**Depends on:** ARCH-F (file location); conceptually independent of F27–F29
+
+**New file:** `src/audio/AudioController.js`
+
+Replaces scattered audio management across `PlaybackController.js`, `FilterController.js`, and `SpectrogramExample.jsx`. `PlaybackController.js` and `FilterController.js` are **not deleted** — kept for backwards compat until CLEANUP.
+
+**Public API:**
+```js
+// Loading
+await audioCtrl.loadFile(arrayBuffer)          // decode via Web Audio API → emit 'loaded'
+audioCtrl.loadBuffer(samples, sampleRate)       // direct Float32Array → emit 'loaded'
+audioCtrl.appendSamples(newSamples)             // streaming append
+
+// Filter — stateless transform function
+audioCtrl.setFilterFn((samples, sr) => Float32Array)
+// Default: null (no filter). Bridge to FilterController:
+//   audioCtrl.setFilterFn((s, sr) => filterCtrl.applyToSamples(s, sr))
+audioCtrl.getFilteredSamples()                  // returns filtered Float32Array (or raw)
+
+// Playback
+audioCtrl.play(offsetSec?)
+audioCtrl.pause()
+audioCtrl.stop()
+audioCtrl.seek(timeSec)
+audioCtrl.get currentTime
+audioCtrl.get duration
+audioCtrl.get isPlaying
+audioCtrl.get sampleRate
+
+// STFT / tile generation
+audioCtrl.computeSTFT({ windowSize, hopSize, windowFn, tileWidthSec })
+// Emits 'tileReady' per tile, then 'stftComplete'
+
+// Streaming
+audioCtrl.setStreamingInterval(ms)              // default 500; appendSamples triggers last-tile recompute
+```
+
+**Events:**
+- `'loaded'` — `{ duration, sampleRate, samples: Float32Array }`
+- `'stateChanged'` — `{ state: 'playing'|'paused'|'stopped' }`
+- `'timeUpdate'` — `{ currentTime }` (~10 Hz during playback)
+- `'tileReady'` — `{ tileIndex, power: Float32Array, width, height, globalMin, globalMax, bounds: [tStart, 0, tEnd, nyquist] }`
+- `'stftComplete'`, `'streamingTick'`
+
+**Filter compatibility:** `FilterController.js` unchanged. `ui/FilterPanel.jsx` continues using it unchanged. Bridge via `setFilterFn`:
+```js
+audioCtrl.setFilterFn((s, sr) => filterCtrl.applyToSamples(s, sr));
+```
+DSP is therefore replaceable (WebAssembly later) without touching FilterPanel or FilterController.
+
+**Verification:** Load file → play/pause/seek. Run STFT → `tileReady` fires per tile with correct `bounds`. Streaming append → last tile re-emits. Build zero errors.
+
+---
+
+### EX-Spec [PENDING] Spectrogram V2 Example
+
+**Branch:** `feature/EX-Spec`
+**Depends on:** F27, F28, F29, F30
+
+**New files:** `examples/SpectrogramV2Example.jsx`, `examples/src/spectrogramV2.js`, `public/spectrogram-v2.html`
+
+**Architecture:**
+```
+AudioController
+  ├── 'tileReady'   → registerDataLayer('tile-N') with BitmapDataLayer per tile
+  └── 'timeUpdate'  → playhead LineROI position update → ctrl.markDirty()
+
+PlotController (spectrogram panel)
+  ├── disableDefaultDataLayer: true
+  ├── registerDataLayer('tile-0') → BitmapDataLayer { bounds:[0,0,t1,nyquist], lutController }
+  ├── registerDataLayer('tile-N') → BitmapDataLayer { bounds:[tN,0,tEnd,nyquist], lutController }
+  └── ROIController — user-drawn RectROIs for labeling
+
+LUTController  →  levelChanged → colorTriggerRef++ → ctrl.markDirty()
+LUTHistogramController + ui/LUTPanel.jsx (sidebar)
+PlotController (waveform)  →  SignalStore pattern (existing)
+ui/FilterPanel.jsx  →  audioCtrl.setFilterFn bridge
+```
+
+**Tile strategy (Option B — fixed-width time segments):**
+- Each tile = `tileWidthSec` seconds of STFT frames (default 30 s)
+- `AudioController` emits `'tileReady'` per tile; each registered as `'tile-N'` with matching `bounds`
+- Streaming: on `'streamingTick'`, last tile's `dataTrigger` bumped → image re-resolved
+- Trailing-edge artifact fix: last tile recomputed in full when new audio arrives
+
+**Hub page:** Add "Spectrogram V2" card. Keep existing "Spectrogram" card with "(legacy)" suffix until CLEANUP.
+
+**Verification:** Load audio → tiles appear. Adjust LUT → colors update in real-time. Play → playhead moves. Draw RectROI → overlays spectrogram. Waveform x-axis synced.
+
+---
+
+### CLEANUP [PENDING] Remove Legacy Spectrogram Code
+
+**Branch:** `feature/cleanup-old-spectrogram`
+**Depends on:** EX-Spec (verified working side-by-side)
+
+**Delete:**
+- `src/plot/layers/SpectrogramLayer.js`
+- `src/plot/layers/HistogramLUTController.js`
+- `ui/HistogramLUTPanel.jsx`
+- `examples/SpectrogramExample.jsx`
+- `examples/SpectrogramPopup.jsx`
+- `examples/src/spectrogram.js`, `examples/src/spectrogram-popup.js`
+- `public/spectrogram.html`, `public/spectrogram-popup.html`
+- Webpack entries: `spectrogram`, `spectrogram-popup`
+
+**Update:** HubPage (remove legacy card), README, prompt.md (remove SpectrogramLayer/HistogramLUTController from project structure diagram), PLAN.md (mark ARCH-F through CLEANUP as COMPLETED).
+
+**Verification:** `npm run build` zero errors. All remaining pages work. `grep -r SpectrogramLayer src/` returns nothing.
 
 ---
 
@@ -494,6 +785,7 @@ Full spec: [docs/plan-archive.md#ex10](docs/plan-archive.md#ex10)
 - **2026-03-07 [Claude]**: DOC4 completed (v6.7) — `RoiDeepDivePage.jsx` replaced placeholder with 6 sections: Mermaid classDiagram (ROIBase → LinearRegion/RectROI/LineROI with property annotations); creation modes table (key/clicks/auto-parent rules); LineROI modes table (all 6 modes with ASCII orientation sketches); ConstraintEngine drag + mouseup sequence diagrams; versioning table (what does/doesn't trigger bumpVersion); serialization/external-sync round-trip code (serializeAll output shape, updateFromExternal version-gating, deserializeAll, full example). Build passes zero errors. All DOC pages complete.
 - **2026-03-07 [Claude]**: DOC5 added as PENDING (v6.8) — PlotController Deep-Dive: 10-section internal walkthrough (init pipeline, two-canvas model, render loop + dirty-flag table, layer registry, three zoom modes + restore-and-reapply pattern, coordinate systems + Y-axis inversion, data flow appendData→GPU, ownership model, events reference). Adds one new component `PlotControllerDeepDivePage.jsx`; updates `DocsPage.jsx` sidebar and `HubPage.jsx`. No library source changes.
 - **2026-03-07 [Claude]**: DOC5 completed (v6.9) — `PlotControllerDeepDivePage.jsx` created; NavSidebar gains 5th entry 'PlotController'; DocsPage renders the new page; HubPage doc card group gains a 5th card. All 10 spec sections implemented with accurate source-derived details.
+- **2026-03-14 [Claude]**: Phase 4 (Bitmap/LUT Refactor) added as PENDING (v7.0) — ARCH-F through CLEANUP. Motivation: decompose monolithic SpectrogramLayer into generic BitmapDataLayer + LUTController + LUTHistogramController; give SpectrogramExample full PlotController integration via new AudioController; enable any 2D image/array source (heatmaps, image labels, non-geospatial tile layers, spectrograms) to use the LUT histogram system. Key decisions: LUT histogram uses full PlotController internally with HLine LineROIs as level handles; entry-point JS moves to examples/src/; non-library React UI moves to ui/; filter interface uses stateless fn bridge (AudioController.setFilterFn) so DSP stays replaceable; old spectrogram kept until EX-Spec verified then deleted in CLEANUP. Mandatory order: ARCH-F → F27 → F28 → F29 → F30 → EX-Spec → CLEANUP.
 
 ---
 
@@ -541,3 +833,4 @@ Full spec: [docs/plan-archive.md#doc4](docs/plan-archive.md#doc4)
 **Completed:** 2026-03-07 | **Branch:** feature/DOC5
 `PlotControllerDeepDivePage.jsx` created with 10 sections (init pipeline sequence diagram, two-canvas model, dirty-flag render loop table + sequence diagram, layer registry code, three zoom modes with restore-and-reapply code, four-space coordinate table + y-axis inversion, appendData-to-GPU flowchart, ownership flag table, full events reference table); NavSidebar, DocsPage, and HubPage updated.
 Full spec: [docs/plan-archive.md#doc5](docs/plan-archive.md#doc5)
+- **2026-03-14 [Claude]**: ARCH-F completed (v7.1) — 9 webpack entry JS files moved from `src/` to `examples/src/`; `FilterPanel.jsx` and `HistogramLUTPanel.jsx` moved from `src/components/` to `ui/`; all internal import paths and webpack.config.js entry paths updated; `src/components/` now contains only `PlotCanvas.jsx`; build passes zero errors. Next: F27 (unblocked).

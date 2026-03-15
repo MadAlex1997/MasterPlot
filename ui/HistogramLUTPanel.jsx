@@ -14,7 +14,7 @@
  */
 
 import React, { useRef, useEffect, useState } from 'react';
-import { HistogramLUTController } from '../plot/layers/HistogramLUTController.js';
+import { HistogramLUTController } from '../src/plot/layers/HistogramLUTController.js';
 
 export default function HistogramLUTPanel({ controller, width = 140 }) {
   const canvasRef = useRef(null);

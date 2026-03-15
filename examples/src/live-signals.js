@@ -1,6 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import SharedDataExample from '../examples/SharedDataExample';
+import LiveSignalsExample from '../LiveSignalsExample';
 
 const root = createRoot(document.getElementById('root'));
-root.render(<SharedDataExample />);
+root.render(<LiveSignalsExample />);

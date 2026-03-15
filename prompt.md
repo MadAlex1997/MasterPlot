@@ -37,6 +37,14 @@ All implementation work follows the plan in `PLAN.md`. **Read that file first be
    - Don't add features that aren't in the plan
    - If you finish early, ask before moving to the next phase
 
+5a. **Enforce source directory rules:**
+   - `src/` — **library code only**: controllers, layers, stores, utilities that ship as part of the engine. No app glue, no entry points, no example-specific files.
+   - `src/components/` — **library React API**: React components that are part of the engine's public surface (e.g. `PlotCanvas.jsx`, or a future multi-plot layout component that does significant cross-controller wiring). **Ask the user before adding any new file here** — the test is "does this belong in the library itself, or is it a convenience wrapper a user could reasonably write themselves?"
+   - `examples/` — **example page components and their entry points**: `*.jsx` page components go directly in `examples/`; webpack entry JS files go in `examples/src/`.
+   - `ui/` — **optional React UI extensions**: convenience wrappers for built-in controller interfaces (e.g. `LUTPanel.jsx`, `FilterPanel.jsx`). These are provided as a courtesy — users are expected to build their own UI on top of the controller events. Do NOT put these in `src/`.
+   - `public/` — HTML templates only (unchanged).
+   - Violating these boundaries is a plan deviation — stop and ask before adding files to the wrong directory.
+
 6. **Before starting any implementation, create a new git branch:**
    - Run: `git checkout -b feature/<step-ids>` (e.g., `git checkout -b feature/F4-F5-F6`)
    - All commits for this work go on the feature branch — do NOT commit directly to main/master
@@ -113,47 +121,100 @@ Later (unscheduled):
 
 # Project Structure
 
+**Directory ownership rules (enforced — see agent rule 5a):**
+- `src/` = library code only
+- `src/components/` = library React API (ask before adding — see rule 5a)
+- `examples/` = example page JSX components
+- `examples/src/` = webpack entry JS files (one per page)
+- `ui/` = optional React UI convenience wrappers (not library code)
+- `public/` = HTML templates
+
 ```
-src/
+src/                             ← LIBRARY CODE ONLY
   audio/
-    FilterController.js          (F13 — offline biquad DSP)
-    PlaybackController.js        (F12 — Web Audio playback + seek)
+    AudioController.js           (F30 — audio load/playback/STFT tiles/streaming)
+    FilterController.js          (F13 — offline biquad DSP; kept for compat)
+    PlaybackController.js        (F12 — Web Audio playback; kept for compat)
   components/
-    FilterPanel.jsx              (F13 — filter UI + frequency response canvas)
-    HistogramLUTPanel.jsx        (F11 — amplitude remapping panel)
     PlotCanvas.jsx               (React wrapper for PlotController)
-  integration/                   (F18 — PENDING; adapter contracts)
-    ExternalDataAdapter.js
+    ⚠️  Ask user before adding any new file here — see agent rule 5a
+  integration/
+    ExternalDataAdapter.js       (F18 — adapter contract)
     ExternalROIAdapter.js
     MockDataAdapter.js
     MockROIAdapter.js
   plot/
-    DataStore.js                 (GPU typed-array buffers; F16 adds rolling ring buffer)
-    LinePlotController.js        (F8 — line/path plot variant)
+    DataStore.js                 (GPU typed-array buffers; rolling ring buffer F16)
+    LUTHistogramController.js    (F28 — PlotController-backed histogram for LUT panel)
     PlotController.js            (main controller: zoom, pan, ROI, layers, render loop)
-    PlotDataView.js              (F15 — PENDING; lazy derived data view)
+    PlotDataView.js              (F15 — lazy derived data view)
     ViewportController.js        (canvas ↔ data coordinate transforms)
     ROI/
       ConstraintEngine.js
       LinearRegion.js
+      LineROI.js
       RectROI.js
-      ROIBase.js                 (F14 adds: version, updatedAt, domain, bumpVersion())
-      ROIController.js           (F14 adds: serializeAll, deserializeAll, updateFromExternal)
+      ROIBase.js
+      ROIController.js
     axes/
       AxisController.js
       AxisRenderer.js
     layers/
-      HistogramLUTController.js  (F11 — LUT presets + histogram computation)
+      BitmapDataLayer.js         (F27 — generic bitmap layer; URL/array/image sources)
+      _buildBitmapFromGrid.js    (F27 — shared CPU colorization util)
+      HistogramLUTController.js  (F11/legacy — removed in CLEANUP; use LUTController)
       LineLayer.js
+      LUTController.js           (F28 — generalized colormap + level controller)
+      PlotLayer.js
       ROILayer.js
       ScatterLayer.js
-      SpectrogramLayer.js        (F9 — STFT + BitmapLayer)
-examples/
-  ExampleApp.jsx                 (scatter plot demo)
+      SignalDataLayer.js
+      SpectrogramLayer.js        (F9/legacy — removed in CLEANUP; use BitmapDataLayer)
+      TraceGroup.js
+  popup/
+    PopupWindowManager.js
+    usePopupChannel.js
+
+examples/                        ← EXAMPLE PAGE COMPONENTS
+  src/                           ← webpack entry JS files (one per HTML page)
+    example.js
+    docs.js
+    index.js
+    live-signals.js
+    multi-sensor.js
+    shared-data.js
+    spectrogram.js               (legacy — removed in CLEANUP)
+    spectrogram-popup.js         (legacy — removed in CLEANUP)
+    spectrogramV2.js             (EX-Spec)
+  docs/                          ← documentation SPA page components
+    shared/
+      CodeBlock.jsx
+      MermaidDiagram.jsx
+      NavSidebar.jsx
+    ApiReferencePage.jsx
+    ArchitecturePage.jsx
+    GettingStartedPage.jsx
+    PlotControllerDeepDivePage.jsx
+    RoiDeepDivePage.jsx
+  DocsPage.jsx
+  ExampleApp.jsx
   HubPage.jsx                    (links all demos — update after every feature)
-  LineExample.jsx                (F8 — random-walk line demo)
-  SharedDataExample.jsx          (F17 — PENDING; multi-plot shared DataStore demo)
-  SpectrogramExample.jsx         (F9–F13 — audio spectrogram demo)
+  LiveSignalsExample.jsx
+  MultiSensorExample.jsx
+  SeismographyExample.jsx
+  SharedDataExample.jsx
+  SpectrogramExample.jsx         (legacy — removed in CLEANUP)
+  SpectrogramPopup.jsx           (legacy — removed in CLEANUP)
+  SpectrogramV2Example.jsx       (EX-Spec)
+
+ui/                              ← OPTIONAL REACT UI EXTENSIONS (not library code)
+  FilterPanel.jsx                (F13 — filter UI; users may replace with their own)
+  HistogramLUTPanel.jsx          (F11/legacy — removed in CLEANUP; use LUTPanel)
+  LUTPanel.jsx                   (F29 — LUT histogram + colormap panel)
+
+public/                          ← HTML TEMPLATES
+  *.html
+
 docs/
   plan-archive.md                (full specs of all completed features; append-only)
 ```
@@ -524,4 +585,13 @@ Provide a complete example demonstrating:
 - ✅ EX4: Scatter Performance Dropdown (10k–10M points)
 - ✅ EX5: Geophysics / Seismography Example
 - ✅ EX6: ROI Table Double-Click Selection (ExampleApp.jsx only)
+
+**Phase 4 (Bitmap / LUT Refactor) — IN PROGRESS**
+- 🔲 ARCH-F: Project Restructure — `src/` purity, `examples/src/` entry points, `ui/` non-library React
+- 🔲 F27: Generic BitmapDataLayer (URL / array / image; `bitMapping`; `channels` + `dtype`)
+- 🔲 F28: LUTController + LUTHistogramController (PlotController-backed histogram; HLine ROI handles)
+- 🔲 F29: LUTPanel React component (fresh; in `ui/`)
+- 🔲 F30: AudioController (absorbs playback + sample mgmt; stateless `setFilterFn` bridge; STFT tiles)
+- 🔲 EX-Spec: Spectrogram V2 Example (PlotController + BitmapDataLayer + AudioController + LUTPanel)
+- 🔲 CLEANUP: Delete legacy SpectrogramLayer, HistogramLUTController, old spectrogram example
 

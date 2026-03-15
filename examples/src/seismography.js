@@ -1,6 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import DocsPage from '../examples/DocsPage';
+import SeismographyExample from '../SeismographyExample';
 
 const root = createRoot(document.getElementById('root'));
-root.render(<DocsPage />);
+root.render(<SeismographyExample />);

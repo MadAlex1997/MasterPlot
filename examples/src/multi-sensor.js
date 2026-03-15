@@ -1,6 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import SpectrogramPopup from '../examples/SpectrogramPopup';
+import MultiSensorExample from '../MultiSensorExample';
 
 const root = createRoot(document.getElementById('root'));
-root.render(<SpectrogramPopup />);
+root.render(<MultiSensorExample />);

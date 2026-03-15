@@ -36,7 +36,7 @@ import { AxisRenderer }          from '../src/plot/axes/AxisRenderer.js';
 import { SpectrogramLayer }      from '../src/plot/layers/SpectrogramLayer.js';
 import { buildLineLayer }        from '../src/plot/layers/LineLayer.js';
 import { HistogramLUTController } from '../src/plot/layers/HistogramLUTController.js';
-import HistogramLUTPanel         from '../src/components/HistogramLUTPanel.jsx';
+import HistogramLUTPanel         from '../ui/HistogramLUTPanel.jsx';
 import { PlaybackController }    from '../src/audio/PlaybackController.js';
 import { FilterController }      from '../src/audio/FilterController.js';
 import { usePopupChannel }       from '../src/popup/usePopupChannel.js';

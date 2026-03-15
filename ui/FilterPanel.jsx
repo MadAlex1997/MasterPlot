@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { FilterController } from '../audio/FilterController.js';
+import { FilterController } from '../src/audio/FilterController.js';
 
 export default function FilterPanel({ controller, sampleRate = 44100, onApply, applying = false }) {
   const canvasRef = useRef(null);

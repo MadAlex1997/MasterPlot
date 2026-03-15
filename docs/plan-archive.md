@@ -3825,3 +3825,41 @@ examples/docs/RoiDeepDivePage.jsx      placeholder <section> (content added in D
 6. **Serialization & external sync** — annotated `serializeAll()` output JSON example; `updateFromExternal()` version-gating table (3 rows: accepted/rejected/id-not-found); full round-trip code sample (serialize → localStorage → deserialize → updateFromExternal with version+1); warning callout on version discipline
 
 **Build result:** Build passes zero errors.
+
+---
+
+## ARCH-F
+
+### ARCH-F [COMPLETED] Project Restructure (src/ purity)
+**Completed:** 2026-03-14 | **Branch:** feature/ARCH-F
+
+**Goal:** `src/` contains only library code. Entry-point JS files and non-library React UI components move out.
+
+**File moves:**
+
+| From | To |
+|---|---|
+| `src/example.js` | `examples/src/example.js` |
+| `src/docs.js` | `examples/src/docs.js` |
+| `src/spectrogram.js` | `examples/src/spectrogram.js` |
+| `src/spectrogram-popup.js` | `examples/src/spectrogram-popup.js` |
+| `src/live-signals.js` | `examples/src/live-signals.js` |
+| `src/multi-sensor.js` | `examples/src/multi-sensor.js` |
+| `src/shared-data.js` | `examples/src/shared-data.js` |
+| `src/index.js` | `examples/src/index.js` |
+| `src/seismography.js` | `examples/src/seismography.js` |
+| `src/components/FilterPanel.jsx` | `ui/FilterPanel.jsx` |
+| `src/components/HistogramLUTPanel.jsx` | `ui/HistogramLUTPanel.jsx` |
+
+`src/components/PlotCanvas.jsx` **stays** — it is library API code.
+
+**`webpack.config.js`:** All `entry` paths updated from `./src/X.js` → `./examples/src/X.js`.
+
+**Import path updates:**
+- Each moved entry JS: `'../examples/X'` → `'../X'`
+- `ui/FilterPanel.jsx`: `'../audio/FilterController.js'` → `'../src/audio/FilterController.js'`
+- `ui/HistogramLUTPanel.jsx`: `'../plot/layers/HistogramLUTController.js'` → `'../src/plot/layers/HistogramLUTController.js'`
+- `examples/SpectrogramExample.jsx`: `'../src/components/HistogramLUTPanel.jsx'` → `'../ui/HistogramLUTPanel.jsx'`
+- `examples/SpectrogramPopup.jsx`: `'../src/components/FilterPanel.jsx'` → `'../ui/FilterPanel.jsx'`
+
+**Verification:** `npm run build` passes zero errors.

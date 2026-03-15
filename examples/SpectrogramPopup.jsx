@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import FilterPanel from '../src/components/FilterPanel.jsx';
+import FilterPanel from '../ui/FilterPanel.jsx';
 import { FilterController } from '../src/audio/FilterController.js';
 
 /**

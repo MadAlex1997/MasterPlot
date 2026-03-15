@@ -8,15 +8,15 @@ module.exports = (env, argv) => {
   return {
     // Multi-entry: one bundle per example page
     entry: {
-      main:            './src/index.js',
-      example:         './src/example.js',
-      spectrogram:     './src/spectrogram.js',
-      'live-signals':  './src/live-signals.js',
-      'shared-data':   './src/shared-data.js',
-      seismography:    './src/seismography.js',
-      'multi-sensor':        './src/multi-sensor.js',
-      'spectrogram-popup':   './src/spectrogram-popup.js',
-      docs:                  './src/docs.js',
+      main:            './examples/src/index.js',
+      example:         './examples/src/example.js',
+      spectrogram:     './examples/src/spectrogram.js',
+      'live-signals':  './examples/src/live-signals.js',
+      'shared-data':   './examples/src/shared-data.js',
+      seismography:    './examples/src/seismography.js',
+      'multi-sensor':        './examples/src/multi-sensor.js',
+      'spectrogram-popup':   './examples/src/spectrogram-popup.js',
+      docs:                  './examples/src/docs.js',
     },
     output: {
       path: path.resolve(__dirname, 'dist'),

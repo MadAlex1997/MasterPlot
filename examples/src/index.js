@@ -1,6 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import MultiSensorExample from '../examples/MultiSensorExample';
+import HubPage from '../HubPage';
 
 const root = createRoot(document.getElementById('root'));
-root.render(<MultiSensorExample />);
+root.render(<HubPage />);

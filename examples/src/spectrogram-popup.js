@@ -1,6 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import LiveSignalsExample from '../examples/LiveSignalsExample';
+import SpectrogramPopup from '../SpectrogramPopup';
 
 const root = createRoot(document.getElementById('root'));
-root.render(<LiveSignalsExample />);
+root.render(<SpectrogramPopup />);
