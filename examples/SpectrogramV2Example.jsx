@@ -44,10 +44,10 @@ const TILE_W_SEC    = 30;     // seconds per STFT tile
 
 const PRESETS = [
   { label: '— load preset —',  path: null },
-  { label: 'bird',              path: '/sounds/city_bird_sound_black_bird_ZU0_YdN.wav' },
-  { label: 'ringdove + siren',  path: '/sounds/city_ringdove_with_huma_whistle_and_car_siren_sound_5bn_dzC.wav' },
-  { label: 'plane 1',           path: '/sounds/plane1.wav' },
-  { label: 'plane 2',           path: '/sounds/plane2.wav' },
+  { label: 'bird',              path: 'sounds/city_bird_sound_black_bird_ZU0_YdN.wav' },
+  { label: 'ringdove + siren',  path: 'sounds/city_ringdove_with_huma_whistle_and_car_siren_sound_5bn_dzC.wav' },
+  { label: 'plane 1',           path: 'sounds/plane1.wav' },
+  { label: 'plane 2',           path: 'sounds/plane2.wav' },
 ];
 
 const WINDOW_FNS   = ['hann', 'hamming', 'blackman', 'rectangular'];
