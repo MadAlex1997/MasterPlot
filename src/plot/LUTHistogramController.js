@@ -71,6 +71,7 @@ export class LUTHistogramController {
       orientation: 'horizontal',
       mode:        'hline',
       position:    level_min,
+      flags:       { deletable: false },
     });
     this._hlineMin.bumpVersion();
 
@@ -78,6 +79,7 @@ export class LUTHistogramController {
       orientation: 'horizontal',
       mode:        'hline',
       position:    level_max,
+      flags:       { deletable: false },
     });
     this._hlineMax.bumpVersion();
 

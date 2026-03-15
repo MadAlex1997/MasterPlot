@@ -255,7 +255,7 @@ function _addPlayheadROI() {
   if (_playheadROI || !_specCtrl || !_waveCtrl) return;
 
   const makeVline = (ctrl) => {
-    const roi = new LineROI({ orientation: 'vertical', mode: 'vline', position: 0, label: '' });
+    const roi = new LineROI({ orientation: 'vertical', mode: 'vline', position: 0, label: '', flags: { deletable: false } });
     roi.bumpVersion();
     const rc = ctrl.roiController;
     rc.addROI(roi);
@@ -712,17 +712,6 @@ export default function SpectrogramV2Example() {
         case 'r':
           _specCtrl.roiController.startCreateRect?.();
           break;
-        case 'd': {
-          const all = _specCtrl.roiController.getAllROIs?.() || [];
-          // Delete first non-playhead selected ROI (or most recently hovered)
-          for (const roi of all) {
-            if (roi !== _playheadROI) {
-              _specCtrl.roiController.deleteROI(roi.id);
-              break;
-            }
-          }
-          break;
-        }
         case 'p':
           e.preventDefault();
           if (playState === 'playing') handlePause();
@@ -804,7 +793,7 @@ export default function SpectrogramV2Example() {
             { key: 'Drag',          description: 'Pan — spectrogram and waveform x-axes stay in sync' },
             { key: 'Space',         description: 'Auto-scale to full audio extent' },
             { key: 'R',             description: 'Draw a RectROI annotation on the spectrogram' },
-            { key: 'D',             description: 'Delete first non-playhead ROI' },
+            { key: 'D',             description: 'Delete selected ROI' },
             { key: 'P',             description: 'Toggle play / pause' },
             { key: 'Ctrl+click',    description: 'Set playhead to clicked time on spectrogram' },
             { key: 'Drag playhead', description: 'Drag the vline playhead on either plot to seek' },
@@ -824,7 +813,7 @@ export default function SpectrogramV2Example() {
           {/* Spectrogram plot */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ flexShrink: 0, fontSize: 10, color: '#444', padding: '2px 8px', letterSpacing: 1 }}>
-              SPECTROGRAM — R: draw RectROI · D: delete selected · Ctrl+click: set playhead · Space: autoscale
+              SPECTROGRAM — R: draw RectROI · click+D: delete selected · Ctrl+click: set playhead · Space: autoscale
             </div>
             <div style={{ flex: 1, position: 'relative' }}>
               <canvas ref={specWebglRef} style={canvasAbs} />

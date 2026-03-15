@@ -113,6 +113,7 @@ export class ROIController extends EventEmitter {
   deleteROI(id) {
     const roi = this._rois.get(id);
     if (!roi) return;
+    if (roi.flags.deletable === false) return;
 
     // Remove children from map recursively
     roi.walkChildren(child => this._rois.delete(child.id));
