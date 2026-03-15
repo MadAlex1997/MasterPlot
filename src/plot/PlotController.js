@@ -61,6 +61,8 @@ export class PlotController extends EventEmitter {
    * @param {number[]} [opts.xDomain=[0,1]]
    * @param {number[]} [opts.yDomain=[0,100]]
    * @param {boolean} [opts.disableDefaultDataLayer=false]
+   * @param {boolean} [opts.disablePanZoom=false]  — disable wheel zoom, right-drag zoom, pan,
+   *                                                  and axis-drag zoom; ROI interaction still works
    */
   constructor(opts = {}) {
     super();
@@ -149,6 +151,9 @@ export class PlotController extends EventEmitter {
     this._axisDragAxis   = null;   // 'x' | 'y'
     this._axisDragStart  = null;   // { x, y, xDomain, yDomain }
 
+    // F28: disable pan/zoom (used by LUTHistogramController's internal PlotController)
+    this._disablePanZoom = opts.disablePanZoom ?? false;
+
     // F23: auto-scale / home domain
     this._homeDomain   = { x: null, y: null };
     this._autoScaleKey = opts.autoScaleKey !== undefined ? opts.autoScaleKey : ' ';
@@ -205,19 +210,23 @@ export class PlotController extends EventEmitter {
 
     // Attach zoom/pan listeners (before ROI so priority is correct)
     webglCanvas.addEventListener('contextmenu', this._onContextMenu);
-    webglCanvas.addEventListener('wheel',     this._onWheel,     { passive: false });
+    if (!this._disablePanZoom) {
+      webglCanvas.addEventListener('wheel', this._onWheel, { passive: false });
+    }
     webglCanvas.addEventListener('mousedown', this._onMouseDown);
     webglCanvas.addEventListener('mousemove', this._onMouseMove);
     webglCanvas.addEventListener('mouseup',   this._onMouseUp);
     window.addEventListener('resize',         this._onResize);
 
-    // F23: spacebar → autoScale
-    this._onKeyDown = (e) => {
-      if (e.repeat) return;
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
-      if (e.key === this._autoScaleKey) { e.preventDefault(); this.autoScale(); }
-    };
-    if (this._autoScaleKey) window.addEventListener('keydown', this._onKeyDown);
+    // F23: spacebar → autoScale (skipped when pan/zoom is disabled)
+    if (!this._disablePanZoom) {
+      this._onKeyDown = (e) => {
+        if (e.repeat) return;
+        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+        if (e.key === this._autoScaleKey) { e.preventDefault(); this.autoScale(); }
+      };
+      if (this._autoScaleKey) window.addEventListener('keydown', this._onKeyDown);
+    }
 
     // Start render loop
     this._scheduleRender();
@@ -671,7 +680,10 @@ export class PlotController extends EventEmitter {
 
   _onMouseDown(e) {
     // F6: route right-click before the left-click-only guard
-    if (e.button === 2) { this._handleRightDown(e); return; }
+    if (e.button === 2) {
+      if (!this._disablePanZoom) this._handleRightDown(e);
+      return;
+    }
 
     if (e.button !== 0) return;
 
@@ -679,7 +691,7 @@ export class PlotController extends EventEmitter {
 
     // F21: axis drag — must be checked before ROI / plot-area guards because
     // axis gutters are outside the plot area.
-    if (this._axisRenderer && this._roiController._mode === 'idle') {
+    if (!this._disablePanZoom && this._axisRenderer && this._roiController._mode === 'idle') {
       const axisHit = this._axisRenderer.getAxisHit(pos.x, pos.y);
       if (axisHit) {
         this._isAxisDragging = true;
@@ -701,6 +713,8 @@ export class PlotController extends EventEmitter {
     }
 
     if (!this._viewport.isInPlotArea(pos.x, pos.y)) return;
+
+    if (this._disablePanZoom) return; // ROI hit-test ran; no pan/zoom
 
     this._isPanning = true;
     this._panStart  = {

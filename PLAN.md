@@ -100,7 +100,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | DOC5 | Documentation: PlotController Deep-Dive | ✅ COMPLETED | feature/DOC5 | 2026-03-07 |
 | ARCH-F | Project Restructure (src/ purity) | ✅ COMPLETED | feature/ARCH-F | 2026-03-14 |
 | F27 | Generic BitmapDataLayer | ✅ COMPLETED | feature/F27 | 2026-03-14 |
-| F28 | LUTController + LUTHistogramController | 🔲 PENDING | — | — |
+| F28 | LUTController + LUTHistogramController | ✅ COMPLETED | feature/F28 | 2026-03-14 |
 | F29 | LUTPanel React Component | 🔲 PENDING | — | — |
 | F30 | AudioController | 🔲 PENDING | — | — |
 | EX-Spec | Spectrogram V2 Example | 🔲 PENDING | — | — |
@@ -143,7 +143,10 @@ Full spec: [docs/plan-archive.md#f27](docs/plan-archive.md#f27)
 
 ---
 
-### F28 [PENDING] LUTController + LUTHistogramController
+### F28 [COMPLETED] LUTController + LUTHistogramController
+**Completed:** 2026-03-14 | **Branch:** feature/F28
+Created `src/plot/layers/LUTController.js` (generalization of HistogramLUTController; `setData(arr,min,max)` + alias `setSpectrogramData`; `version` getter as colorTrigger; events: `levelChanged`/`lutChanged`/`dataChanged`) and `src/plot/LUTHistogramController.js` (owns internal `PlotController` with `disablePanZoom:true`; horizontal SolidPolygonLayer histogram bars; two `hline` LineROIs for level handles; bidirectional wiring with LUTController); added `disablePanZoom` option to `PlotController`; build zero errors.
+Full spec: [docs/plan-archive.md#f28](docs/plan-archive.md#f28)
 
 **Branch:** `feature/F28-F29`
 **Depends on:** F27
@@ -354,3 +357,4 @@ ui/FilterPanel.jsx  →  audioCtrl.setFilterFn bridge
 - **2026-03-14 [Claude]**: Phase 4 (Bitmap/LUT Refactor) added as PENDING (v7.0) — ARCH-F through CLEANUP. Motivation: decompose monolithic SpectrogramLayer into generic BitmapDataLayer + LUTController + LUTHistogramController. Mandatory order: ARCH-F → F27 → F28 → F29 → F30 → EX-Spec → CLEANUP.
 - **2026-03-14 [Claude]**: ARCH-F completed (v7.1) — 9 webpack entry JS files moved from `src/` to `examples/src/`; `FilterPanel.jsx` and `HistogramLUTPanel.jsx` moved from `src/components/` to `ui/`; `src/components/` now holds only `PlotCanvas.jsx`; build passes zero errors. Next: F27 (unblocked).
 - **2026-03-14 [Claude]**: F27 completed (v7.2) — `BitmapDataLayer.js` and `_buildBitmapFromGrid.js` created; accepts URL/ImageBitmap/TypedArray sources; `bitMapping` exclusive bounds vs origin+scale; per-layer `lutController` duck-typed; gray/rgb/rgba/gray+alpha channel handling; build zero errors. Next: F28 (unblocked).
+- **2026-03-14 [Claude]**: F28 completed (v7.3) — `LUTController.js` (generalizes HistogramLUTController; `setData`/`setSpectrogramData` alias; `version` getter; `levelChanged`/`lutChanged`/`dataChanged` events) and `LUTHistogramController.js` (internal PlotController with `disablePanZoom:true`; SolidPolygonLayer histogram bars; hline LineROIs for level handles; bidirectional LUT↔ROI wiring); `PlotController.disablePanZoom` option added; build zero errors. Next: F29 (unblocked).
