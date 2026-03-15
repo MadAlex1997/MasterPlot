@@ -25,6 +25,7 @@
  */
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { usePopupChannel } from '../src/popup/usePopupChannel.js';
 import { PlotController }         from '../src/plot/PlotController.js';
 import { LUTController }          from '../src/plot/layers/LUTController.js';
 import { LUTHistogramController } from '../src/plot/LUTHistogramController.js';
@@ -66,8 +67,10 @@ let _tiles        = null;   // Map<tileIndex, { power, width, height, bounds, da
 let _colorTrigger = 0;      // incremented on levelChanged / lutChanged
 let _globalMin    = Infinity;
 let _globalMax    = -Infinity;
-let _playheadROI  = null;   // vline LineROI for playback cursor
-let _syncingX     = false;  // prevents domainChanged feedback loop
+let _playheadROI      = null;   // vline LineROI for playback cursor (spectrogram)
+let _wavePlayheadROI  = null;   // vline LineROI for playback cursor (waveform)
+let _syncingX         = false;  // prevents domainChanged feedback loop
+let _tileIdPrefix     = 0;      // incremented on each _clearTileLayers() call
 
 function _ensureState() {
   if (_audioCtrl) return;
@@ -137,8 +140,10 @@ function _destroyState() {
   _colorTrigger = 0;
   _globalMin    = Infinity;
   _globalMax    = -Infinity;
-  _playheadROI  = null;
-  _syncingX     = false;
+  _playheadROI      = null;
+  _wavePlayheadROI  = null;
+  _syncingX         = false;
+  _tileIdPrefix     = 0;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -162,8 +167,9 @@ function _buildWaveform(samples, sampleRate) {
 function _clearTileLayers() {
   if (!_specCtrl || !_tiles) return;
   for (const idx of _tiles.keys()) {
-    _specCtrl.unregisterDataLayer(`tile-${idx}`);
+    _specCtrl.unregisterDataLayer(`tile-${_tileIdPrefix}-${idx}`);
   }
+  _tileIdPrefix++;          // new prefix → deck.gl treats all tile-N IDs as fresh
   _tiles.clear();
   _globalMin    = Infinity;
   _globalMax    = -Infinity;
@@ -176,11 +182,12 @@ function _clearTileLayers() {
  * so dataTrigger / colorTrigger values are always current.
  */
 function _registerTileLayer(tileIndex) {
-  _specCtrl.registerDataLayer(`tile-${tileIndex}`, () => {
+  const layerId = `tile-${_tileIdPrefix}-${tileIndex}`;
+  _specCtrl.registerDataLayer(layerId, () => {
     const tile = _tiles.get(tileIndex);
     if (!tile) return null;
     return new BitmapDataLayer({
-      id:            `tile-${tileIndex}`,
+      id:            layerId,
       source:        tile.power,
       bitMapping:    { bounds: tile.bounds },
       width:         tile.width,
@@ -194,29 +201,39 @@ function _registerTileLayer(tileIndex) {
   });
 }
 
-/** Create playhead vline ROI and add it to specCtrl (called after init). */
+/** Create playhead vline ROIs on both spectrogram and waveform controllers. */
 function _addPlayheadROI() {
-  if (_playheadROI || !_specCtrl) return;
-  const roi = new LineROI({ orientation: 'vertical', mode: 'vline', position: 0, label: '' });
-  roi.bumpVersion();
-  const rc = _specCtrl.roiController;
-  rc.addROI(roi);
-  roi.onCreate();
-  rc.emit('roisChanged', { rois: rc.getAllROIs() });
-  _playheadROI = roi;
+  if (_playheadROI || !_specCtrl || !_waveCtrl) return;
+
+  const makeVline = (ctrl) => {
+    const roi = new LineROI({ orientation: 'vertical', mode: 'vline', position: 0, label: '' });
+    roi.bumpVersion();
+    const rc = ctrl.roiController;
+    rc.addROI(roi);
+    roi.onCreate();
+    rc.emit('roisChanged', { rois: rc.getAllROIs() });
+    return roi;
+  };
+
+  _playheadROI     = makeVline(_specCtrl);
+  _wavePlayheadROI = makeVline(_waveCtrl);
 }
 
-/** Move playhead to time t via version-gated updateFromExternal. */
+/** Move playhead to time t via version-gated updateFromExternal on both plots. */
 function _movePlayhead(t) {
-  if (!_playheadROI || !_specCtrl) return;
-  _specCtrl.roiController.updateFromExternal({
-    ..._playheadROI.serialize(),
-    position:  t,
-    domain:    { x: [t, t] },
-    version:   _playheadROI.version + 1,
-    updatedAt: Date.now(),
-  });
-  _specCtrl.markDirty();
+  const moveOn = (ctrl, roi) => {
+    if (!ctrl || !roi) return;
+    ctrl.roiController.updateFromExternal({
+      ...roi.serialize(),
+      position:  t,
+      domain:    { x: [t, t] },
+      version:   roi.version + 1,
+      updatedAt: Date.now(),
+    });
+    ctrl.markDirty();
+  };
+  moveOn(_specCtrl, _playheadROI);
+  moveOn(_waveCtrl, _wavePlayheadROI);
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -435,6 +452,120 @@ export default function SpectrogramV2Example() {
     windowFnRef.current = e.target.value;
   }, []);
 
+  // Auto-recompute STFT when window size or function changes (skip initial mount)
+  const stftParamInitRef = useRef(false);
+  useEffect(() => {
+    if (!stftParamInitRef.current) { stftParamInitRef.current = true; return; }
+    if (hasAudio) _runSTFT();
+  }, [windowSize, windowFn]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Filter popup ───────────────────────────────────────────────────────────
+
+  const filterSuppressRef = useRef(false);
+
+  // usePopupChannel updates onMessage via ref each render — pass inline, no useCallback needed
+  const { open: openFilterPopup, send: sendFilter, isOpen: filterPopupOpen } = usePopupChannel(
+    'spectrogram-popup.html?panel=filter&channel=spectrogram-v2-filter',
+    'spectrogram-v2-filter',
+    (msg) => {
+      const { type, payload } = msg;
+      if (type === 'FILTER_STATE') {
+        filterSuppressRef.current = true;
+        _filterCtrl.state.type      = payload.filterType;
+        _filterCtrl.state.frequency = payload.cutoff;
+        _filterCtrl.state.Q         = payload.q;
+        _filterCtrl.state.lowFreq   = payload.lowFreq;
+        _filterCtrl.state.highFreq  = payload.highFreq;
+        if (payload.order != null) _filterCtrl.state.order = payload.order;
+        _filterCtrl.emit('changed', { ..._filterCtrl.state });
+        filterSuppressRef.current = false;
+      } else if (type === 'FILTER_APPLY') {
+        handleApplyFilter();
+      } else if (type === 'FILTER_CLEAR') {
+        _audioCtrl.setFilterFn(null);
+        _runSTFT();
+      }
+    }
+  );
+
+  // Sync local FilterController changes → filter popup
+  useEffect(() => {
+    const onChanged = (s) => {
+      if (filterSuppressRef.current) return;
+      sendFilter({
+        type: 'FILTER_STATE',
+        payload: {
+          filterType: s.type,
+          cutoff:     s.frequency,
+          q:          s.Q,
+          lowFreq:    s.lowFreq,
+          highFreq:   s.highFreq,
+          order:      s.order,
+          sampleRate: srRef.current,
+        },
+      });
+    };
+    _filterCtrl.on('changed', onChanged);
+    return () => _filterCtrl.off('changed', onChanged);
+  }, [sendFilter]);
+
+  // ── Labels popup ───────────────────────────────────────────────────────────
+
+  const zoomOnSelectRef = useRef(false);
+
+  const { open: openLabelsPopup, send: sendLabels, isOpen: labelsPopupOpen } = usePopupChannel(
+    'spectrogram-popup.html?panel=labels&channel=spectrogram-v2-labels',
+    'spectrogram-v2-labels',
+    (msg) => {
+      const { type, payload } = msg;
+      if (type === 'SELECT_ROI') {
+        if (zoomOnSelectRef.current) {
+          const roi = _specCtrl?.roiController.getROI(payload.id);
+          if (roi?.domain?.x) {
+            _specCtrl.xAxis.setDomain(roi.domain.x);
+            if (roi.domain.y) _specCtrl.yAxis.setDomain(roi.domain.y);
+            _specCtrl.markDirty();
+          }
+        }
+      } else if (type === 'SET_LABEL') {
+        const roi = _specCtrl?.roiController.getROI(payload.id);
+        if (roi) {
+          roi.metadata = { ...(roi.metadata || {}), label: payload.label };
+          roi.bumpVersion();
+        }
+      } else if (type === 'DELETE_ROI') {
+        _specCtrl?.roiController.deleteROI(payload.id);
+      } else if (type === 'ZOOM_TOGGLE') {
+        zoomOnSelectRef.current = payload.enabled;
+      }
+    }
+  );
+
+  // Send roisChanged → labels popup (RectROIs only, excluding playhead)
+  useEffect(() => {
+    if (!_specCtrl) return;
+    const onRoisChanged = ({ rois }) => {
+      if (!labelsPopupOpen) return;
+      const rectRois = rois
+        .filter(r => r !== _playheadROI && r.type === 'rect')
+        .map(r => r.serialize());
+      sendLabels({ type: 'ROIS_CHANGED', payload: rectRois });
+    };
+    _specCtrl.roiController.on('roisChanged', onRoisChanged);
+    return () => _specCtrl?.roiController.off('roisChanged', onRoisChanged);
+  }, [labelsPopupOpen, sendLabels]);
+
+  // Auto-select new RectROI in labels popup
+  useEffect(() => {
+    if (!_specCtrl) return;
+    const onRoiCreated = ({ roi }) => {
+      if (!labelsPopupOpen || !roi || roi.type !== 'rect') return;
+      sendLabels({ type: 'AUTO_SELECT', payload: { id: roi.id } });
+    };
+    _specCtrl.roiController.on('roiCreated', onRoiCreated);
+    return () => _specCtrl?.roiController.off('roiCreated', onRoiCreated);
+  }, [labelsPopupOpen, sendLabels]);
+
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -543,6 +674,16 @@ export default function SpectrogramV2Example() {
         <button onClick={handleStop}  disabled={!hasAudio}
           style={{ ...btnBase, color: hasAudio ? '#f88' : '#444' }}>■</button>
         <span style={{ color: '#555' }}>{fmtTime(curTime)} / {fmtTime(duration)}</span>
+
+        {/* Popup buttons */}
+        <button onClick={openFilterPopup} disabled={filterPopupOpen}
+          style={{ ...btnBase, color: filterPopupOpen ? '#666' : '#fda' }}>
+          {filterPopupOpen ? 'Filter ▣' : 'Filter ↗'}
+        </button>
+        <button onClick={openLabelsPopup} disabled={labelsPopupOpen}
+          style={{ ...btnBase, color: labelsPopupOpen ? '#666' : '#adf' }}>
+          {labelsPopupOpen ? 'Labels ▣' : 'Labels ↗'}
+        </button>
 
         {/* Status */}
         <span style={{ marginLeft: 'auto', color: '#555', maxWidth: 400 }}>{status}</span>
