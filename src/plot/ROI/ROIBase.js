@@ -122,6 +122,28 @@ export class ROIBase extends EventEmitter {
     }
   }
 
+  // ─── Serialization ───────────────────────────────────────────────────────────
+
+  /**
+   * Serialize to a plain JSON-safe object.
+   * Subclasses (e.g. LineROI) override this to add type-specific fields.
+   */
+  serialize() {
+    return {
+      id:        this.id,
+      type:      this.type,
+      x1:        this.x1,
+      x2:        this.x2,
+      y1:        this.y1,
+      y2:        this.y2,
+      flags:     this.flags,
+      metadata:  this.metadata,
+      version:   this.version,
+      updatedAt: this.updatedAt,
+      domain:    this.domain,
+    };
+  }
+
   // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
   onCreate() {

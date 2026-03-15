@@ -249,9 +249,10 @@ export default function SpectrogramV2Example() {
   const waveAxisRef  = useRef(null);
 
   // ── Stable STFT param refs ────────────────────────────────────────────────
-  const windowSizeRef = useRef(1024);
-  const windowFnRef   = useRef('hann');
-  const srRef         = useRef(44100);
+  const windowSizeRef  = useRef(1024);
+  const windowFnRef    = useRef('hann');
+  const srRef          = useRef(44100);
+  const isApplyingRef  = useRef(false);  // ref guard prevents double-apply
 
   // ── React state (UI only) ─────────────────────────────────────────────────
   const [status,     setStatus]     = useState('Ready — load audio to begin');
@@ -448,8 +449,13 @@ export default function SpectrogramV2Example() {
   // ── Filter apply ────────────────────────────────────────────────────────────
 
   const handleApplyFilter = useCallback(async () => {
-    if (!hasAudio || isApplying) return;
+    if (!hasAudio || isApplyingRef.current) return;
+    isApplyingRef.current = true;
     setIsApplying(true);
+    // Stop playback and reset position before recomputing
+    _audioCtrl.stop();
+    _movePlayhead(0);
+    setCurTime(0);
     setStatus('Applying filter + recomputing STFT…');
     _audioCtrl.setFilterFn(
       _filterCtrl.state.type === 'none'
@@ -473,9 +479,10 @@ export default function SpectrogramV2Example() {
       // Rebuild AudioBuffer so playback plays the filtered signal
       await _audioCtrl.rebuildFilteredBuffer();
     } finally {
+      isApplyingRef.current = false;
       setIsApplying(false);
     }
-  }, [hasAudio, isApplying, _runSTFT]);
+  }, [hasAudio, _runSTFT]); // isApplying removed from deps — guarded by ref
 
   // ── Playback ───────────────────────────────────────────────────────────────
 
@@ -637,7 +644,7 @@ export default function SpectrogramV2Example() {
           }
           break;
         }
-        case ' ':
+        case 'p':
           e.preventDefault();
           if (playState === 'playing') handlePause();
           else handlePlay();
@@ -725,9 +732,9 @@ export default function SpectrogramV2Example() {
         <span style={{ color: '#555' }}>{fmtTime(curTime)} / {fmtTime(duration)}</span>
 
         {/* Popup buttons */}
-        <button onClick={openFilterPopup} disabled={filterPopupOpen}
-          style={{ ...btnBase, color: filterPopupOpen ? '#666' : '#fda' }}>
-          {filterPopupOpen ? 'Filter ▣' : 'Filter ↗'}
+        <button onClick={openFilterPopup} disabled={filterPopupOpen || isApplying}
+          style={{ ...btnBase, color: (filterPopupOpen || isApplying) ? '#666' : '#fda' }}>
+          {isApplying ? 'Applying…' : filterPopupOpen ? 'Filter ▣' : 'Filter ↗'}
         </button>
         <button onClick={openLabelsPopup} disabled={labelsPopupOpen}
           style={{ ...btnBase, color: labelsPopupOpen ? '#666' : '#adf' }}>
