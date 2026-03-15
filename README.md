@@ -14,7 +14,7 @@ Designed for real-time data, large datasets (tested to 1M+ points), and audio/si
 
 ---
 
-## Current Capabilities (F1–F23 + F27–F29 + EX1–EX12 + ARCH-A/B/C/D/F complete)
+## Current Capabilities (F1–F23 + F27–F30 + EX1–EX12 + EX-Spec + ARCH-A/B/C/D/F complete)
 
 ### Core Plotting Engine
 - **WebGL rendering** via deck.gl `OrthographicView` — no maps, no geospatial assumptions
@@ -240,6 +240,73 @@ import LUTPanel from './ui/LUTPanel.jsx';
 ```
 
 **Layout:** histogram plot (left) + 12 px LUT gradient strip (right) + colormap `<select>` + Auto Level `<button>` (bottom). Level adjustment is via hline LineROIs inside the plot — no React drag handlers.
+
+#### AudioController (F30)
+
+Unified audio management controller. Absorbs `PlaybackController` and STFT/tile logic.
+
+```js
+import { AudioController } from './src/audio/AudioController.js';
+
+const audioCtrl = new AudioController();
+
+// Load from file input
+const buf = await file.arrayBuffer();
+await audioCtrl.loadFile(buf);                        // emits 'loaded'
+
+// Stateless filter bridge (FilterController compatible)
+audioCtrl.setFilterFn((samples, sr) => filterCtrl.applyToSamples(samples, sr));
+
+// Tiled STFT
+await audioCtrl.computeSTFT({ windowSize: 1024, windowFn: 'hann', tileWidthSec: 30 });
+// → emits 'tileReady' per tile, then 'stftComplete'
+
+// Playback
+audioCtrl.play();    // emits 'stateChanged' + 'timeUpdate' at ~10 Hz
+audioCtrl.pause();
+audioCtrl.stop();
+audioCtrl.seek(5.0);
+
+audioCtrl.destroy(); // cleanup
+```
+
+**`tileReady` event payload:**
+```js
+{ tileIndex, power: Float32Array, width, height, globalMin, globalMax,
+  bounds: [tStart, 0, tEnd, nyquist] }
+```
+
+#### Spectrogram V2 Example (EX-Spec)
+
+Combines all Phase 4 primitives into a full audio analysis page at `spectrogram-v2.html`:
+
+- **AudioController** computes tiled STFT → each `tileReady` registers a `BitmapDataLayer('tile-N')`
+- **LUTController** + **LUTHistogramController** + **LUTPanel** sidebar for real-time colormap / level adjustment
+- **FilterPanel** sidebar wired to `audioCtrl.setFilterFn` — Apply button recomputes STFT with filter
+- Playhead `vline` LineROI updated on every `timeUpdate` event
+- User `RectROI` annotations on the spectrogram (press `R`)
+- Waveform `PlotController` (SignalStore / PathLayer) with x-axis synced to spectrogram
+
+```js
+// Tile → BitmapDataLayer registration pattern
+audioCtrl.on('tileReady', ({ tileIndex, power, width, height, bounds }) => {
+  tiles.set(tileIndex, { power, width, height, bounds, dataTrigger: (tiles.get(tileIndex)?.dataTrigger ?? -1) + 1 });
+  specCtrl.registerDataLayer(`tile-${tileIndex}`, () => {
+    const tile = tiles.get(tileIndex);
+    return new BitmapDataLayer({
+      source: tile.power, bitMapping: { bounds: tile.bounds },
+      width: tile.width, height: tile.height,
+      channels: 'gray', dtype: 'float32',
+      lutController: lutCtrl,
+      dataTrigger: tile.dataTrigger, colorTrigger: colorTrigger,
+    });
+  });
+  specCtrl.markDirty();
+});
+
+// LUT level change → recolorize all tiles
+lutCtrl.on('levelChanged', () => { colorTrigger++; specCtrl.markDirty(); });
+```
 
 ---
 

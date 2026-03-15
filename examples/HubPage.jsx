@@ -39,8 +39,13 @@ export default function HubPage() {
       desc: 'Three live sin/cos signals on a configurable rolling window (10 s / 30 s / 60 s). Draw a LinearRegion ROI (L key) to see per-signal statistics — mean, RMS, and peak-to-peak amplitude — updated live as the window scrolls. Pause/Resume, live point count, and rolling expiry events.',
     },
     {
+      href: 'spectrogram-v2.html',
+      title: 'Spectrogram V2 (EX-Spec)',
+      desc: 'Phase 4 spectrogram: AudioController tiled STFT → BitmapDataLayer per tile; LUTController + LUTHistogramController + LUTPanel sidebar for real-time colormap / level adjustment; FilterPanel sidebar with setFilterFn bridge; playhead vline ROI; user RectROI annotations (press R); waveform PathLayer synced to spectrogram x-axis.',
+    },
+    {
       href: 'spectrogram.html',
-      title: 'Spectrogram (EX9)',
+      title: 'Spectrogram (legacy)',
       desc: 'Real-time STFT with pluggable window functions (Hann/Hamming/Blackman/Rectangular), preset sound loading, per-type DSP filter UI (single cutoff+Q for lowpass/highpass; dual freq sliders for bandpass/notch with computed center+Q and dual canvas markers), auto-zoom y-axis after Apply, HistogramLUT with clamped level handles, synchronized waveform, and playback.',
     },
     {

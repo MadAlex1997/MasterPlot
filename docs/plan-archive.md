@@ -4493,3 +4493,41 @@ audioCtrl.setFilterFn((s, sr) => filterCtrl.applyToSamples(s, sr));
 DSP is replaceable (WebAssembly etc.) without touching FilterPanel or FilterController.
 
 **Verification:** Load file → play/pause/seek. Run STFT → `tileReady` fires per tile with correct `bounds`. Streaming append → last tile re-emits. `destroy()` clears all timers. Build zero errors.
+
+---
+
+## EX-Spec
+
+### EX-Spec [COMPLETED] Spectrogram V2 Example
+**Branch:** `feature/EX-Spec`
+**Depends on:** F27, F28, F29, F30
+
+**New files:** `examples/SpectrogramV2Example.jsx`, `examples/src/spectrogramV2.js`, `public/spectrogram-v2.html`
+
+**Architecture:**
+```
+AudioController
+  ├── 'tileReady'   → registerDataLayer('tile-N') with BitmapDataLayer per tile
+  └── 'timeUpdate'  → playhead LineROI position update → ctrl.markDirty()
+
+PlotController (spectrogram panel)
+  ├── disableDefaultDataLayer: true
+  ├── registerDataLayer('tile-0') → BitmapDataLayer { bounds:[0,0,t1,nyquist], lutController }
+  ├── registerDataLayer('tile-N') → BitmapDataLayer { bounds:[tN,0,tEnd,nyquist], lutController }
+  └── ROIController — user-drawn RectROIs for labeling
+
+LUTController  →  levelChanged → colorTriggerRef++ → ctrl.markDirty()
+LUTHistogramController + ui/LUTPanel.jsx (sidebar)
+PlotController (waveform)  →  SignalStore pattern (existing)
+ui/FilterPanel.jsx  →  audioCtrl.setFilterFn bridge
+```
+
+**Tile strategy (Option B — fixed-width time segments):**
+- Each tile = `tileWidthSec` seconds of STFT frames (default 30 s)
+- `AudioController` emits `'tileReady'` per tile; each registered as `'tile-N'` with matching `bounds`
+- Streaming: on `'streamingTick'`, last tile's `dataTrigger` bumped → image re-resolved
+- Trailing-edge artifact fix: last tile recomputed in full when new audio arrives
+
+**Hub page:** Add "Spectrogram V2" card. Keep existing "Spectrogram" card with "(legacy)" suffix until CLEANUP.
+
+**Verification:** Load audio → tiles appear. Adjust LUT → colors update in real-time. Play → playhead moves. Draw RectROI → overlays spectrogram. Waveform x-axis synced.

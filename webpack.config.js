@@ -17,6 +17,7 @@ module.exports = (env, argv) => {
       'multi-sensor':        './examples/src/multi-sensor.js',
       'spectrogram-popup':   './examples/src/spectrogram-popup.js',
       docs:                  './examples/src/docs.js',
+      'spectrogram-v2':      './examples/src/spectrogramV2.js',
     },
     output: {
       path: path.resolve(__dirname, 'dist'),
@@ -87,6 +88,11 @@ module.exports = (env, argv) => {
         template: './public/docs.html',
         filename: 'docs.html',
         chunks:   ['docs'],
+      }),
+      new HtmlWebpackPlugin({
+        template: './public/spectrogram-v2.html',
+        filename: 'spectrogram-v2.html',
+        chunks:   ['spectrogram-v2'],
       }),
       new CopyWebpackPlugin({
         patterns: [{ from: 'sounds', to: 'sounds' }],

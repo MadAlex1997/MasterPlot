@@ -659,6 +659,214 @@ function FilterControllerSection() {
   );
 }
 
+// ── LUTController ─────────────────────────────────────────────────────────────
+
+function LUTControllerSection() {
+  return (
+    <section id="lut-controller" style={classSectionStyle}>
+      <h3 style={h3Style}>LUTController</h3>
+      <p style={pStyle}>
+        Pure EventEmitter managing a colormap (LUT) and a contrast window (level_min / level_max).
+        BitmapDataLayer uses the duck-typed{' '}
+        <code style={inlineCode}>{'{ getLUTArray(), state: { level_min, level_max } }'}</code>{' '}
+        interface to CPU-colorize TypedArray sources. The <code style={inlineCode}>version</code>{' '}
+        getter is a monotonic counter for use as <code style={inlineCode}>colorTrigger</code>.
+      </p>
+      <p style={pStyle}>
+        Import: <code style={inlineCode}>{"import { LUTController } from '../src/plot/layers/LUTController.js'"}</code>
+      </p>
+      <div style={calloutStyle}>
+        <strong>Constructor:</strong>{' '}
+        <code style={inlineCode}>new LUTController()</code> — no parameters.
+        Default preset: <code style={inlineCode}>viridis</code>,{' '}
+        levels <code style={inlineCode}>[0, 1]</code>.
+      </div>
+
+      <h4 style={h4Style}>Methods</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Method</Th><Th>Returns</Th><Th>Description</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>setLUT(presetName)</Td><Td mono>void</Td><Td>Switch colormap. Bumps version, emits 'lutChanged'. See LUTController.presetNames for valid values.</Td></tr>
+          <tr><Td mono>setLevels(min, max)</Td><Td mono>void</Td><Td>Set level window. Bumps version, emits 'levelChanged'.</Td></tr>
+          <tr><Td mono>autoLevel()</Td><Td mono>void</Td><Td>Set levels to globalMin / globalMax from the last setData() call. Emits 'levelChanged'.</Td></tr>
+          <tr><Td mono>setData(flatArray, globalMin, globalMax)</Td><Td mono>void</Td><Td>Feed a flat numeric array (e.g. STFT power Float32Array). Computes a 256-bin histogram and emits 'dataChanged'. Also available as setSpectrogramData() alias.</Td></tr>
+          <tr><Td mono>getLUTArray()</Td><Td type>Uint8Array</Td><Td>Returns the current 256×4 RGBA lookup table array.</Td></tr>
+        </tbody>
+      </table>
+
+      <h4 style={h4Style}>Getters</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Getter</Th><Th>Type</Th><Th>Description</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>version</Td><Td type>number</Td><Td>Monotonic counter incremented on every levelChanged or lutChanged. Use as colorTrigger for BitmapDataLayer.</Td></tr>
+          <tr><Td mono>state</Td><Td type>object</Td><Td>Plain object with level_min, level_max, lutName, globalMin, globalMax, histogramBins, histogramEdges.</Td></tr>
+        </tbody>
+      </table>
+
+      <h4 style={h4Style}>Static</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Name</Th><Th>Value</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>LUTController.presetNames</Td><Td mono>['viridis', 'grayscale', 'plasma', 'inferno', 'magma', 'hot']</Td></tr>
+        </tbody>
+      </table>
+
+      <h4 style={h4Style}>Events</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Event</Th><Th>Payload</Th><Th>When emitted</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>levelChanged</Td><Td mono>{'{ level_min, level_max }'}</Td><Td>setLevels() or autoLevel()</Td></tr>
+          <tr><Td mono>lutChanged</Td><Td mono>presetName (string)</Td><Td>setLUT()</Td></tr>
+          <tr><Td mono>dataChanged</Td><Td mono>{'{ bins, edges, globalMin, globalMax }'}</Td><Td>setData() / setSpectrogramData()</Td></tr>
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+// ── LUTHistogramController ────────────────────────────────────────────────────
+
+function LUTHistogramControllerSection() {
+  return (
+    <section id="lut-histogram-controller" style={classSectionStyle}>
+      <h3 style={h3Style}>LUTHistogramController</h3>
+      <p style={pStyle}>
+        Owns an internal read-only <code style={inlineCode}>PlotController</code>{' '}
+        (<code style={inlineCode}>disablePanZoom: true</code>) that renders a horizontal histogram bar
+        chart driven by a <code style={inlineCode}>LUTController</code>. Two draggable hline LineROIs
+        act as level handles — dragging calls <code style={inlineCode}>lutController.setLevels()</code>,
+        which recolorizes connected BitmapDataLayers in real time. Intended as the backing controller
+        for <code style={inlineCode}>ui/LUTPanel.jsx</code>.
+      </p>
+      <p style={pStyle}>
+        Import: <code style={inlineCode}>{"import { LUTHistogramController } from '../src/plot/LUTHistogramController.js'"}</code>
+      </p>
+      <div style={calloutStyle}>
+        <strong>Constructor:</strong>{' '}
+        <code style={inlineCode}>{'new LUTHistogramController({ lutController, bins? })'}</code>.{' '}
+        <code style={inlineCode}>bins</code> defaults to 256.
+      </div>
+
+      <h4 style={h4Style}>Methods</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Method</Th><Th>Returns</Th><Th>Description</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>init(webglCanvas, axisCanvas)</Td><Td mono>void</Td><Td>Initialize the internal PlotController. Call once after both canvases are mounted in the DOM.</Td></tr>
+          <tr><Td mono>destroy()</Td><Td mono>void</Td><Td>Remove all event listeners and destroy the internal PlotController.</Td></tr>
+        </tbody>
+      </table>
+
+      <h4 style={h4Style}>Getters</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Getter</Th><Th>Type</Th><Th>Description</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>plotController</Td><Td type>PlotController</Td><Td>The internal read-only PlotController instance.</Td></tr>
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+// ── BitmapDataLayer ───────────────────────────────────────────────────────────
+
+function BitmapDataLayerSection() {
+  return (
+    <section id="bitmap-data-layer" style={classSectionStyle}>
+      <h3 style={h3Style}>BitmapDataLayer</h3>
+      <p style={pStyle}>
+        deck.gl CompositeLayer that renders any 2D image or numeric array as a spatially positioned
+        BitmapLayer inside a PlotController. Supports URL, ImageBitmap, ImageData, HTMLCanvasElement,
+        and TypedArray sources. TypedArray sources are CPU-colorized via{' '}
+        <code style={inlineCode}>_buildBitmapFromGrid()</code> using an optional{' '}
+        <code style={inlineCode}>lutController</code>.
+      </p>
+      <p style={pStyle}>
+        Import: <code style={inlineCode}>{"import { BitmapDataLayer } from '../src/plot/layers/BitmapDataLayer.js'"}</code>
+      </p>
+
+      <h4 style={h4Style}>Props</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Prop</Th><Th>Type</Th><Th>Default</Th><Th>Description</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>source</Td><Td type>string | TypedArray | ImageBitmap | …</Td><Td mono>null</Td><Td>Image source. URL strings are passed directly to deck.gl BitmapLayer. TypedArrays are CPU-colorized.</Td></tr>
+          <tr><Td mono>bitMapping</Td><Td type>object</Td><Td mono>—</Td><Td>Required. Either <code style={inlineCode}>{'{ bounds: [l,b,r,t] }'}</code> or <code style={inlineCode}>{'{ origin: [x0,y0], scale: [dx,dy] }'}</code>. Mutually exclusive.</Td></tr>
+          <tr><Td mono>width</Td><Td type>number</Td><Td mono>0</Td><Td>Image width in pixels. Required for TypedArray sources and origin+scale bitMapping.</Td></tr>
+          <tr><Td mono>height</Td><Td type>number</Td><Td mono>0</Td><Td>Image height in pixels. Same requirements as width.</Td></tr>
+          <tr><Td mono>channels</Td><Td type>string</Td><Td mono>'rgba'</Td><Td>'gray' | 'rgb' | 'rgba' | 'gray+alpha'</Td></tr>
+          <tr><Td mono>dtype</Td><Td type>string</Td><Td mono>'uint8'</Td><Td>'float32' | 'float64' | 'uint8' | 'uint16' | 'int16' | 'int32'</Td></tr>
+          <tr><Td mono>lutController</Td><Td type>LUTController | null</Td><Td mono>null</Td><Td>Duck-typed. Applies LUT colorization to gray-channel TypedArray sources.</Td></tr>
+          <tr><Td mono>dataTrigger</Td><Td type>number</Td><Td mono>0</Td><Td>Increment to force re-upload and re-colorize. Use when source data changes.</Td></tr>
+          <tr><Td mono>colorTrigger</Td><Td type>number</Td><Td mono>0</Td><Td>Increment to force recolorization only (no re-upload). Use lutController.version here.</Td></tr>
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+// ── AudioController ───────────────────────────────────────────────────────────
+
+function AudioControllerSection() {
+  return (
+    <section id="audio-controller" style={classSectionStyle}>
+      <h3 style={h3Style}>AudioController</h3>
+      <p style={pStyle}>
+        Unified audio management controller. Handles audio loading (file or raw Float32Array),
+        playback (play/pause/stop/seek), tiled STFT computation, streaming append with last-tile
+        recomputation, and a stateless filter bridge. Extends{' '}
+        <code style={inlineCode}>EventEmitter</code>.
+      </p>
+      <p style={pStyle}>
+        Import: <code style={inlineCode}>{"import { AudioController } from '../src/audio/AudioController.js'"}</code>
+      </p>
+      <div style={calloutStyle}>
+        <strong>Constructor:</strong>{' '}
+        <code style={inlineCode}>new AudioController()</code> — no parameters.
+      </div>
+
+      <h4 style={h4Style}>Methods</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Method</Th><Th>Returns</Th><Th>Description</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>loadFile(arrayBuffer)</Td><Td type>Promise&lt;void&gt;</Td><Td>Decode an ArrayBuffer using Web Audio API. Emits 'loaded' when done.</Td></tr>
+          <tr><Td mono>loadBuffer(samples, sampleRate)</Td><Td type>Promise&lt;void&gt;</Td><Td>Load directly from a Float32Array. Emits 'loaded' when done.</Td></tr>
+          <tr><Td mono>appendSamples(newSamples)</Td><Td mono>void</Td><Td>Extend current buffer (streaming). Starts streaming timer to recompute last STFT tile if computeSTFT() was already called.</Td></tr>
+          <tr><Td mono>setFilterFn(fn)</Td><Td mono>void</Td><Td>Set stateless filter transform: <code style={inlineCode}>{'(samples: Float32Array, sr: number) => Float32Array'}</code>. Pass null to clear. Bridge to FilterController: <code style={inlineCode}>{'(s, sr) => filterCtrl.applyToSamples(s, sr)'}</code>.</Td></tr>
+          <tr><Td mono>computeSTFT(opts)</Td><Td type>Promise&lt;void&gt;</Td><Td>Compute tiled STFT. opts: windowSize (default 1024), hopSize (default windowSize/2), windowFn ('hann'|'hamming'|'blackman'|'rectangular'), tileWidthSec (default 30). Emits tileReady per tile, stftComplete when done.</Td></tr>
+          <tr><Td mono>play(offsetSec?)</Td><Td type>Promise&lt;void&gt;</Td><Td>Start or resume playback. Emits 'stateChanged' playing.</Td></tr>
+          <tr><Td mono>pause()</Td><Td mono>void</Td><Td>Pause playback. Saves current offset. Emits 'stateChanged' paused.</Td></tr>
+          <tr><Td mono>stop()</Td><Td mono>void</Td><Td>Stop and reset to time 0. Emits 'stateChanged' stopped.</Td></tr>
+          <tr><Td mono>seek(timeSec)</Td><Td mono>void</Td><Td>Jump to timeSec. Resumes if was playing.</Td></tr>
+          <tr><Td mono>destroy()</Td><Td mono>void</Td><Td>Stop playback, clear timers, close AudioContext, remove all listeners.</Td></tr>
+        </tbody>
+      </table>
+
+      <h4 style={h4Style}>Getters</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Getter</Th><Th>Type</Th><Th>Description</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>isPlaying</Td><Td type>boolean</Td><Td>True while playback is active.</Td></tr>
+          <tr><Td mono>sampleRate</Td><Td type>number</Td><Td>Sample rate of the loaded audio in Hz.</Td></tr>
+          <tr><Td mono>duration</Td><Td type>number</Td><Td>Duration of the loaded audio in seconds.</Td></tr>
+          <tr><Td mono>currentTime</Td><Td type>number</Td><Td>Current playback position in seconds.</Td></tr>
+        </tbody>
+      </table>
+
+      <h4 style={h4Style}>Events</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Event</Th><Th>Payload</Th><Th>When emitted</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>loaded</Td><Td mono>{'{ duration, sampleRate, samples: Float32Array }'}</Td><Td>loadFile() or loadBuffer() completed</Td></tr>
+          <tr><Td mono>stateChanged</Td><Td mono>{'{ state: "playing"|"paused"|"stopped" }'}</Td><Td>play(), pause(), stop()</Td></tr>
+          <tr><Td mono>timeUpdate</Td><Td mono>{'{ currentTime }'}</Td><Td>~10 Hz during playback</Td></tr>
+          <tr><Td mono>tileReady</Td><Td mono>{'{ tileIndex, power: Float32Array, width, height, globalMin, globalMax, bounds: [tStart, 0, tEnd, nyquist] }'}</Td><Td>Each STFT tile completed during computeSTFT()</Td></tr>
+          <tr><Td mono>stftComplete</Td><Td mono>—</Td><Td>All tiles finished</Td></tr>
+          <tr><Td mono>streamingTick</Td><Td mono>—</Td><Td>Streaming timer interval; last tile recomputed just before this fires</Td></tr>
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
 // ── Root export ───────────────────────────────────────────────────────────────
 
 export default function ApiReferencePage() {
@@ -680,6 +888,10 @@ export default function ApiReferencePage() {
       <TraceGroupSection />
       <SignalStoreSection />
       <FilterControllerSection />
+      <LUTControllerSection />
+      <LUTHistogramControllerSection />
+      <BitmapDataLayerSection />
+      <AudioControllerSection />
     </section>
   );
 }

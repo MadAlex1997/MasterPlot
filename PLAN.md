@@ -103,7 +103,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | F28 | LUTController + LUTHistogramController | ✅ COMPLETED | feature/F28 | 2026-03-14 |
 | F29 | LUTPanel React Component | ✅ COMPLETED | feature/F29 | 2026-03-14 |
 | F30 | AudioController | ✅ COMPLETED | feature/F30 | 2026-03-14 |
-| EX-Spec | Spectrogram V2 Example | 🔲 PENDING | — | — |
+| EX-Spec | Spectrogram V2 Example | ✅ COMPLETED | feature/EX-Spec | 2026-03-14 |
 | CLEANUP | Remove Legacy Spectrogram Code | 🔲 PENDING | — | — |
 
 ---
@@ -218,40 +218,10 @@ Full spec: [docs/plan-archive.md#f30](docs/plan-archive.md#f30)
 
 ---
 
-### EX-Spec [PENDING] Spectrogram V2 Example
-
-**Branch:** `feature/EX-Spec`
-**Depends on:** F27, F28, F29, F30
-
-**New files:** `examples/SpectrogramV2Example.jsx`, `examples/src/spectrogramV2.js`, `public/spectrogram-v2.html`
-
-**Architecture:**
-```
-AudioController
-  ├── 'tileReady'   → registerDataLayer('tile-N') with BitmapDataLayer per tile
-  └── 'timeUpdate'  → playhead LineROI position update → ctrl.markDirty()
-
-PlotController (spectrogram panel)
-  ├── disableDefaultDataLayer: true
-  ├── registerDataLayer('tile-0') → BitmapDataLayer { bounds:[0,0,t1,nyquist], lutController }
-  ├── registerDataLayer('tile-N') → BitmapDataLayer { bounds:[tN,0,tEnd,nyquist], lutController }
-  └── ROIController — user-drawn RectROIs for labeling
-
-LUTController  →  levelChanged → colorTriggerRef++ → ctrl.markDirty()
-LUTHistogramController + ui/LUTPanel.jsx (sidebar)
-PlotController (waveform)  →  SignalStore pattern (existing)
-ui/FilterPanel.jsx  →  audioCtrl.setFilterFn bridge
-```
-
-**Tile strategy (Option B — fixed-width time segments):**
-- Each tile = `tileWidthSec` seconds of STFT frames (default 30 s)
-- `AudioController` emits `'tileReady'` per tile; each registered as `'tile-N'` with matching `bounds`
-- Streaming: on `'streamingTick'`, last tile's `dataTrigger` bumped → image re-resolved
-- Trailing-edge artifact fix: last tile recomputed in full when new audio arrives
-
-**Hub page:** Add "Spectrogram V2" card. Keep existing "Spectrogram" card with "(legacy)" suffix until CLEANUP.
-
-**Verification:** Load audio → tiles appear. Adjust LUT → colors update in real-time. Play → playhead moves. Draw RectROI → overlays spectrogram. Waveform x-axis synced.
+### EX-Spec [COMPLETED] Spectrogram V2 Example
+**Completed:** 2026-03-14 | **Branch:** feature/EX-Spec
+Created `examples/SpectrogramV2Example.jsx` + `examples/src/spectrogramV2.js` + `public/spectrogram-v2.html`: AudioController `tileReady` → per-tile `BitmapDataLayer` registration; `timeUpdate` → playhead vline ROI; shared `LUTController` with `colorTrigger` bump on `levelChanged`/`lutChanged`; `LUTPanel` + `FilterPanel` sidebar; waveform `PlotController` (SignalStore/PathLayer) with x-domain sync; HubPage updated with V2 card (legacy card renamed); Architecture + API reference docs updated for Phase 4 classes; README updated; build zero errors.
+Full spec: [docs/plan-archive.md#ex-spec](docs/plan-archive.md#ex-spec)
 
 ---
 
@@ -287,3 +257,4 @@ ui/FilterPanel.jsx  →  audioCtrl.setFilterFn bridge
 - **2026-03-14 [Claude]**: F28 completed (v7.3) — `LUTController.js` (generalizes HistogramLUTController; `setData`/`setSpectrogramData` alias; `version` getter; `levelChanged`/`lutChanged`/`dataChanged` events) and `LUTHistogramController.js` (internal PlotController with `disablePanZoom:true`; SolidPolygonLayer histogram bars; hline LineROIs for level handles; bidirectional LUT↔ROI wiring); `PlotController.disablePanZoom` option added; build zero errors. Next: F29 (unblocked).
 - **2026-03-14 [Claude]**: F29 completed (v7.4) — `ui/LUTPanel.jsx` (fresh component; props: `lutController`/`lutHistCtrl`/`width`/`height`; two raw canvases wired to `lutHistCtrl.init()`; 12 px LUT gradient with ResizeObserver + `lutChanged` listener; colormap select from `LUTController.presetNames`; Auto Level button; level drag via hline ROIs in plot); build zero errors. Next: F30 (unblocked).
 - **2026-03-14 [Claude]**: F30 completed (v7.5) — `src/audio/AudioController.js` (unified audio controller; `loadFile(arrayBuffer)` via Web Audio decodeAudioData + `loadBuffer(samples, sr)` direct + `appendSamples` streaming; stateless `setFilterFn` bridge compatible with FilterController.applyToSamples; play/pause/stop/seek with `timeUpdate` at ~10 Hz; tiled STFT via `computeSTFT({windowSize, hopSize, windowFn, tileWidthSec=30})` emitting `tileReady` per fixed-width tile + `stftComplete`; streaming timer recomputes last tile on each `appendSamples` tick; `destroy()` cleans all timers + AudioContext); build zero errors. Next: EX-Spec (unblocked).
+- **2026-03-14 [Claude]**: EX-Spec completed (v7.6) — `examples/SpectrogramV2Example.jsx` + entry `examples/src/spectrogramV2.js` + `public/spectrogram-v2.html` + `webpack.config.js` entry + HtmlWebpackPlugin; module-level state pattern (React owns no geometry); AudioController `tileReady` → `_registerTileLayer` → `BitmapDataLayer` per tile; shared `LUTController` with `_colorTrigger` bump on `levelChanged`/`lutChanged`; `LUTHistogramController` + `LUTPanel` sidebar; `FilterPanel` sidebar with `setFilterFn` bridge + Recompute STFT; waveform `PlotController` (SignalStore PathLayer) with x-domain domainChanged sync; playhead vline LineROI updated via `updateFromExternal` on `timeUpdate`; R key → RectROI annotation; HubPage V2 card added + legacy card renamed; ArchitecturePage Phase 4 diagram + prose; ApiReferencePage LUTController/LUTHistogramController/BitmapDataLayer/AudioController sections; README AudioController + EX-Spec sections; build zero errors. Next: CLEANUP (unblocked).

@@ -17,6 +17,7 @@ const ORCHESTRATION_DIAGRAM = `graph TD
   DLR --> SL[ScatterLayer]
   DLR --> SS[SignalStore / PathLayer]
   DLR --> TG[TraceGroup]
+  DLR --> BDL[BitmapDataLayer]
 
   RC --> CE[ConstraintEngine]
   RC --> RL[ROILayer]
@@ -25,6 +26,29 @@ const ORCHESTRATION_DIAGRAM = `graph TD
   YA --> AR
   VP --> XA
   VP --> YA
+`;
+
+const BITMAP_LUT_DIAGRAM = `graph TD
+  AC[AudioController]
+  FC[FilterController]
+  LC[LUTController]
+  LHC[LUTHistogramController]
+  BDL[BitmapDataLayer]
+  PC[PlotController — spectrogram]
+  WPC[PlotController — waveform]
+  LP[LUTPanel React UI]
+  FP[FilterPanel React UI]
+
+  AC -->|tileReady: power Float32Array + bounds| PC
+  AC -->|timeUpdate: currentTime| PC
+  FC -->|setFilterFn bridge| AC
+  PC -->|registerDataLayer tile-N| BDL
+  BDL -->|lutController prop| LC
+  LC -->|levelChanged / lutChanged → colorTrigger++| PC
+  LC --> LHC
+  LHC --> LP
+  FP -->|onApply| FC
+  AC -->|loaded: samples Float32Array| WPC
 `;
 
 const RENDER_LOOP_DIAGRAM = `sequenceDiagram
@@ -259,6 +283,49 @@ export default function ArchitecturePage() {
         per-point JavaScript objects are ever created during rendering.
       </p>
       <CodeBlock code={DATA_FLOW_CODE} language="javascript" />
+
+      {/* 7. Phase 4 — Bitmap / LUT / Audio pipeline */}
+      <h3 style={h3Style}>Phase 4 — Bitmap / LUT / Audio Pipeline</h3>
+      <p style={pStyle}>
+        Phase 4 introduces composable primitives for 2D image rendering with interactive LUT control.
+        Instead of a monolithic spectrogram layer, any numeric 2D grid (STFT power, heatmap, image segment)
+        is displayed through a generic{' '}
+        <code style={{ color: '#fd9' }}>BitmapDataLayer</code> with a per-layer{' '}
+        <code style={{ color: '#fd9' }}>LUTController</code> driving CPU colorization.
+      </p>
+      <p style={pStyle}>
+        <strong style={{ color: '#ccc' }}>BitmapDataLayer</strong> — deck.gl CompositeLayer accepting a URL,
+        ImageBitmap, or TypedArray source. For TypedArray sources the layer runs{' '}
+        <code style={{ color: '#fd9' }}>_buildBitmapFromGrid()</code> on the CPU to produce an{' '}
+        <code style={{ color: '#fd9' }}>ImageBitmap</code>, then passes it to a BitmapLayer. The{' '}
+        <code style={{ color: '#fd9' }}>dataTrigger</code> prop gates re-upload; the{' '}
+        <code style={{ color: '#fd9' }}>colorTrigger</code> prop gates recolorization only.
+      </p>
+      <p style={pStyle}>
+        <strong style={{ color: '#ccc' }}>LUTController</strong> — pure EventEmitter managing a colormap
+        and level window (min/max). The <code style={{ color: '#fd9' }}>version</code> getter is a monotonic
+        counter incremented on every <code style={{ color: '#fd9' }}>levelChanged</code> or{' '}
+        <code style={{ color: '#fd9' }}>lutChanged</code> event — components use it as{' '}
+        <code style={{ color: '#fd9' }}>colorTrigger</code>.
+      </p>
+      <p style={pStyle}>
+        <strong style={{ color: '#ccc' }}>LUTHistogramController</strong> — owns an internal read-only
+        PlotController (<code style={{ color: '#fd9' }}>disablePanZoom: true</code>) that renders a
+        horizontal histogram bar chart and two draggable hline LineROIs for level handles. Dragging a
+        handle calls <code style={{ color: '#fd9' }}>lutController.setLevels()</code>, which bumps the
+        version and triggers BitmapDataLayer recolorization without touching React state.
+      </p>
+      <p style={pStyle}>
+        <strong style={{ color: '#ccc' }}>AudioController</strong> — unified controller absorbing
+        PlaybackController and STFT logic. Audio is loaded via{' '}
+        <code style={{ color: '#fd9' }}>loadFile(arrayBuffer)</code> (Web Audio decode) or{' '}
+        <code style={{ color: '#fd9' }}>loadBuffer(samples, sr)</code>. STFT is computed in fixed-width
+        time tiles via <code style={{ color: '#fd9' }}>computeSTFT()</code>; each tile emits{' '}
+        <code style={{ color: '#fd9' }}>tileReady</code> with a <code style={{ color: '#fd9' }}>power Float32Array</code>{' '}
+        and <code style={{ color: '#fd9' }}>bounds: [tStart, 0, tEnd, nyquist]</code>. A stateless{' '}
+        <code style={{ color: '#fd9' }}>setFilterFn</code> bridge connects FilterController without coupling.
+      </p>
+      <MermaidDiagram chart={BITMAP_LUT_DIAGRAM} />
     </section>
   );
 }
