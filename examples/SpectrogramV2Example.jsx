@@ -35,6 +35,7 @@ import { FilterController }       from '../src/audio/FilterController.js';
 import { SignalStore }             from '../src/plot/layers/SignalDataLayer.js';
 import { LineROI }                 from '../src/plot/ROI/LineROI.js';
 import LUTPanel                   from '../ui/LUTPanel.jsx';
+import HelpOverlay               from '../ui/HelpOverlay.jsx';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -48,10 +49,57 @@ const PRESETS = [
   { label: 'ringdove + siren',  path: 'sounds/city_ringdove_with_huma_whistle_and_car_siren_sound_5bn_dzC.wav' },
   { label: 'plane 1',           path: 'sounds/plane1.wav' },
   { label: 'plane 2',           path: 'sounds/plane2.wav' },
+  { label: 'Stress (60 s)',     path: 'stress:60' },
 ];
 
 const WINDOW_FNS   = ['hann', 'hamming', 'blackman', 'rectangular'];
 const WINDOW_SIZES = [256, 512, 1024, 2048, 4096];
+
+/**
+ * Synthesise a stress-test audio signal (EX14).
+ * Returns { samples: Float32Array, sampleRate }.
+ *
+ * Signal = chirp sweeping 200 Hz→4 kHz over `durationSec` seconds,
+ *          mixed with pink-ish noise and two amplitude-modulated tones.
+ * Normalised to ±0.9 peak.
+ */
+function generateStressAudio(durationSec = 60, sr = 22050) {
+  const n = Math.round(durationSec * sr);
+  const buf = new Float32Array(n);
+  const f0 = 200, f1 = 4000;         // chirp start / end Hz
+  const twoPi = 2 * Math.PI;
+
+  // Pink noise state (simple 1/f approximation via 7-term IIR)
+  let b0=0, b1=0, b2=0, b3=0, b4=0, b5=0, b6=0;
+
+  for (let i = 0; i < n; i++) {
+    const t = i / sr;
+
+    // Linear chirp (constant phase accrual)
+    const chirp = 0.40 * Math.sin(twoPi * (f0 * t + 0.5 * (f1 - f0) * t * t / durationSec));
+
+    // Pink noise (Voss–McCartney approximation)
+    const white = Math.random() * 2 - 1;
+    b0 = 0.99886*b0 + white*0.0555179; b1 = 0.99332*b1 + white*0.0750759;
+    b2 = 0.96900*b2 + white*0.1538520; b3 = 0.86650*b3 + white*0.3104856;
+    b4 = 0.55000*b4 + white*0.5329522; b5 = -0.7616*b5 - white*0.0168980;
+    const pink = (b0+b1+b2+b3+b4+b5+b6 + white*0.5362) * 0.11;
+    b6 = white * 0.115926;
+
+    // Two AM tones that drift slowly
+    const tone1 = 0.10 * Math.sin(twoPi * 440 * t) * (0.5 + 0.5*Math.sin(twoPi*0.07*t));
+    const tone2 = 0.08 * Math.sin(twoPi * 1200 * t) * (0.5 + 0.5*Math.sin(twoPi*0.13*t));
+
+    buf[i] = chirp + 0.20 * pink + tone1 + tone2;
+  }
+
+  // Normalise
+  let peak = 0;
+  for (let i = 0; i < n; i++) { const a = Math.abs(buf[i]); if (a > peak) peak = a; }
+  if (peak > 0) { const inv = 0.9 / peak; for (let i = 0; i < n; i++) buf[i] *= inv; }
+
+  return { samples: buf, sampleRate: sr };
+}
 
 // ── Module-level state (React owns NONE of this) ──────────────────────────────
 
@@ -456,10 +504,17 @@ export default function SpectrogramV2Example() {
     setIsLoading(true);
     setStatus('Loading preset…');
     try {
-      const resp = await fetch(path);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const buf  = await resp.arrayBuffer();
-      await _audioCtrl.loadFile(buf);
+      if (path.startsWith('stress:')) {
+        const durationSec = Number(path.split(':')[1]) || 60;
+        setStatus(`Generating ${durationSec} s stress signal…`);
+        const { samples, sampleRate } = generateStressAudio(durationSec);
+        await _audioCtrl.loadBuffer(samples, sampleRate);
+      } else {
+        const resp = await fetch(path);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const buf  = await resp.arrayBuffer();
+        await _audioCtrl.loadFile(buf);
+      }
     } catch (err) {
       setStatus(`Error: ${err.message}`);
     } finally {
@@ -702,7 +757,6 @@ export default function SpectrogramV2Example() {
       width: '100%', height: '100vh',
       background: '#0d0d0d', color: '#ccc', ...mono,
     }}>
-
       {/* ── Header bar ───────────────────────────────────────────────────── */}
       <div style={{
         flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10,
@@ -740,33 +794,25 @@ export default function SpectrogramV2Example() {
           </select>
         </span>
 
-        {/* Recompute */}
-        <button onClick={() => hasAudio && _runSTFT()} disabled={!hasAudio || isLoading}
-          style={{ ...btnBase, color: (!hasAudio || isLoading) ? '#444' : '#adf' }}>
-          Recompute STFT
-        </button>
-
-        {/* Playback */}
-        <button onClick={handlePlay}  disabled={!hasAudio}
-          style={{ ...btnBase, color: hasAudio ? '#4f8' : '#444' }}>▶</button>
-        <button onClick={handlePause} disabled={!hasAudio || playState !== 'playing'}
-          style={{ ...btnBase, color: (hasAudio && playState === 'playing') ? '#fd8' : '#444' }}>⏸</button>
-        <button onClick={handleStop}  disabled={!hasAudio}
-          style={{ ...btnBase, color: hasAudio ? '#f88' : '#444' }}>■</button>
-        <span style={{ color: '#555' }}>{fmtTime(curTime)} / {fmtTime(duration)}</span>
-
-        {/* Popup buttons */}
-        <button onClick={openFilterPopup} disabled={filterPopupOpen || isApplying}
-          style={{ ...btnBase, color: (filterPopupOpen || isApplying) ? '#666' : '#fda' }}>
-          {isApplying ? 'Applying…' : filterPopupOpen ? 'Filter ▣' : 'Filter ↗'}
-        </button>
-        <button onClick={openLabelsPopup} disabled={labelsPopupOpen}
-          style={{ ...btnBase, color: labelsPopupOpen ? '#666' : '#adf' }}>
-          {labelsPopupOpen ? 'Labels ▣' : 'Labels ↗'}
-        </button>
-
         {/* Status */}
         <span style={{ marginLeft: 'auto', color: '#555', maxWidth: 400 }}>{status}</span>
+        <HelpOverlay
+          storageKey="masterplot-help-spectrogram-v2"
+          title="Spectrogram V2 Controls"
+          controls={[
+            { key: 'Scroll',        description: 'Zoom spectrogram or waveform (cursor-centered)' },
+            { key: 'Drag',          description: 'Pan — spectrogram and waveform x-axes stay in sync' },
+            { key: 'Space',         description: 'Auto-scale to full audio extent' },
+            { key: 'R',             description: 'Draw a RectROI annotation on the spectrogram' },
+            { key: 'D',             description: 'Delete first non-playhead ROI' },
+            { key: 'P',             description: 'Toggle play / pause' },
+            { key: 'Ctrl+click',    description: 'Set playhead to clicked time on spectrogram' },
+            { key: 'Drag playhead', description: 'Drag the vline playhead on either plot to seek' },
+            { key: 'LUT panel',     description: 'Drag hline handles to adjust colormap levels; select colormap; Auto Level' },
+            { key: 'Filter ↗',      description: 'Open filter popup — apply DSP filter + recompute STFT' },
+            { key: 'Labels ↗',      description: 'Open labels popup — manage RectROI annotations' },
+          ]}
+        />
       </div>
 
       {/* ── Body column ──────────────────────────────────────────────────── */}
@@ -795,14 +841,56 @@ export default function SpectrogramV2Example() {
           />
         </div>
 
-        {/* ── Waveform — full width, 40% ────────────────────────────────── */}
-        <div style={{ flex: 4, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ flexShrink: 0, fontSize: 10, color: '#444', padding: '2px 8px', letterSpacing: 1 }}>
-            WAVEFORM — pan/zoom synced with spectrogram x-axis
+        {/* ── Waveform row: plot + controls panel (mirrors spectrogram row), 40% ── */}
+        <div style={{ flex: 4, display: 'flex' }}>
+
+          {/* Waveform plot (flex: 1 — aligns with spectrogram plot above) */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ flexShrink: 0, fontSize: 10, color: '#444', padding: '2px 8px', letterSpacing: 1 }}>
+              WAVEFORM — pan/zoom synced with spectrogram x-axis
+            </div>
+            <div style={{ flex: 1, position: 'relative' }}>
+              <canvas ref={waveWebglRef} style={canvasAbs} />
+              <canvas ref={waveAxisRef}  style={{ ...canvasAbs, pointerEvents: 'none' }} />
+            </div>
           </div>
-          <div style={{ flex: 1, position: 'relative' }}>
-            <canvas ref={waveWebglRef} style={canvasAbs} />
-            <canvas ref={waveAxisRef}  style={{ ...canvasAbs, pointerEvents: 'none' }} />
+
+          {/* Controls panel — same width as LUTPanel above so x-axes align */}
+          <div style={{
+            width: LUT_PANEL_W, flexShrink: 0,
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            justifyContent: 'center', gap: 8,
+            borderLeft: '1px solid #222', padding: '6px 4px',
+            background: '#111',
+          }}>
+
+            {/* Playback buttons */}
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button onClick={handlePlay}  disabled={!hasAudio}
+                style={{ ...btnBase, color: hasAudio ? '#4f8' : '#444', fontSize: 14 }}>▶</button>
+              <button onClick={handlePause} disabled={!hasAudio || playState !== 'playing'}
+                style={{ ...btnBase, color: (hasAudio && playState === 'playing') ? '#fd8' : '#444', fontSize: 14 }}>⏸</button>
+              <button onClick={handleStop}  disabled={!hasAudio}
+                style={{ ...btnBase, color: hasAudio ? '#f88' : '#444', fontSize: 14 }}>■</button>
+            </div>
+
+            {/* Time display */}
+            <div style={{ color: '#666', textAlign: 'center', fontSize: 11 }}>
+              {fmtTime(curTime)} / {fmtTime(duration)}
+            </div>
+
+            {/* Filter popup button */}
+            <button onClick={openFilterPopup} disabled={filterPopupOpen || isApplying}
+              style={{ ...btnBase, color: (filterPopupOpen || isApplying) ? '#666' : '#fda', width: '90%' }}>
+              {isApplying ? 'Applying…' : filterPopupOpen ? 'Filter ▣' : 'Filter ↗'}
+            </button>
+
+            {/* Labels popup button */}
+            <button onClick={openLabelsPopup} disabled={labelsPopupOpen}
+              style={{ ...btnBase, color: labelsPopupOpen ? '#666' : '#adf', width: '90%' }}>
+              {labelsPopupOpen ? 'Labels ▣' : 'Labels ↗'}
+            </button>
+
           </div>
         </div>
       </div>

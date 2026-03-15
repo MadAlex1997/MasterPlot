@@ -22,6 +22,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { PlotController } from '../src/plot/PlotController.js';
 import { SignalStore }    from '../src/plot/layers/SignalDataLayer.js';
+import HelpOverlay        from '../ui/HelpOverlay.jsx';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -377,6 +378,18 @@ export default function LiveSignalsExample() {
         <span style={{ marginLeft: 'auto', color: '#555', fontSize: 11 }}>
           L=LinearRegion · D=delete · scroll=zoom · drag=pan
         </span>
+        <HelpOverlay
+          storageKey="masterplot-help-live-signals"
+          title="Live Signal Analysis Controls"
+          controls={[
+            { key: 'Scroll',  description: 'Zoom (cursor-centered)' },
+            { key: 'Drag',    description: 'Pan' },
+            { key: 'L',       description: 'Create LinearRegion ROI (2 clicks) — shows per-signal stats' },
+            { key: 'D',       description: 'Delete selected ROI' },
+            { key: 'Space',   description: 'Auto-scale to home domain' },
+            { key: 'Window',  description: 'Dropdown in header — change rolling window (10/30/60 s)' },
+          ]}
+        />
       </div>
 
       {/* ── Middle row: plot + sidebar ───────────────────────────────────── */}

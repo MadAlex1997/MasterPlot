@@ -29,6 +29,7 @@ import { useRef, useEffect, useState } from 'react';
 import { PlotController } from '../src/plot/PlotController.js';
 import { SignalStore }    from '../src/plot/layers/SignalDataLayer.js';
 import { LineROI }        from '../src/plot/ROI/LineROI.js';
+import HelpOverlay        from '../ui/HelpOverlay.jsx';
 
 // ── Config ─────────────────────────────────────────────────────────────────────
 
@@ -320,6 +321,17 @@ export default function SeismographyExample() {
         <span style={{ marginLeft: 'auto', ...S.hint }}>
           scroll=zoom&nbsp;&nbsp;drag=pan
         </span>
+        <HelpOverlay
+          storageKey="masterplot-help-seismography"
+          title="Seismography Controls"
+          controls={[
+            { key: 'Scroll',        description: 'Zoom X-axis (shared across all channels)' },
+            { key: 'Drag',          description: 'Pan X-axis (shared across all channels)' },
+            { key: 'Space',         description: 'Auto-scale to full time range' },
+            { key: 'Drag P-pick',   description: 'Drag the vline P-wave pick on any channel' },
+            { key: 'Sidebar table', description: 'Edit station label or position — applies version-gated updateFromExternal' },
+          ]}
+        />
       </div>
 
       {/* ── Body: stacked plots + sidebar table ── */}

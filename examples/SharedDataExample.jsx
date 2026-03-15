@@ -22,6 +22,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import PlotCanvas from '../src/components/PlotCanvas.jsx';
 import { DataStore } from '../src/plot/DataStore.js';
 import { PlotDataView } from '../src/plot/PlotDataView.js';
+import HelpOverlay from '../ui/HelpOverlay.jsx';
 
 // ── Shared DataStore — created once outside React tree ───────────────────────
 // Using module-level ref so it survives re-renders without triggering them.
@@ -254,6 +255,18 @@ export default function SharedDataExample() {
         <button style={S.btn} onClick={handleClear}>Clear</button>
         <span style={S.hint}>Press <b>L</b> on Plot A, click twice to draw a LinearRegion</span>
         {roiInfo && <span style={S.roiTag}>ROI active: {roiInfo}</span>}
+        <HelpOverlay
+          storageKey="masterplot-help-shared-data"
+          title="Shared Data Controls"
+          controls={[
+            { key: 'Scroll',       description: 'Zoom on Plot A or B (cursor-centered)' },
+            { key: 'Drag',         description: 'Pan on Plot A or B' },
+            { key: 'L (Plot A)',   description: 'Create LinearRegion — Plot B filters to enclosed points on mouseUp' },
+            { key: 'D (Plot A)',   description: 'Delete LinearRegion — Plot B reverts to all points' },
+            { key: '+ Generate',   description: 'Append 2000 random points to the shared DataStore' },
+            { key: 'Clear',        description: 'Reset the shared DataStore' },
+          ]}
+        />
       </div>
 
       {/* ── Body ── */}

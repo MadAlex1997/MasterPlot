@@ -22,6 +22,7 @@ import { ScatterplotLayer } from '@deck.gl/layers';
 import { PlotController }   from '../src/plot/PlotController.js';
 import { TraceGroup }       from '../src/plot/layers/TraceGroup.js';
 import PlotCanvas           from '../src/components/PlotCanvas.jsx';
+import HelpOverlay          from '../ui/HelpOverlay.jsx';
 
 // ─── Palette ────────────────────────────────────────────────────────────────
 // 25 perceptually-spaced RGBA colors, high-contrast on dark background.
@@ -244,9 +245,22 @@ export default function MultiSensorExample() {
 
   return (
     <div style={S.root}>
-      <div style={S.header}>
-        Multi-Sensor Scatter — {NUM_SENSORS} sensors × {POINTS_PER.toLocaleString()} pts each
-        &nbsp;·&nbsp; {TOTAL_POINTS.toLocaleString()} total points &nbsp;·&nbsp; 25-color palette (cycled)
+      <div style={{ ...S.header, display: 'flex', alignItems: 'center' }}>
+        <span>Multi-Sensor Scatter — {NUM_SENSORS} sensors × {POINTS_PER.toLocaleString()} pts each
+        &nbsp;·&nbsp; {TOTAL_POINTS.toLocaleString()} total points &nbsp;·&nbsp; 25-color palette (cycled)</span>
+        <span style={{ marginLeft: 'auto' }}>
+          <HelpOverlay
+            storageKey="masterplot-help-multi-sensor"
+            title="Multi-Sensor Scatter Controls"
+            controls={[
+              { key: 'Scroll',              description: 'Zoom (cursor-centered)' },
+              { key: 'Drag',                description: 'Pan' },
+              { key: 'Space',               description: 'Auto-scale to home domain' },
+              { key: 'Sidebar checkboxes',  description: 'Toggle per-sensor visibility' },
+              { key: 'Show All / Hide All', description: 'Bulk visibility controls in sidebar' },
+            ]}
+          />
+        </span>
       </div>
 
       <div style={S.body}>

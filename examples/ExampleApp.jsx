@@ -28,6 +28,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import PlotCanvas from '../src/components/PlotCanvas.jsx';
 import { generatePoints, generateAppendChunk } from './dataGenerator.js';
+import HelpOverlay from '../ui/HelpOverlay.jsx';
 
 const INITIAL_POINT_COUNT  = 10_000;
 const APPEND_INTERVAL_MS   = 2_000;
@@ -524,6 +525,21 @@ export default function ExampleApp() {
           </select>
         </label>
         <span style={{ marginLeft: 'auto', color: '#666' }}>ROIs: {roiCount}</span>
+        <HelpOverlay
+          storageKey="masterplot-help-scatter"
+          title="Scatter / ROI Controls"
+          controls={[
+            { key: 'Scroll',  description: 'Zoom (cursor-centered)' },
+            { key: 'Drag',    description: 'Pan (follow or grab mode)' },
+            { key: 'L',       description: 'Create LinearRegion (2 clicks: x1, x2)' },
+            { key: 'R',       description: 'Create RectROI (2 clicks: top-left, bottom-right)' },
+            { key: 'V',       description: 'Create vertical LineROI (single click)' },
+            { key: 'H',       description: 'Create horizontal LineROI (single click)' },
+            { key: 'D',       description: 'Delete selected ROI' },
+            { key: 'Esc',     description: 'Cancel ROI creation' },
+            { key: 'Space',   description: 'Auto-scale (reset zoom to home domain)' },
+          ]}
+        />
       </div>
 
       <div style={plotWrapStyle}>
