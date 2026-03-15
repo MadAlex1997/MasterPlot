@@ -162,14 +162,12 @@ src/                             ← LIBRARY CODE ONLY
     layers/
       BitmapDataLayer.js         (F27 — generic bitmap layer; URL/array/image sources)
       _buildBitmapFromGrid.js    (F27 — shared CPU colorization util)
-      HistogramLUTController.js  (F11/legacy — removed in CLEANUP; use LUTController)
       LineLayer.js
       LUTController.js           (F28 — generalized colormap + level controller)
       PlotLayer.js
       ROILayer.js
       ScatterLayer.js
       SignalDataLayer.js
-      SpectrogramLayer.js        (F9/legacy — removed in CLEANUP; use BitmapDataLayer)
       TraceGroup.js
   popup/
     PopupWindowManager.js
@@ -183,8 +181,6 @@ examples/                        ← EXAMPLE PAGE COMPONENTS
     live-signals.js
     multi-sensor.js
     shared-data.js
-    spectrogram.js               (legacy — removed in CLEANUP)
-    spectrogram-popup.js         (legacy — removed in CLEANUP)
     spectrogramV2.js             (EX-Spec)
   docs/                          ← documentation SPA page components
     shared/
@@ -203,13 +199,11 @@ examples/                        ← EXAMPLE PAGE COMPONENTS
   MultiSensorExample.jsx
   SeismographyExample.jsx
   SharedDataExample.jsx
-  SpectrogramExample.jsx         (legacy — removed in CLEANUP)
-  SpectrogramPopup.jsx           (legacy — removed in CLEANUP)
+  SpectrogramPopup.jsx           (popup host shell for SpectrogramV2 filter + labels panels)
   SpectrogramV2Example.jsx       (EX-Spec)
 
 ui/                              ← OPTIONAL REACT UI EXTENSIONS (not library code)
   FilterPanel.jsx                (F13 — filter UI; users may replace with their own)
-  HistogramLUTPanel.jsx          (F11/legacy — removed in CLEANUP; use LUTPanel)
   LUTPanel.jsx                   (F29 — LUT histogram + colormap panel)
 
 public/                          ← HTML TEMPLATES
@@ -566,10 +560,10 @@ Provide a complete example demonstrating:
 # Deliverables
 
 **Phase 1 (MVP) — COMPLETE**
-- ✅ PlotController + ScatterLayer + LineLayer + ROILayer + SpectrogramLayer
+- ✅ PlotController + ScatterLayer + LineLayer + ROILayer
 - ✅ ROI creation (LinearRegion + RectROI), constraint propagation, event log
 - ✅ Audio pipeline: file load, STFT spectrogram, HistogramLUT, filters, playback
-- ✅ Example pages: scatter (`example.html`), line (`line.html`), spectrogram (`spectrogram.html`)
+- ✅ Example pages: scatter (`example.html`), line (`line.html`)
 
 **Phase 2 (Data Infrastructure) — COMPLETE ✅**
 - ✅ F16: Rolling ring buffer DataStore
@@ -593,5 +587,5 @@ Provide a complete example demonstrating:
 - 🔲 F29: LUTPanel React component (fresh; in `ui/`)
 - 🔲 F30: AudioController (absorbs playback + sample mgmt; stateless `setFilterFn` bridge; STFT tiles)
 - 🔲 EX-Spec: Spectrogram V2 Example (PlotController + BitmapDataLayer + AudioController + LUTPanel)
-- 🔲 CLEANUP: Delete legacy SpectrogramLayer, HistogramLUTController, old spectrogram example
+- ✅ CLEANUP: Delete legacy SpectrogramLayer, HistogramLUTController, old spectrogram example
 

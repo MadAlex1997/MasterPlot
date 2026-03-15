@@ -109,7 +109,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | EX15 | First-Load Help Icon (Controls Overlay) | ✅ COMPLETED | feature/EX17-EX14-EX15 | 2026-03-15 |
 | EX16 | Non-Spectrogram BitmapDataLayer Example | ✅ COMPLETED | feature/EX16 | 2026-03-15 |
 | DOC6 | Documentation Update (Phase 4 complete) | ✅ COMPLETED | feature/DOC6 | 2026-03-15 |
-| CLEANUP | Remove Legacy Spectrogram Code | 🔲 PENDING | — | — |
+| CLEANUP | Remove Legacy Spectrogram Code | ✅ COMPLETED | feature/cleanup-old-spectrogram | 2026-03-15 |
 
 ---
 
@@ -123,7 +123,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 **Mandatory implementation order:**
 
 ```
-F27 → F28 → F29 → F30 → EX-Spec → EX17 ✅ → EX14 ✅ → EX15 ✅ → EX16 ✅ → DOC6 ✅ → CLEANUP
+F27 → F28 → F29 → F30 → EX-Spec → EX17 ✅ → EX14 ✅ → EX15 ✅ → EX16 ✅ → DOC6 ✅ → CLEANUP ✅
 ```
 
 ---
@@ -265,25 +265,10 @@ Full spec: [docs/plan-archive.md#doc6](docs/plan-archive.md#doc6)
 
 ---
 
-### CLEANUP [PENDING] Remove Legacy Spectrogram Code
-
-**Branch:** `feature/cleanup-old-spectrogram`
-**Depends on:** EX-Spec (verified working side-by-side)
-
-**Delete:**
-- `src/plot/layers/SpectrogramLayer.js`
-- `src/plot/layers/HistogramLUTController.js`
-- `ui/HistogramLUTPanel.jsx`
-- `examples/SpectrogramExample.jsx`
-- `examples/SpectrogramPopup.jsx`
-- `examples/src/spectrogram.js`, `examples/src/spectrogram-popup.js`
-- `public/spectrogram.html`, `public/spectrogram-popup.html`
-- Webpack entries: `spectrogram`, `spectrogram-popup`
-
-**Update:** HubPage (remove legacy card), README, prompt.md (remove SpectrogramLayer/HistogramLUTController from project structure diagram), PLAN.md (mark ARCH-F through CLEANUP as COMPLETED).
-
-**Verification:** `npm run build` zero errors. All remaining pages work. `grep -r SpectrogramLayer src/` returns nothing.
-
+### CLEANUP [COMPLETED] Remove Legacy Spectrogram Code
+**Completed:** 2026-03-15 | **Branch:** feature/cleanup-old-spectrogram
+Deleted `SpectrogramLayer.js`, `HistogramLUTController.js`, `HistogramLUTPanel.jsx`, `SpectrogramExample.jsx`, `examples/src/spectrogram.js`, `public/spectrogram.html`, and the `spectrogram` webpack entry; popup host files kept intact (still used by SpectrogramV2); HubPage legacy card removed; README and prompt.md project structure updated; build zero errors.
+Full spec: [docs/plan-archive.md#cleanup](docs/plan-archive.md#cleanup)
 
 ---
 
@@ -301,6 +286,7 @@ Full spec: [docs/plan-archive.md#doc6](docs/plan-archive.md#doc6)
 - **2026-03-15 [Claude]**: EX14 completed (v7.10) — `generateStressAudio(60, 22050)` synthesises chirp + pink noise + AM tones; "Stress (60 s)" preset added; `handlePresetChange` routes `stress:N` path to generator + `loadBuffer`; no new files; build zero errors.
 - **2026-03-15 [Claude]**: EX15 completed (v7.11) — `ui/HelpOverlay.jsx` created; added to ExampleApp, LiveSignalsExample, MultiSensorExample, SeismographyExample, SharedDataExample, SpectrogramV2Example with unique storageKey + per-page controls list; `position:relative` added to each outer container; build zero errors. Next: EX16 (unblocked).
 - **2026-03-15 [Claude]**: EX16 completed (v7.12) — `examples/BitmapExample.jsx` + `examples/src/bitmap.js` + `public/bitmap.html`; three panels: local file (createImageBitmap + configurable bitMapping sidebar), 256×256 Float32 Gaussian heatmap (LUTPanel with live level handles + colormap select), URL image (NASA tile with geographic bounds); webpack entry + HtmlWebpackPlugin; HubPage card; README section; ApiReferencePage demo links; build zero errors. Next: DOC6 (unblocked).
+- **2026-03-15 [Claude]**: CLEANUP completed (v7.14) — deleted `SpectrogramLayer.js`, `HistogramLUTController.js`, `HistogramLUTPanel.jsx`, `SpectrogramExample.jsx`, `examples/src/spectrogram.js`, `public/spectrogram.html`, webpack `spectrogram` entry; popup host (`SpectrogramPopup.jsx` / `spectrogram-popup.html`) retained as it is shared by SpectrogramV2; HubPage legacy card removed; README audio-subsystem tree + file tree updated; prompt.md project structure updated; build zero errors.
 - **2026-03-15 [Claude]**: DOC6 completed (v7.13) — ArchitecturePage: `ui/` subgraph added to BITMAP_LUT_DIAGRAM (LUTPanel/FilterPanel/HelpOverlay), `ui/` prose paragraph added; ApiReferencePage: `disablePanZoom` option added to PlotController table, full `LUTPanel` section (props table + usage callout) and `HelpOverlay` section (props table + placement callout) added; GettingStartedPage: step 8 (BitmapDataLayer heatmap + LUTPanel quick-start) and step 9 (AudioController + STFT spectrogram quick-start) added; RoiDeepDivePage verified accurate (no Phase 4 ROI changes); build zero errors. Next: CLEANUP (unblocked).
 - **2026-03-15 [Claude]**: Added EX17 (SpectrogramV2 waveform layout fix + controls panel) (v7.8) — slots between EX-Spec and EX14; removes dead Recompute STFT button; moves playback+popup controls to 160 px panel next to waveform to align x-axes.
 - **2026-03-15 [Claude]**: Added EX14/EX15/EX16/DOC6 from Features.md (v7.7) — inserted before CLEANUP; mandatory order updated to `EX-Spec → EX14 → EX15 → EX16 → DOC6 → CLEANUP`.

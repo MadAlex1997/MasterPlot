@@ -463,10 +463,9 @@ Integration layer (optional, no engine changes needed):
 ├── MockDataAdapter       — random batch generator (extends ExternalDataAdapter)
 └── MockROIAdapter        — localStorage-backed ROI store (extends ExternalROIAdapter)
 
-Audio subsystem (spectrogram example only):
-├── SpectrogramLayer      — custom deck.gl layer; STFT → ImageBitmap → WebGL texture
-├── HistogramLUTController — dB histogram + LUT remapping (EventEmitter)
-├── PlaybackController    — Web Audio API playback with seek (EventEmitter)
+Audio subsystem (SpectrogramV2 example):
+├── AudioController       — unified load/playback/STFT; emits tileReady per fixed-width tile
+├── PlaybackController    — Web Audio API playback with seek (EventEmitter; kept for compat)
 └── FilterController      — offline biquad DSP + frequency response (EventEmitter)
 ```
 
@@ -756,8 +755,6 @@ src/                              ← library code only
       BitmapDataLayer.js          — generic bitmap layer; URL/ImageBitmap/TypedArray (F27)
       _buildBitmapFromGrid.js     — CPU colorizer for typed-array grids (F27)
       LUTController.js            — colormap + level + histogram controller (F28a)
-      SpectrogramLayer.js         — legacy STFT + WebGL texture (to be removed in CLEANUP)
-      HistogramLUTController.js   — legacy; use LUTController (to be removed in CLEANUP)
       SignalDataLayer.js          — SignalStore + buildSignalLayers for line plots (ARCH-D)
       TraceGroup.js               — multi-trace scatter partitioner with palette cycling (F22)
       PlotLayer.js                — optional CompositeLayer wrapper (ARCH-B)
@@ -777,14 +774,13 @@ src/                              ← library code only
 ui/                               ← optional React UI extensions (not library code)
   LUTPanel.jsx                    — histogram + LUT gradient + colormap dropdown + Auto Level (F29)
   FilterPanel.jsx                 — filter type, cutoff, Q controls + response curve
-  HistogramLUTPanel.jsx           — legacy; use LUTPanel (to be removed in CLEANUP)
 examples/                         ← example page components
   src/                            ← webpack entry JS files (one per HTML page)
   HubPage.jsx                     — demo navigation hub
   ExampleApp.jsx                  — scatter/ROI/live-append + point-count dropdown + ROI tables (EX1/EX4)
   LiveSignalsExample.jsx          — three live signals + rolling window + ROI stats sidebar (EX8)
   MultiSensorExample.jsx          — 50 sensors × 10k pts via TraceGroup; visibility sidebar (EX7)
-  SpectrogramExample.jsx          — full audio analysis + preset sounds + window functions (EX2/EX9/EX12)
+  SpectrogramV2Example.jsx        — Phase 4 spectrogram: AudioController + BitmapDataLayer + LUTPanel (EX-Spec)
   SharedDataExample.jsx           — two-plot shared DataStore + filtered DataView demo (F17)
   SeismographyExample.jsx         — 10 stacked channels, shared X-axis, vline picks + table (EX5)
 public/
@@ -1011,8 +1007,8 @@ manager.on('closed',  ()    => console.log('popup closed'));
 
 // Open popup and establish a BroadcastChannel
 const opened = manager.open(
-  'spectrogram-popup.html?panel=filter&channel=spectrogram-filter',
-  'spectrogram-filter',
+  'spectrogram-popup.html?panel=filter&channel=spectrogram-v2-filter',
+  'spectrogram-v2-filter',
   'width=520,height=640'  // optional window.open features
 );
 if (!opened) {
@@ -1043,8 +1039,8 @@ import { usePopupChannel } from './src/popup/usePopupChannel.js';
 
 function MyComponent() {
   const { open, send, close, isOpen } = usePopupChannel(
-    'spectrogram-popup.html?panel=filter&channel=spectrogram-filter',
-    'spectrogram-filter',
+    'spectrogram-popup.html?panel=filter&channel=spectrogram-v2-filter',
+    'spectrogram-v2-filter',
     (msg) => {
       if (msg.type === 'FILTER_APPLY') handleApply(msg.payload);
     }
@@ -1062,11 +1058,11 @@ The hook creates `PopupWindowManager` on mount, tears it down on unmount, and ke
 
 ### Popup page host (spectrogram-popup.html)
 
-The `spectrogram-popup.html` entry serves as the host shell for all spectrogram-related panels. It reads URL params to route to the correct panel and connect to the right channel:
+The `spectrogram-popup.html` entry serves as the host shell for SpectrogramV2 popup panels. It reads URL params to route to the correct panel and connect to the right channel:
 
 ```
-spectrogram-popup.html?panel=filter&channel=spectrogram-filter  → Filter Panel (F24) ✅
-spectrogram-popup.html?panel=labels&channel=spectrogram-labels  → ROI Label panel (EX11) ✅
+spectrogram-popup.html?panel=filter&channel=spectrogram-v2-filter  → Filter Panel (F24) ✅
+spectrogram-popup.html?panel=labels&channel=spectrogram-v2-labels  → ROI Label panel (EX11) ✅
 ```
 
 Popup detection (`window.opener !== null` or `?panel=` present) suppresses main-page chrome so the popup renders only the requested panel.

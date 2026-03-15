@@ -4560,3 +4560,33 @@ Demonstrate `BitmapDataLayer` outside of the audio/spectrogram context using thr
 - `examples/docs/ApiReferencePage.jsx` — added demo links to BitmapDataLayer section
 
 **Verification:** all three panels render; LUT panel on array panel recolorizes in real time; `npm run build` zero errors (2 size warnings only, same as all other entries).
+
+---
+
+## CLEANUP — Remove Legacy Spectrogram Code
+
+**Branch:** `feature/cleanup-old-spectrogram`
+**Completed:** 2026-03-15
+**Depends on:** EX-Spec (verified working side-by-side)
+
+**Files deleted:**
+- `src/plot/layers/SpectrogramLayer.js`
+- `src/plot/layers/HistogramLUTController.js`
+- `ui/HistogramLUTPanel.jsx`
+- `examples/SpectrogramExample.jsx`
+- `examples/src/spectrogram.js`
+- `public/spectrogram.html`
+- Webpack entry: `spectrogram`
+
+**Files kept (shared infrastructure):**
+- `examples/SpectrogramPopup.jsx` — popup host shell still used by SpectrogramV2 (`spectrogram-popup.html?panel=filter` and `?panel=labels`)
+- `examples/src/spectrogram-popup.js` — entry for above
+- `public/spectrogram-popup.html` — HTML template for above
+
+**Files updated:**
+- `webpack.config.js` — removed `spectrogram` entry + HtmlWebpackPlugin
+- `examples/HubPage.jsx` — removed legacy Spectrogram card
+- `README.md` — audio-subsystem architecture tree updated; legacy file tree entries removed; popup host example URLs updated to v2 channels
+- `prompt.md` — removed legacy entries from project structure; CLEANUP deliverable marked ✅
+
+**Verification:** `npm run build` zero errors. `grep -r SpectrogramLayer src/` returns nothing.

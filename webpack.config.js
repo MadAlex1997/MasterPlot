@@ -10,7 +10,6 @@ module.exports = (env, argv) => {
     entry: {
       main:            './examples/src/index.js',
       example:         './examples/src/example.js',
-      spectrogram:     './examples/src/spectrogram.js',
       'live-signals':  './examples/src/live-signals.js',
       'shared-data':   './examples/src/shared-data.js',
       seismography:    './examples/src/seismography.js',
@@ -54,11 +53,6 @@ module.exports = (env, argv) => {
         template: './public/example.html',
         filename: 'example.html',
         chunks:   ['example'],
-      }),
-      new HtmlWebpackPlugin({
-        template: './public/spectrogram.html',
-        filename: 'spectrogram.html',
-        chunks:   ['spectrogram'],
       }),
       new HtmlWebpackPlugin({
         template: './public/live-signals.html',

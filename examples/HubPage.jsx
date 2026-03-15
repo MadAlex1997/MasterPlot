@@ -49,11 +49,6 @@ export default function HubPage() {
       desc: 'Three panels demonstrating BitmapDataLayer without audio: (1) local image file loaded via createImageBitmap with configurable bitMapping; (2) 256×256 Float32 Gaussian heatmap with live LUTPanel sidebar — drag level handles, swap colormap; (3) URL image rendered with geographic lon/lat bounds.',
     },
     {
-      href: 'spectrogram.html',
-      title: 'Spectrogram (legacy)',
-      desc: 'Real-time STFT with pluggable window functions (Hann/Hamming/Blackman/Rectangular), preset sound loading, per-type DSP filter UI (single cutoff+Q for lowpass/highpass; dual freq sliders for bandpass/notch with computed center+Q and dual canvas markers), auto-zoom y-axis after Apply, HistogramLUT with clamped level handles, synchronized waveform, and playback.',
-    },
-    {
       href: 'shared-data.html',
       title: 'Shared Data (F17)',
       desc: 'Two PlotControllers sharing a single DataStore. Plot A shows all points; Plot B shows only points inside a LinearRegion drawn on Plot A — lazy PlotDataView recomputes on roiFinalized, not on drag.',
