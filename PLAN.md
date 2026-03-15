@@ -108,7 +108,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | EX14 | Reintroduce Stress-Test Audio Files | ✅ COMPLETED | feature/EX17-EX14-EX15 | 2026-03-15 |
 | EX15 | First-Load Help Icon (Controls Overlay) | ✅ COMPLETED | feature/EX17-EX14-EX15 | 2026-03-15 |
 | EX16 | Non-Spectrogram BitmapDataLayer Example | ✅ COMPLETED | feature/EX16 | 2026-03-15 |
-| DOC6 | Documentation Update (Phase 4 complete) | 🔲 PENDING | — | — |
+| DOC6 | Documentation Update (Phase 4 complete) | ✅ COMPLETED | feature/DOC6 | 2026-03-15 |
 | CLEANUP | Remove Legacy Spectrogram Code | 🔲 PENDING | — | — |
 
 ---
@@ -123,7 +123,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 **Mandatory implementation order:**
 
 ```
-F27 → F28 → F29 → F30 → EX-Spec → EX17 ✅ → EX14 ✅ → EX15 ✅ → EX16 → DOC6 → CLEANUP
+F27 → F28 → F29 → F30 → EX-Spec → EX17 ✅ → EX14 ✅ → EX15 ✅ → EX16 ✅ → DOC6 ✅ → CLEANUP
 ```
 
 ---
@@ -258,21 +258,10 @@ Full spec: [docs/plan-archive.md#ex16](docs/plan-archive.md#ex16)
 
 ---
 
-### DOC6 [PENDING] Documentation Update (Phase 4 complete)
-
-**Branch:** `feature/DOC6`
-**Depends on:** EX16
-
-Comprehensive pass over all four documentation SPA pages to reflect everything added in Phase 4 (ARCH-F through EX16).
-
-**Checklist:**
-- `examples/docs/ArchitecturePage.jsx` — update Mermaid diagram to include `AudioController`, `BitmapDataLayer`, `LUTController`, `LUTHistogramController`; add `ui/` box; remove legacy `SpectrogramLayer`/`HistogramLUTController` nodes (anticipating CLEANUP).
-- `examples/docs/ApiReferencePage.jsx` — ensure `AudioController`, `BitmapDataLayer`, `LUTController`, `LUTHistogramController`, `LUTPanel`, `HelpOverlay` all have complete constructor-options, method, and event tables; fill any stubs left from EX-Spec.
-- `examples/docs/GettingStartedPage.jsx` — add a "Displaying a heatmap / image" quick-start code block using `BitmapDataLayer`; add an `AudioController` quick-start block.
-- `examples/docs/RoiDeepDivePage.jsx` — no Phase 4 ROI changes expected; verify section is still accurate and update if anything drifted.
-- Cross-check all internal links; remove any references to deleted legacy files if CLEANUP has not yet run (note that CLEANUP follows).
-
-**Verification:** docs SPA builds and all four pages render without errors; no dead links; new Phase 4 classes are fully represented.
+### DOC6 [COMPLETED] Documentation Update (Phase 4 complete)
+**Completed:** 2026-03-15 | **Branch:** feature/DOC6
+ArchitecturePage: added `ui/` subgraph (LUTPanel, FilterPanel, HelpOverlay) to BITMAP_LUT_DIAGRAM + prose for `ui/` directory; ApiReferencePage: added `disablePanZoom` to PlotController options, added full `LUTPanel` and `HelpOverlay` sections; GettingStartedPage: added steps 8 (BitmapDataLayer heatmap quick-start) and 9 (AudioController spectrogram quick-start); RoiDeepDivePage verified accurate; build zero errors.
+Full spec: [docs/plan-archive.md#doc6](docs/plan-archive.md#doc6)
 
 ---
 
@@ -312,6 +301,7 @@ Comprehensive pass over all four documentation SPA pages to reflect everything a
 - **2026-03-15 [Claude]**: EX14 completed (v7.10) — `generateStressAudio(60, 22050)` synthesises chirp + pink noise + AM tones; "Stress (60 s)" preset added; `handlePresetChange` routes `stress:N` path to generator + `loadBuffer`; no new files; build zero errors.
 - **2026-03-15 [Claude]**: EX15 completed (v7.11) — `ui/HelpOverlay.jsx` created; added to ExampleApp, LiveSignalsExample, MultiSensorExample, SeismographyExample, SharedDataExample, SpectrogramV2Example with unique storageKey + per-page controls list; `position:relative` added to each outer container; build zero errors. Next: EX16 (unblocked).
 - **2026-03-15 [Claude]**: EX16 completed (v7.12) — `examples/BitmapExample.jsx` + `examples/src/bitmap.js` + `public/bitmap.html`; three panels: local file (createImageBitmap + configurable bitMapping sidebar), 256×256 Float32 Gaussian heatmap (LUTPanel with live level handles + colormap select), URL image (NASA tile with geographic bounds); webpack entry + HtmlWebpackPlugin; HubPage card; README section; ApiReferencePage demo links; build zero errors. Next: DOC6 (unblocked).
+- **2026-03-15 [Claude]**: DOC6 completed (v7.13) — ArchitecturePage: `ui/` subgraph added to BITMAP_LUT_DIAGRAM (LUTPanel/FilterPanel/HelpOverlay), `ui/` prose paragraph added; ApiReferencePage: `disablePanZoom` option added to PlotController table, full `LUTPanel` section (props table + usage callout) and `HelpOverlay` section (props table + placement callout) added; GettingStartedPage: step 8 (BitmapDataLayer heatmap + LUTPanel quick-start) and step 9 (AudioController + STFT spectrogram quick-start) added; RoiDeepDivePage verified accurate (no Phase 4 ROI changes); build zero errors. Next: CLEANUP (unblocked).
 - **2026-03-15 [Claude]**: Added EX17 (SpectrogramV2 waveform layout fix + controls panel) (v7.8) — slots between EX-Spec and EX14; removes dead Recompute STFT button; moves playback+popup controls to 160 px panel next to waveform to align x-axes.
 - **2026-03-15 [Claude]**: Added EX14/EX15/EX16/DOC6 from Features.md (v7.7) — inserted before CLEANUP; mandatory order updated to `EX-Spec → EX14 → EX15 → EX16 → DOC6 → CLEANUP`.
 - **2026-03-14 [Claude]**: EX-Spec completed (v7.6) — `examples/SpectrogramV2Example.jsx` + entry `examples/src/spectrogramV2.js` + `public/spectrogram-v2.html` + `webpack.config.js` entry + HtmlWebpackPlugin; module-level state pattern (React owns no geometry); AudioController `tileReady` → `_registerTileLayer` → `BitmapDataLayer` per tile; shared `LUTController` with `_colorTrigger` bump on `levelChanged`/`lutChanged`; `LUTHistogramController` + `LUTPanel` sidebar; `FilterPanel` sidebar with `setFilterFn` bridge + Recompute STFT; waveform `PlotController` (SignalStore PathLayer) with x-domain domainChanged sync; playhead vline LineROI updated via `updateFromExternal` on `timeUpdate`; R key → RectROI annotation; HubPage V2 card added + legacy card renamed; ArchitecturePage Phase 4 diagram + prose; ApiReferencePage LUTController/LUTHistogramController/BitmapDataLayer/AudioController sections; README AudioController + EX-Spec sections; build zero errors. Next: CLEANUP (unblocked).

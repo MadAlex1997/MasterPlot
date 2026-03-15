@@ -165,6 +165,144 @@ const EVENTS_CODE = `function handleInit(ctrl) {
   ctrl.on('roiUpdated',  ({ roi }) => console.log('Dragging', roi.id));
 }`;
 
+const BITMAP_CODE = `import React from 'react';
+import PlotCanvas from '../src/components/PlotCanvas.jsx';
+import { BitmapDataLayer } from '../src/plot/layers/BitmapDataLayer.js';
+import { LUTController } from '../src/plot/layers/LUTController.js';
+import { LUTHistogramController } from '../src/plot/LUTHistogramController.js';
+import LUTPanel from '../ui/LUTPanel.jsx';
+
+// Construct at module level (outside React) — these are not React state
+const lutController  = new LUTController();
+const lutHistCtrl    = new LUTHistogramController({ lutController });
+
+// Generate a 64×64 Float32 heatmap (sum of two Gaussians)
+function makeHeatmap(w, h) {
+  const arr = new Float32Array(w * h);
+  for (let r = 0; r < h; r++) {
+    for (let c = 0; c < w; c++) {
+      const dx1 = (c - w * 0.3) / (w * 0.15), dy1 = (r - h * 0.4) / (h * 0.15);
+      const dx2 = (c - w * 0.7) / (w * 0.20), dy2 = (r - h * 0.6) / (h * 0.20);
+      arr[r * w + c] = Math.exp(-0.5 * (dx1*dx1 + dy1*dy1))
+                     + Math.exp(-0.5 * (dx2*dx2 + dy2*dy2));
+    }
+  }
+  return arr;
+}
+
+const W = 64, H = 64;
+const heatmap = makeHeatmap(W, H);
+lutController.setData(heatmap, 0, 2);   // feed data to histogram
+
+let _dataTrigger = 0;
+
+export default function HeatmapExample() {
+  function handleInit(ctrl) {
+    // Disable the default scatter layer and register our BitmapDataLayer instead
+    ctrl.registerDataLayer('heatmap', (ctx) => new BitmapDataLayer({
+      id: 'heatmap-layer',
+      source:        heatmap,
+      bitMapping:    { bounds: [0, 0, 100, 100] },  // data-space [left, bottom, right, top]
+      width: W, height: H,
+      channels:      'gray',
+      dtype:         'float32',
+      lutController,
+      dataTrigger:   _dataTrigger,
+      colorTrigger:  lutController.version,
+    }));
+
+    // Re-render whenever LUT levels or colormap change
+    lutController.on('levelChanged', () => ctrl.markDirty());
+    lutController.on('lutChanged',   () => ctrl.markDirty());
+  }
+
+  return (
+    <div style={{ display: 'flex', width: '100%', height: 400 }}>
+      <PlotCanvas
+        xDomain={[0, 100]} yDomain={[0, 100]}
+        disableDefaultDataLayer
+        onInit={handleInit}
+        style={{ flex: 1, height: '100%' }}
+      />
+      {/* LUTPanel sidebar — level handles + colormap select + Auto Level */}
+      <LUTPanel lutController={lutController} lutHistCtrl={lutHistCtrl} width={160} />
+    </div>
+  );
+}`;
+
+const AUDIO_CODE = `import React, { useRef, useState } from 'react';
+import PlotCanvas from '../src/components/PlotCanvas.jsx';
+import { AudioController } from '../src/audio/AudioController.js';
+import { BitmapDataLayer } from '../src/plot/layers/BitmapDataLayer.js';
+import { LUTController } from '../src/plot/layers/LUTController.js';
+
+// Construct at module level — never in React state
+const audioCtrl = new AudioController();
+const lutCtrl   = new LUTController();
+
+export default function SpectrogramExample() {
+  const spectCtrlRef = useRef(null);
+  const [status, setStatus] = useState('Load a .wav/.mp3 file to begin');
+
+  // Wire AudioController tileReady → BitmapDataLayer per tile
+  function handleInit(ctrl) {
+    spectCtrlRef.current = ctrl;
+
+    audioCtrl.on('tileReady', ({ tileIndex, power, width, height,
+                                 globalMin, globalMax, bounds }) => {
+      lutCtrl.setData(power, globalMin, globalMax);   // feed histogram
+
+      ctrl.registerDataLayer('tile-' + tileIndex, () => new BitmapDataLayer({
+        id:           'tile-' + tileIndex,
+        source:       power,
+        bitMapping:   { bounds },   // [tStart, 0, tEnd, nyquist]
+        width, height,
+        channels:     'gray',
+        dtype:        'float32',
+        lutController: lutCtrl,
+        dataTrigger:  tileIndex,
+        colorTrigger: lutCtrl.version,
+      }));
+      ctrl.markDirty();
+    });
+
+    lutCtrl.on('levelChanged', () => ctrl.markDirty());
+    lutCtrl.on('lutChanged',   () => ctrl.markDirty());
+  }
+
+  async function handleFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setStatus('Decoding…');
+    const buf = await file.arrayBuffer();
+    await audioCtrl.loadFile(buf);
+    setStatus('Computing STFT…');
+    spectCtrlRef.current?.xAxis.setDomain([0, audioCtrl.duration]);
+    spectCtrlRef.current?.yAxis.setDomain([0, audioCtrl.sampleRate / 2]);
+    await audioCtrl.computeSTFT({ windowSize: 1024, hopSize: 512 });
+    setStatus('Done — press Play');
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: 400 }}>
+      <div style={{ padding: '8px 0' }}>
+        <input type="file" accept="audio/*" onChange={handleFile} />
+        <span style={{ marginLeft: 12, color: '#888', fontSize: 13 }}>{status}</span>
+        <button onClick={() => audioCtrl.play()}>Play</button>
+        <button onClick={() => audioCtrl.pause()}>Pause</button>
+        <button onClick={() => audioCtrl.stop()}>Stop</button>
+      </div>
+      <PlotCanvas
+        xDomain={[0, 1]} yDomain={[0, 22050]}
+        xLabel="Time (s)" yLabel="Frequency (Hz)"
+        disableDefaultDataLayer
+        onInit={handleInit}
+        style={{ flex: 1 }}
+      />
+    </div>
+  );
+}`;
+
 const SHARED_STORE_CODE = `import React, { useRef } from 'react';
 import PlotCanvas from '../src/components/PlotCanvas.jsx';
 import { DataStore } from '../src/plot/DataStore.js';
@@ -408,6 +546,7 @@ export default function GettingStartedPage() {
       <h3 style={h3Style}>
         <span style={stepBadgeStyle}>7</span>Shared DataStore (Advanced)
       </h3>
+
       <p style={pStyle}>
         Multiple <code style={inlineCode}>PlotCanvas</code> instances can share a single{' '}
         <code style={inlineCode}>DataStore</code>. Pass the same store via the{' '}
@@ -431,6 +570,78 @@ export default function GettingStartedPage() {
         onMouseLeave={e => { e.currentTarget.style.borderColor = '#3a3a3a'; }}
       >
         Live demo: Shared DataStore example &rarr;
+      </a>
+
+      {/* Step 8: Displaying a heatmap / image */}
+      <h3 style={h3Style}>
+        <span style={stepBadgeStyle}>8</span>Displaying a Heatmap or Image (Phase 4)
+      </h3>
+      <p style={pStyle}>
+        Any 2D numeric array or image can be rendered inside a{' '}
+        <code style={inlineCode}>PlotController</code> via{' '}
+        <code style={inlineCode}>BitmapDataLayer</code>. Pass a{' '}
+        <code style={inlineCode}>Float32Array</code> (or{' '}
+        <code style={inlineCode}>Uint8Array</code>, URL, or{' '}
+        <code style={inlineCode}>ImageBitmap</code>) as the{' '}
+        <code style={inlineCode}>source</code>, set <code style={inlineCode}>bitMapping</code>{' '}
+        to position it in data space, and wire a{' '}
+        <code style={inlineCode}>LUTController</code> for interactive colormap and level control.
+        The optional <code style={inlineCode}>LUTPanel</code> React component provides a
+        histogram sidebar with draggable level handles out-of-the-box.
+      </p>
+      <CodeBlock code={BITMAP_CODE} language="jsx" />
+      <div style={calloutStyle}>
+        <strong>dataTrigger vs colorTrigger:</strong>{' '}
+        increment <code style={inlineCode}>dataTrigger</code> when the source array changes
+        (re-upload to GPU); increment <code style={inlineCode}>colorTrigger</code> (use{' '}
+        <code style={inlineCode}>lutController.version</code>) when only the colormap or
+        levels changed. Using separate triggers avoids redundant GPU uploads on every
+        level-drag mousemove.
+      </div>
+      <a
+        href="bitmap.html"
+        style={demoBtnStyle}
+        target="_blank"
+        rel="noopener noreferrer"
+        onMouseEnter={e => { e.currentTarget.style.borderColor = '#7df'; }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = '#3a3a3a'; }}
+      >
+        Live demo: Bitmap Layers (EX16) &rarr;
+      </a>
+
+      {/* Step 9: AudioController */}
+      <h3 style={h3Style}>
+        <span style={stepBadgeStyle}>9</span>AudioController + Spectrogram (Phase 4)
+      </h3>
+      <p style={pStyle}>
+        <code style={inlineCode}>AudioController</code> handles audio loading (file or raw
+        Float32Array), playback (play/pause/stop/seek with{' '}
+        <code style={inlineCode}>timeUpdate</code> at ~10 Hz), and tiled STFT via{' '}
+        <code style={inlineCode}>computeSTFT()</code>. Each tile emits{' '}
+        <code style={inlineCode}>tileReady</code> with a{' '}
+        <code style={inlineCode}>power Float32Array</code> and spatial{' '}
+        <code style={inlineCode}>bounds: [tStart, 0, tEnd, nyquist]</code>, ready to pass
+        directly to <code style={inlineCode}>BitmapDataLayer</code>. A stateless{' '}
+        <code style={inlineCode}>setFilterFn</code> bridge connects{' '}
+        <code style={inlineCode}>FilterController</code> without tight coupling.
+      </p>
+      <CodeBlock code={AUDIO_CODE} language="jsx" />
+      <div style={calloutStyle}>
+        <strong>Streaming mode:</strong> call{' '}
+        <code style={inlineCode}>audioCtrl.appendSamples(newChunk)</code> to extend the buffer
+        incrementally (e.g. from a WebSocket). A streaming timer automatically recomputes the
+        last STFT tile each interval so the spectrogram stays current without re-running the
+        full STFT.
+      </div>
+      <a
+        href="spectrogram-v2.html"
+        style={demoBtnStyle}
+        target="_blank"
+        rel="noopener noreferrer"
+        onMouseEnter={e => { e.currentTarget.style.borderColor = '#7df'; }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = '#3a3a3a'; }}
+      >
+        Live demo: Spectrogram V2 (EX-Spec) &rarr;
       </a>
     </section>
   );

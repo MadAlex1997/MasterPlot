@@ -36,8 +36,12 @@ const BITMAP_LUT_DIAGRAM = `graph TD
   BDL[BitmapDataLayer]
   PC[PlotController — spectrogram]
   WPC[PlotController — waveform]
-  LP[LUTPanel React UI]
-  FP[FilterPanel React UI]
+
+  subgraph UI["ui/ — optional React UI wrappers"]
+    LP[LUTPanel]
+    FP[FilterPanel]
+    HO[HelpOverlay]
+  end
 
   AC -->|tileReady: power Float32Array + bounds| PC
   AC -->|timeUpdate: currentTime| PC
@@ -314,6 +318,16 @@ export default function ArchitecturePage() {
         horizontal histogram bar chart and two draggable hline LineROIs for level handles. Dragging a
         handle calls <code style={{ color: '#fd9' }}>lutController.setLevels()</code>, which bumps the
         version and triggers BitmapDataLayer recolorization without touching React state.
+      </p>
+      <p style={pStyle}>
+        <strong style={{ color: '#ccc' }}>ui/ — optional React UI wrappers</strong> — convenience components
+        shipped alongside the engine: <code style={{ color: '#fd9' }}>LUTPanel</code> (histogram +
+        level handles + colormap select), <code style={{ color: '#fd9' }}>FilterPanel</code> (filter
+        type / frequency controls), and <code style={{ color: '#fd9' }}>HelpOverlay</code> (first-load
+        keybind cheatsheet that auto-shows on first visit via <code style={{ color: '#fd9' }}>localStorage</code>).
+        These live in <code style={{ color: '#fd9' }}>ui/</code>, NOT in <code style={{ color: '#fd9' }}>src/</code> — users are
+        expected to build their own UI on top of the controller events; the <code style={{ color: '#fd9' }}>ui/</code> components are
+        provided as a courtesy.
       </p>
       <p style={pStyle}>
         <strong style={{ color: '#ccc' }}>AudioController</strong> — unified controller absorbing

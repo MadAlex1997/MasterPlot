@@ -163,6 +163,7 @@ function PlotControllerSection() {
           <tr><Td mono>autoExpand</Td><Td type>boolean</Td><Td mono>true</Td><Td>Expand domain automatically when new data exceeds current bounds</Td></tr>
           <tr><Td mono>autoScaleKey</Td><Td type>string|null</Td><Td mono>' '</Td><Td>Keyboard key that triggers autoScale(); <code style={inlineCode}>null</code> to disable the spacebar binding</Td></tr>
           <tr><Td mono>disableDefaultDataLayer</Td><Td type>boolean</Td><Td mono>false</Td><Td>Omit the built-in scatter layer; register custom layers via registerDataLayer() instead</Td></tr>
+          <tr><Td mono>disablePanZoom</Td><Td type>boolean</Td><Td mono>false</Td><Td>Disable wheel zoom and mouse-drag pan/zoom. ROI hit-testing still works. Used by LUTHistogramController to create a read-only histogram viewer.</Td></tr>
           <tr><Td mono>dataStore</Td><Td type>DataStore</Td><Td mono>(auto)</Td><Td>External DataStore; ownership NOT transferred — destroy() will not destroy it</Td></tr>
           <tr><Td mono>dataView</Td><Td type>PlotDataView</Td><Td mono>null</Td><Td>External PlotDataView used as the GPU data source in the render loop; bypasses DataStore when set</Td></tr>
         </tbody>
@@ -873,6 +874,86 @@ function AudioControllerSection() {
   );
 }
 
+// ── LUTPanel ──────────────────────────────────────────────────────────────────
+
+function LUTPanelSection() {
+  return (
+    <section id="lut-panel" style={classSectionStyle}>
+      <h3 style={h3Style}>LUTPanel</h3>
+      <p style={pStyle}>
+        Optional React UI component (in <code style={inlineCode}>ui/</code>) that renders a compact
+        LUT histogram panel: histogram bars with draggable hline level handles, a 12 px LUT gradient
+        strip, a colormap <code style={inlineCode}>{'<select>'}</code>, and an Auto Level button.
+        Backed by a <code style={inlineCode}>LUTHistogramController</code> and a{' '}
+        <code style={inlineCode}>LUTController</code> — both must be constructed separately and
+        passed as props. Users may replace this component with their own UI built on the same
+        controller events.
+      </p>
+      <p style={pStyle}>
+        Import: <code style={inlineCode}>{"import LUTPanel from '../ui/LUTPanel.jsx'"}</code>
+      </p>
+
+      <h4 style={h4Style}>Props</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Prop</Th><Th>Type</Th><Th>Default</Th><Th>Description</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>lutController</Td><Td type>LUTController</Td><Td mono>—</Td><Td>Required. Manages colormap and level window. Drives gradient strip and colormap select.</Td></tr>
+          <tr><Td mono>lutHistCtrl</Td><Td type>LUTHistogramController</Td><Td mono>—</Td><Td>Required. Owns the internal PlotController that renders histogram bars and hline handles.</Td></tr>
+          <tr><Td mono>width</Td><Td type>number</Td><Td mono>160</Td><Td>Total panel width in pixels (left histogram area + 12 px gradient strip).</Td></tr>
+          <tr><Td mono>height</Td><Td type>string|number</Td><Td mono>'100%'</Td><Td>Panel height CSS value. '100%' fills the parent container.</Td></tr>
+        </tbody>
+      </table>
+
+      <div style={calloutStyle}>
+        <strong>Usage pattern:</strong> construct <code style={inlineCode}>LUTController</code> and{' '}
+        <code style={inlineCode}>LUTHistogramController</code> at module level (outside React), feed
+        STFT/heatmap data via <code style={inlineCode}>lutController.setData()</code>, then render{' '}
+        <code style={inlineCode}>{'<LUTPanel lutController={lc} lutHistCtrl={lhc} width={160} />'}</code>{' '}
+        in a fixed-width sidebar column next to the plot. Level drag is handled entirely via hline
+        LineROIs inside the histogram plot — no extra React handlers needed.
+      </div>
+    </section>
+  );
+}
+
+// ── HelpOverlay ───────────────────────────────────────────────────────────────
+
+function HelpOverlaySection() {
+  return (
+    <section id="help-overlay" style={classSectionStyle}>
+      <h3 style={h3Style}>HelpOverlay</h3>
+      <p style={pStyle}>
+        Optional React UI component (in <code style={inlineCode}>ui/</code>) that renders an
+        always-visible <code style={inlineCode}>?</code> button and a modal keybind cheatsheet.
+        On first page visit (localStorage key absent) the overlay opens automatically. Closing
+        it writes the key so it won't re-open on refresh; the <code style={inlineCode}>?</code>{' '}
+        button always re-opens it.
+      </p>
+      <p style={pStyle}>
+        Import: <code style={inlineCode}>{"import HelpOverlay from '../ui/HelpOverlay.jsx'"}</code>
+      </p>
+
+      <h4 style={h4Style}>Props</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Prop</Th><Th>Type</Th><Th>Required</Th><Th>Description</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>title</Td><Td type>string</Td><Td>yes</Td><Td>Heading shown at the top of the modal (e.g. 'Scatter / ROI Controls').</Td></tr>
+          <tr><Td mono>controls</Td><Td type>{'Array<{ key: string, description: string }>'}</Td><Td>yes</Td><Td>Rows of the keybind table. Each entry has a <code style={inlineCode}>key</code> (displayed in monospace amber) and a <code style={inlineCode}>description</code>.</Td></tr>
+          <tr><Td mono>storageKey</Td><Td type>string</Td><Td>yes</Td><Td>localStorage key. Must be unique per page — controls the auto-open-once behaviour.</Td></tr>
+        </tbody>
+      </table>
+
+      <div style={calloutStyle}>
+        <strong>Placement:</strong> render inside the outermost page container (which must have{' '}
+        <code style={inlineCode}>position: relative</code>). The <code style={inlineCode}>?</code>{' '}
+        button renders inline so it should be placed in a header bar or toolbar. The modal uses{' '}
+        <code style={inlineCode}>position: fixed</code> so it always centers in the viewport
+        regardless of scroll position.
+      </div>
+    </section>
+  );
+}
+
 // ── Root export ───────────────────────────────────────────────────────────────
 
 export default function ApiReferencePage() {
@@ -898,6 +979,8 @@ export default function ApiReferencePage() {
       <LUTHistogramControllerSection />
       <BitmapDataLayerSection />
       <AudioControllerSection />
+      <LUTPanelSection />
+      <HelpOverlaySection />
     </section>
   );
 }
