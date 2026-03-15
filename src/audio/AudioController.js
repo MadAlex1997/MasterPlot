@@ -330,7 +330,12 @@ export class AudioController extends EventEmitter {
         const im  = out[bin * 2 + 1];
         const mag = Math.sqrt(re * re + im * im) / windowSize;
         const db  = 20 * Math.log10(Math.max(mag, 1e-10));
-        power[f * numBins + bin] = db;
+        // Row-major layout with Y-flip so _buildBitmapFromGrid produces the
+        // correct orientation when luma.gl uploads with UNPACK_FLIP_Y_WEBGL:
+        //   bin 0 (DC, 0 Hz)  → last image row  → texture v=0 → worldY=0 (bottom) ✓
+        //   bin numBins-1     → first image row  → texture v=1 → worldY=nyquist (top) ✓
+        //   frame f (time)    → column f                                               ✓
+        power[(numBins - 1 - bin) * numFrames + f] = db;
         if (db < globalMin) globalMin = db;
         if (db > globalMax) globalMax = db;
       }
