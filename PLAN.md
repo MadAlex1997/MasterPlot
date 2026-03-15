@@ -99,7 +99,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | DOC4 | Documentation: ROI System Deep-Dive     | ✅ COMPLETED | feature/DOC4 | 2026-03-07 |
 | DOC5 | Documentation: PlotController Deep-Dive | ✅ COMPLETED | feature/DOC5 | 2026-03-07 |
 | ARCH-F | Project Restructure (src/ purity) | ✅ COMPLETED | feature/ARCH-F | 2026-03-14 |
-| F27 | Generic BitmapDataLayer | 🔲 PENDING | — | — |
+| F27 | Generic BitmapDataLayer | ✅ COMPLETED | feature/F27 | 2026-03-14 |
 | F28 | LUTController + LUTHistogramController | 🔲 PENDING | — | — |
 | F29 | LUTPanel React Component | 🔲 PENDING | — | — |
 | F30 | AudioController | 🔲 PENDING | — | — |
@@ -136,71 +136,10 @@ Full spec: [docs/plan-archive.md#arch-f](docs/plan-archive.md#arch-f)
 
 ---
 
-### F27 [PENDING] Generic BitmapDataLayer
-
-**Branch:** `feature/F27`
-**Depends on:** ARCH-F
-
-**New files:**
-- `src/plot/layers/BitmapDataLayer.js` — deck.gl CompositeLayer
-- `src/plot/layers/_buildBitmapFromGrid.js` — shared CPU colorization util (extracted from `SpectrogramLayer.buildImage`)
-
-**Goal:** A deck.gl `CompositeLayer` that accepts any 2D image or numeric array and renders it as a spatially positioned `BitmapLayer`. The STFT/spectrogram pipeline no longer lives inside a layer.
-
-**Props:**
-```js
-{
-  id,
-  source,          // URL | ImageBitmap | ImageData | HTMLCanvasElement | TypedArray
-  bitMapping,      // EXCLUSIVE: { bounds:[l,b,r,t] } OR { origin:[x0,y0], scale:[dx,dy] }
-  channels,        // 'gray'|'rgb'|'rgba'|'gray+alpha'  (default: 'rgba')
-  dtype,           // 'float32'|'float64'|'uint8'|'uint16'|'int16'|'int32'  (default: 'uint8')
-  lutController,   // LUTController | null — applies LUT to single-channel data
-  dataTrigger,     // monotonic int — forces re-upload on increment
-  colorTrigger,    // monotonic int — forces recolorization only (no re-upload)
-  maxArrayPixels,  // size cap for TypedArray sources (default: 16_777_216 = 4096×4096)
-}
-```
-
-**`bitMapping` — mutually exclusive, calculates the missing form:**
-- `bounds → origin = [l, b]`, `scale = [(r-l)/width, (t-b)/height]`
-- `origin+scale → bounds = [x0, y0, x0+dx*width, y0+dy*height]`
-- Throws if both or neither are provided
-
-**Source resolution (`_resolveSource`):**
-
-| source type | channels | dtype | action |
-|---|---|---|---|
-| URL string | any | any | pass directly to BitmapLayer (deck.gl fetches) |
-| ImageBitmap / ImageData / HTMLCanvasElement | any | any | pass directly |
-| TypedArray | 'rgba' | 'uint8' | reinterpret as RGBA ImageData |
-| TypedArray | 'gray' | float or int | CPU colorize via LUTController (Viridis fallback) → ImageBitmap |
-| TypedArray | 'rgb' | 'uint8' | build ImageData with alpha=255 |
-| TypedArray | 'gray+alpha' | 'uint8' | build ImageData |
-
-- If `width * height > maxArrayPixels` → `console.warn`, return `[]`
-- Image cached in layer state; rebuilt only when `dataTrigger` or `colorTrigger` changes
-
-**Multiple `BitmapDataLayer` registrations on one `PlotController` are supported; each carries its own `lutController` reference.**
-
-**Usage:**
-```js
-myLutCtrl.on('levelChanged', () => { colorTriggerRef.current++; ctrl.markDirty(); });
-
-ctrl.registerDataLayer('heatmap', () =>
-  new BitmapDataLayer({
-    source: myFloatArray,
-    bitMapping: { bounds: [0, 0, 100, 50] },
-    channels: 'gray',
-    dtype: 'float32',
-    lutController: myLutCtrl,
-    dataTrigger: dataTriggerRef.current,
-    colorTrigger: colorTriggerRef.current,
-  })
-);
-```
-
-**Verification:** Load a URL image, a Float32Array heatmap, and an RGBA Uint8Array in a single PlotController. Adjust LUT levels; heatmap recolorizes. Build zero errors.
+### F27 [COMPLETED] Generic BitmapDataLayer
+**Completed:** 2026-03-14 | **Branch:** feature/F27
+Created `src/plot/layers/BitmapDataLayer.js` (CompositeLayer accepting URL/ImageBitmap/TypedArray; `bitMapping` exclusive bounds vs origin+scale; per-layer `lutController`) and `src/plot/layers/_buildBitmapFromGrid.js` (CPU colorizer: rgba/rgb/gray+alpha direct copy, gray→LUT/Viridis colorize); build zero errors.
+Full spec: [docs/plan-archive.md#f27](docs/plan-archive.md#f27)
 
 ---
 
@@ -414,3 +353,4 @@ ui/FilterPanel.jsx  →  audioCtrl.setFilterFn bridge
 
 - **2026-03-14 [Claude]**: Phase 4 (Bitmap/LUT Refactor) added as PENDING (v7.0) — ARCH-F through CLEANUP. Motivation: decompose monolithic SpectrogramLayer into generic BitmapDataLayer + LUTController + LUTHistogramController. Mandatory order: ARCH-F → F27 → F28 → F29 → F30 → EX-Spec → CLEANUP.
 - **2026-03-14 [Claude]**: ARCH-F completed (v7.1) — 9 webpack entry JS files moved from `src/` to `examples/src/`; `FilterPanel.jsx` and `HistogramLUTPanel.jsx` moved from `src/components/` to `ui/`; `src/components/` now holds only `PlotCanvas.jsx`; build passes zero errors. Next: F27 (unblocked).
+- **2026-03-14 [Claude]**: F27 completed (v7.2) — `BitmapDataLayer.js` and `_buildBitmapFromGrid.js` created; accepts URL/ImageBitmap/TypedArray sources; `bitMapping` exclusive bounds vs origin+scale; per-layer `lutController` duck-typed; gray/rgb/rgba/gray+alpha channel handling; build zero errors. Next: F28 (unblocked).

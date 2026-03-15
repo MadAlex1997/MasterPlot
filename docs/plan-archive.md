@@ -4309,3 +4309,81 @@ Full spec: [docs/plan-archive.md#doc4](docs/plan-archive.md#doc4)
 **Completed:** 2026-03-07 | **Branch:** feature/DOC5
 `PlotControllerDeepDivePage.jsx` created with 10 sections (init pipeline sequence diagram, two-canvas model, dirty-flag render loop table + sequence diagram, layer registry code, three zoom modes with restore-and-reapply code, four-space coordinate table + y-axis inversion, appendData-to-GPU flowchart, ownership flag table, full events reference table); NavSidebar, DocsPage, and HubPage updated.
 Full spec: [docs/plan-archive.md#doc5](docs/plan-archive.md#doc5)
+
+---
+
+## F27
+
+### F27 [COMPLETED] Generic BitmapDataLayer
+**Completed:** 2026-03-14 | **Branch:** feature/F27
+**Depends on:** ARCH-F
+
+**New files:**
+- `src/plot/layers/BitmapDataLayer.js` — deck.gl CompositeLayer
+- `src/plot/layers/_buildBitmapFromGrid.js` — shared CPU colorization util (extracted from `SpectrogramLayer.buildImage`)
+
+**Goal:** A deck.gl `CompositeLayer` that accepts any 2D image or numeric array and renders it as a spatially positioned `BitmapLayer`. The STFT/spectrogram pipeline no longer lives inside a layer.
+
+**Props:**
+```js
+{
+  id,
+  source,          // URL | ImageBitmap | ImageData | HTMLCanvasElement | TypedArray
+  bitMapping,      // EXCLUSIVE: { bounds:[l,b,r,t] } OR { origin:[x0,y0], scale:[dx,dy] }
+  channels,        // 'gray'|'rgb'|'rgba'|'gray+alpha'  (default: 'rgba')
+  dtype,           // 'float32'|'float64'|'uint8'|'uint16'|'int16'|'int32'  (default: 'uint8')
+  lutController,   // LUTController | null — applies LUT to single-channel data
+  dataTrigger,     // monotonic int — forces re-upload on increment
+  colorTrigger,    // monotonic int — forces recolorization only (no re-upload)
+  maxArrayPixels,  // size cap for TypedArray sources (default: 16_777_216 = 4096×4096)
+  width,           // image width in pixels — required for TypedArray sources
+  height,          // image height in pixels — required for TypedArray sources
+}
+```
+
+**`bitMapping` — mutually exclusive:**
+- `bounds` → `[left, bottom, right, top]` in data space; passed directly to BitmapLayer
+- `origin+scale` → `bounds = [x0, y0, x0+dx*width, y0+dy*height]`
+- Throws if both or neither are provided
+
+**Source resolution (`_resolveSource`):**
+
+| source type | channels | dtype | action |
+|---|---|---|---|
+| URL string | any | any | pass directly to BitmapLayer (deck.gl fetches) |
+| ImageBitmap / ImageData / HTMLCanvasElement | any | any | pass directly |
+| TypedArray | 'rgba' | 'uint8' | reinterpret as RGBA ImageData (direct copy) |
+| TypedArray | 'gray' | float or int | CPU colorize via LUTController (Viridis fallback) → ImageBitmap |
+| TypedArray | 'rgb' | 'uint8' | build ImageData with alpha=255 |
+| TypedArray | 'gray+alpha' | 'uint8' | build ImageData from interleaved gray+alpha |
+
+- If `width * height > maxArrayPixels` → `console.warn`, return `null` (layer renders nothing)
+- Image cached in layer state (`initializeState` sets `image: undefined`); rebuilt only when `dataTrigger` or `colorTrigger` changes (or first render)
+
+**`_buildBitmapFromGrid` details:**
+- Takes `(source, width, height, channels, dtype, lutController)`
+- For 'gray': reads `lutController.getLUTArray()` and `state.{level_min, level_max}`; falls back to Viridis + auto-range when `lutController` is null
+- Writes to `ImageData`, renders into `OffscreenCanvas` (or `document.createElement('canvas')` fallback), returns `ImageBitmap` via `transferToImageBitmap()` or `HTMLCanvasElement`
+
+**Multiple `BitmapDataLayer` registrations on one `PlotController` are supported; each carries its own `lutController` reference.**
+
+**Usage:**
+```js
+myLutCtrl.on('levelChanged', () => { colorTriggerRef.current++; ctrl.markDirty(); });
+
+ctrl.registerDataLayer('heatmap', () =>
+  new BitmapDataLayer({
+    source:       myFloat32Array,
+    bitMapping:   { bounds: [0, 0, 100, 50] },
+    channels:     'gray',
+    dtype:        'float32',
+    width:        512,
+    height:       256,
+    lutController: myLutCtrl,
+    dataTrigger:  dataTriggerRef.current,
+    colorTrigger: colorTriggerRef.current,
+  })
+);
+```
+
+**Verification:** Build zero errors. Layer accepts URL images, Float32Array heatmaps, and Uint8Array RGBA sources. LUT levels change triggers recolorization via `colorTrigger`.
