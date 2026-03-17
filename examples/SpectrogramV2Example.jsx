@@ -50,6 +50,8 @@ const PRESETS = [
   { label: 'plane 1',           path: 'sounds/plane1.wav' },
   { label: 'plane 2',           path: 'sounds/plane2.wav' },
   { label: 'Stress (60 s)',     path: 'stress:60' },
+  { label: 'Stress (10 m)',     path: 'stress:600' },
+  { label: 'Stress (30 m)',     path: 'stress:1800' },
 ];
 
 const WINDOW_FNS   = ['hann', 'hamming', 'blackman', 'rectangular'];
