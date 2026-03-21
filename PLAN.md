@@ -112,7 +112,6 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | CLEANUP | Remove Legacy Spectrogram Code | ✅ COMPLETED | feature/cleanup-old-spectrogram | 2026-03-15 |
 | F31  | BitmapViewGenerator (Viewport-Driven LOD) | ✅ COMPLETED | feature/F31-EX18-EX19 | 2026-03-21 |
 | EX18 | Variable-Resolution Bitmap Example | ✅ COMPLETED | feature/F31-EX18-EX19 | 2026-03-21 |
-| EX19 | SpectrogramV2 — Viewport-Driven LOD | 🔲 PENDING | — | — |
 
 ---
 
@@ -128,7 +127,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 ```
 F27 → F28 → F29 → F30 → EX-Spec → EX17 ✅ → EX14 ✅ → EX15 ✅ → EX16 ✅ → DOC6 ✅ → CLEANUP ✅
 
-F31 → EX18 → EX19
+F31 → EX18
 ```
 
 ---
@@ -297,15 +296,6 @@ Full spec: [docs/plan-archive.md#ex18](docs/plan-archive.md#ex18)
 
 ---
 
-### EX19 [PENDING] SpectrogramV2 — Viewport-Driven LOD
-
-**Branch:** TBD (needs redesign before implementation)
-**Depends on:** F31 ✅, EX-Spec ✅
-
-**Status note (2026-03-21):** Initial implementation reverted. Simple bilinear resampling of a fixed-resolution STFT cache does not achieve the goal — a proper LOD spectrogram needs to combine memory-load reduction at coarse zoom levels (fewer cached frames) with increased STFT fidelity at tight zoom levels (higher hop-rate recompute for the visible window). Needs design work before implementation.
-
----
-
 ## Recent Changelog
 
 > Full history in [docs/plan-archive.md — Change Log](docs/plan-archive.md#change-log).
@@ -316,13 +306,12 @@ Full spec: [docs/plan-archive.md#ex18](docs/plan-archive.md#ex18)
 - **2026-03-14 [Claude]**: F28 completed (v7.3) — `LUTController.js` (generalizes HistogramLUTController; `setData`/`setSpectrogramData` alias; `version` getter; `levelChanged`/`lutChanged`/`dataChanged` events) and `LUTHistogramController.js` (internal PlotController with `disablePanZoom:true`; SolidPolygonLayer histogram bars; hline LineROIs for level handles; bidirectional LUT↔ROI wiring); `PlotController.disablePanZoom` option added; build zero errors. Next: F29 (unblocked).
 - **2026-03-14 [Claude]**: F29 completed (v7.4) — `ui/LUTPanel.jsx` (fresh component; props: `lutController`/`lutHistCtrl`/`width`/`height`; two raw canvases wired to `lutHistCtrl.init()`; 12 px LUT gradient with ResizeObserver + `lutChanged` listener; colormap select from `LUTController.presetNames`; Auto Level button; level drag via hline ROIs in plot); build zero errors. Next: F30 (unblocked).
 - **2026-03-14 [Claude]**: F30 completed (v7.5) — `src/audio/AudioController.js` (unified audio controller; `loadFile(arrayBuffer)` via Web Audio decodeAudioData + `loadBuffer(samples, sr)` direct + `appendSamples` streaming; stateless `setFilterFn` bridge compatible with FilterController.applyToSamples; play/pause/stop/seek with `timeUpdate` at ~10 Hz; tiled STFT via `computeSTFT({windowSize, hopSize, windowFn, tileWidthSec=30})` emitting `tileReady` per fixed-width tile + `stftComplete`; streaming timer recomputes last tile on each `appendSamples` tick; `destroy()` cleans all timers + AudioContext); build zero errors. Next: EX-Spec (unblocked).
-- **2026-03-21 [Claude]**: F31/EX18 completed (v8.0) — F31: `BitmapViewGenerator` (`src/plot/layers/BitmapViewGenerator.js`); generate (stale-seq) + fetch (AbortController) modes; debounced domainChanged; `bumpColorTrigger()` for LUT recolorize; `colorTrigger` added to `_layerState`. EX18: `BitmapLODExample.jsx` — Panel 1 bilinear LOD on 512×512 Gaussian grid + LUTPanel; Panel 2 CDS HiPS2FITS fetch with AbortSignal + loading badges; webpack/HTML/HubPage/README/API docs added; build zero errors. EX19 reverted — simple bilinear resampling of fixed STFT cache insufficient; needs combined memory-reduction + fidelity-increase design before re-attempting.
-- **2026-03-15 [Claude]**: EX17 completed (v7.9) — waveform controls panel: 160 px panel mirrors LUTPanel column; playback buttons + time display + Filter ↗ + Labels ↗ moved from header to controls panel; dead "Recompute STFT" button removed; x-axes visually aligned; build zero errors.
+- **2026-03-21 [Claude]**: F31/EX18 completed (v8.0) — F31: `BitmapViewGenerator` (`src/plot/layers/BitmapViewGenerator.js`); generate (stale-seq) + fetch (AbortController) modes; debounced domainChanged; `bumpColorTrigger()` for LUT recolorize; `colorTrigger` added to `_layerState`. EX18: `BitmapLODExample.jsx` — Panel 1 bilinear LOD on 512×512 Gaussian grid + LUTPanel; Panel 2 CDS HiPS2FITS fetch with AbortSignal + loading badges; webpack/HTML/HubPage/README/API docs added; build zero errors.- **2026-03-15 [Claude]**: EX17 completed (v7.9) — waveform controls panel: 160 px panel mirrors LUTPanel column; playback buttons + time display + Filter ↗ + Labels ↗ moved from header to controls panel; dead "Recompute STFT" button removed; x-axes visually aligned; build zero errors.
 - **2026-03-15 [Claude]**: EX14 completed (v7.10) — `generateStressAudio(60, 22050)` synthesises chirp + pink noise + AM tones; "Stress (60 s)" preset added; `handlePresetChange` routes `stress:N` path to generator + `loadBuffer`; no new files; build zero errors.
 - **2026-03-15 [Claude]**: EX15 completed (v7.11) — `ui/HelpOverlay.jsx` created; added to ExampleApp, LiveSignalsExample, MultiSensorExample, SeismographyExample, SharedDataExample, SpectrogramV2Example with unique storageKey + per-page controls list; `position:relative` added to each outer container; build zero errors. Next: EX16 (unblocked).
 - **2026-03-15 [Claude]**: EX16 completed (v7.12) — `examples/BitmapExample.jsx` + `examples/src/bitmap.js` + `public/bitmap.html`; three panels: local file (createImageBitmap + configurable bitMapping sidebar), 256×256 Float32 Gaussian heatmap (LUTPanel with live level handles + colormap select), URL image (NASA tile with geographic bounds); webpack entry + HtmlWebpackPlugin; HubPage card; README section; ApiReferencePage demo links; build zero errors. Next: DOC6 (unblocked).
 - **2026-03-15 [Claude]**: CLEANUP completed (v7.14) — deleted `SpectrogramLayer.js`, `HistogramLUTController.js`, `HistogramLUTPanel.jsx`, `SpectrogramExample.jsx`, `examples/src/spectrogram.js`, `public/spectrogram.html`, webpack `spectrogram` entry; popup host (`SpectrogramPopup.jsx` / `spectrogram-popup.html`) retained as it is shared by SpectrogramV2; HubPage legacy card removed; README audio-subsystem tree + file tree updated; prompt.md project structure updated; build zero errors.
-- **2026-03-21 [Claude]**: Phase 5 (Viewport-Driven LOD) added (v8.0) — F31 (`BitmapViewGenerator`), EX18 (variable-resolution bitmap demo), EX19 (SpectrogramV2 LOD integration). Mandatory order: F31 → EX18 → EX19. Branch: `feature/F31-EX18-EX19`.
+- **2026-03-21 [Claude]**: Phase 5 (Viewport-Driven LOD) added (v8.0) — F31 (`BitmapViewGenerator`), EX18 (variable-resolution bitmap demo). Mandatory order: F31 → EX18. Branch: `feature/F31-EX18-EX19`.
 - **2026-03-15 [Claude]**: DOC6 completed (v7.13) — ArchitecturePage: `ui/` subgraph added to BITMAP_LUT_DIAGRAM (LUTPanel/FilterPanel/HelpOverlay), `ui/` prose paragraph added; ApiReferencePage: `disablePanZoom` option added to PlotController table, full `LUTPanel` section (props table + usage callout) and `HelpOverlay` section (props table + placement callout) added; GettingStartedPage: step 8 (BitmapDataLayer heatmap + LUTPanel quick-start) and step 9 (AudioController + STFT spectrogram quick-start) added; RoiDeepDivePage verified accurate (no Phase 4 ROI changes); build zero errors. Next: CLEANUP (unblocked).
 - **2026-03-15 [Claude]**: Added EX17 (SpectrogramV2 waveform layout fix + controls panel) (v7.8) — slots between EX-Spec and EX14; removes dead Recompute STFT button; moves playback+popup controls to 160 px panel next to waveform to align x-axes.
 - **2026-03-15 [Claude]**: Added EX14/EX15/EX16/DOC6 from Features.md (v7.7) — inserted before CLEANUP; mandatory order updated to `EX-Spec → EX14 → EX15 → EX16 → DOC6 → CLEANUP`.
