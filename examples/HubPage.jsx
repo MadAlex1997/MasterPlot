@@ -44,6 +44,11 @@ export default function HubPage() {
       desc: 'Phase 4 spectrogram: AudioController tiled STFT → BitmapDataLayer per tile; LUTController + LUTHistogramController + LUTPanel sidebar for real-time colormap / level adjustment; FilterPanel sidebar with setFilterFn bridge; playhead vline ROI; user RectROI annotations (press R); waveform PathLayer synced to spectrogram x-axis.',
     },
     {
+      href: 'bitmap-lod.html',
+      title: 'Bitmap LOD (F31 / EX18)',
+      desc: 'Two-panel BitmapViewGenerator demo. Panel 1 — local Gaussian heatmap: bilinear LOD slices the visible domain from a 512×512 base grid and resamples to viewport resolution; debounce slider; LUTPanel sidebar. Panel 2 — URL fetch: CDS HiPS2FITS 2MASS K-band all-sky; re-fetches at viewport dimensions on zoom/pan; stale inflight requests cancelled via AbortSignal; loading indicator.',
+    },
+    {
       href: 'bitmap.html',
       title: 'Bitmap Layers (EX16)',
       desc: 'Three panels demonstrating BitmapDataLayer without audio: (1) local image file loaded via createImageBitmap with configurable bitMapping; (2) 256×256 Float32 Gaussian heatmap with live LUTPanel sidebar — drag level handles, swap colormap; (3) URL image rendered with geographic lon/lat bounds.',

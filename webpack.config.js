@@ -18,6 +18,7 @@ module.exports = (env, argv) => {
       docs:                  './examples/src/docs.js',
       'spectrogram-v2':      './examples/src/spectrogramV2.js',
       'bitmap':              './examples/src/bitmap.js',
+      'bitmap-lod':          './examples/src/bitmap-lod.js',
     },
     output: {
       path: path.resolve(__dirname, 'dist'),
@@ -93,6 +94,11 @@ module.exports = (env, argv) => {
         template: './public/bitmap.html',
         filename: 'bitmap.html',
         chunks:   ['bitmap'],
+      }),
+      new HtmlWebpackPlugin({
+        template: './public/bitmap-lod.html',
+        filename: 'bitmap-lod.html',
+        chunks:   ['bitmap-lod'],
       }),
       new CopyWebpackPlugin({
         patterns: [{ from: 'sounds', to: 'sounds' }],

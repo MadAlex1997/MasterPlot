@@ -810,6 +810,89 @@ function BitmapDataLayerSection() {
   );
 }
 
+// ── BitmapViewGenerator ───────────────────────────────────────────────────────
+
+function BitmapViewGeneratorSection() {
+  return (
+    <section id="bitmap-view-generator" style={classSectionStyle}>
+      <h3 style={h3Style}>BitmapViewGenerator</h3>
+      <p style={pStyle}>
+        Viewport-aware controller that re-generates or re-fetches a{' '}
+        <code style={inlineCode}>BitmapDataLayer</code> whenever the visible domain changes.
+        Extends <code style={inlineCode}>EventEmitter</code>. Automatically registers a layer
+        with the provided <code style={inlineCode}>PlotController</code> and subscribes to{' '}
+        <code style={inlineCode}>domainChanged</code> events. Requests are debounced to avoid
+        thrashing during rapid pan/zoom.
+      </p>
+      <p style={pStyle}>
+        Import: <code style={inlineCode}>{"import { BitmapViewGenerator } from '../src/plot/layers/BitmapViewGenerator.js'"}</code>
+      </p>
+      <p style={pStyle}>
+        Live demos:{' '}
+        <a href="../bitmap-lod.html" style={{ color: '#7df' }}>Bitmap LOD (EX18)</a> — local bilinear
+        LOD and URL fetch with AbortSignal cancellation.
+      </p>
+
+      <div style={calloutStyle}>
+        <strong>Constructor:</strong>{' '}
+        <code style={inlineCode}>new BitmapViewGenerator(plotController, opts)</code>
+        <br />
+        Exactly one of <code style={inlineCode}>opts.generate</code> or{' '}
+        <code style={inlineCode}>opts.fetch</code> must be provided.
+      </div>
+
+      <h4 style={h4Style}>Constructor Options</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Option</Th><Th>Type</Th><Th>Default</Th><Th>Description</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>layerId</Td><Td type>string</Td><Td mono>required</Td><Td>ID passed to <code style={inlineCode}>plotController.registerDataLayer()</code>.</Td></tr>
+          <tr><Td mono>generate</Td><Td type>async fn</Td><Td mono>—</Td><Td>Local generator. Receives <code style={inlineCode}>request</code> object. Returns <code style={inlineCode}>{'{ source, width, height, bitMapping? }'}</code>. Mutually exclusive with fetch.</Td></tr>
+          <tr><Td mono>fetch</Td><Td type>async fn</Td><Td mono>—</Td><Td>Remote fetcher. Receives <code style={inlineCode}>(request, signal)</code>. Returns same shape as generate. AbortSignal passed to cancel stale requests. Mutually exclusive with generate.</Td></tr>
+          <tr><Td mono>debounceMs</Td><Td type>number</Td><Td mono>150</Td><Td>Delay after domainChanged before firing the generate/fetch callback.</Td></tr>
+          <tr><Td mono>channels</Td><Td type>string</Td><Td mono>'gray'</Td><Td>Forwarded to BitmapDataLayer channels prop.</Td></tr>
+          <tr><Td mono>dtype</Td><Td type>string</Td><Td mono>'float32'</Td><Td>Forwarded to BitmapDataLayer dtype prop.</Td></tr>
+          <tr><Td mono>lutController</Td><Td type>LUTController|null</Td><Td mono>null</Td><Td>Forwarded to BitmapDataLayer. Use bumpColorTrigger() to recolorize on LUT change.</Td></tr>
+          <tr><Td mono>initialBitMapping</Td><Td type>object|null</Td><Td mono>null</Td><Td>Starting bitMapping so the layer renders immediately before the first request completes.</Td></tr>
+        </tbody>
+      </table>
+
+      <h4 style={h4Style}>Request Object (passed to generate / fetch)</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Field</Th><Th>Type</Th><Th>Description</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>xMin, xMax</Td><Td type>number</Td><Td>Current x domain bounds (data space).</Td></tr>
+          <tr><Td mono>yMin, yMax</Td><Td type>number</Td><Td>Current y domain bounds (data space).</Td></tr>
+          <tr><Td mono>widthPx</Td><Td type>number</Td><Td>Plot area width in pixels (integer).</Td></tr>
+          <tr><Td mono>heightPx</Td><Td type>number</Td><Td>Plot area height in pixels (integer).</Td></tr>
+          <tr><Td mono>pixelsPerUnitX</Td><Td type>number</Td><Td>widthPx / (xMax - xMin).</Td></tr>
+          <tr><Td mono>pixelsPerUnitY</Td><Td type>number</Td><Td>heightPx / (yMax - yMin).</Td></tr>
+        </tbody>
+      </table>
+
+      <h4 style={h4Style}>Methods</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Method</Th><Th>Returns</Th><Th>Description</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>bumpColorTrigger()</Td><Td mono>void</Td><Td>Increment colorTrigger and call markDirty(). Forces BitmapDataLayer to recolorize without re-running the generate/fetch callback. Use when LUT levels or colormap change.</Td></tr>
+          <tr><Td mono>setLutController(lut)</Td><Td mono>void</Td><Td>Replace the lutController forwarded to BitmapDataLayer. Call markDirty() separately if an immediate repaint is needed.</Td></tr>
+          <tr><Td mono>refresh()</Td><Td mono>void</Td><Td>Force an immediate re-request bypassing the debounce timer.</Td></tr>
+          <tr><Td mono>destroy()</Td><Td mono>void</Td><Td>Unsubscribes from plotController, aborts any inflight fetch request, clears debounce timer, unregisters the layer.</Td></tr>
+        </tbody>
+      </table>
+
+      <h4 style={h4Style}>Events</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Event</Th><Th>Payload</Th><Th>When emitted</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>requestStart</Td><Td mono>{'{ request }'}</Td><Td>Debounce fires and generate/fetch begins.</Td></tr>
+          <tr><Td mono>requestComplete</Td><Td mono>{'{ request, durationMs }'}</Td><Td>generate/fetch returned a result and the layer state was updated.</Td></tr>
+          <tr><Td mono>requestError</Td><Td mono>{'{ request, error }'}</Td><Td>generate/fetch threw an error (AbortError is silently ignored).</Td></tr>
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
 // ── AudioController ───────────────────────────────────────────────────────────
 
 function AudioControllerSection() {
@@ -978,6 +1061,7 @@ export default function ApiReferencePage() {
       <LUTControllerSection />
       <LUTHistogramControllerSection />
       <BitmapDataLayerSection />
+      <BitmapViewGeneratorSection />
       <AudioControllerSection />
       <LUTPanelSection />
       <HelpOverlaySection />

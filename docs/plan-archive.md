@@ -4590,3 +4590,62 @@ Demonstrate `BitmapDataLayer` outside of the audio/spectrogram context using thr
 - `prompt.md` — removed legacy entries from project structure; CLEANUP deliverable marked ✅
 
 **Verification:** `npm run build` zero errors. `grep -r SpectrogramLayer src/` returns nothing.
+
+---
+
+## F31
+
+### F31 — BitmapViewGenerator (Viewport-Driven LOD)
+
+**Branch:** `feature/F31-EX18-EX19`
+**Completed:** 2026-03-21
+**Depends on:** F27 ✅
+
+**New file:** `src/plot/layers/BitmapViewGenerator.js`
+
+Viewport-aware controller that re-generates or re-fetches a `BitmapDataLayer` whenever the visible domain changes. Extends `EventEmitter`. Registered layer automatically managed via `plotController.registerDataLayer`.
+
+**Constructor opts:**
+- `layerId` (required), `generate` xor `fetch`, `debounceMs=150`, `channels='gray'`, `dtype='float32'`, `lutController=null`, `initialBitMapping=null`
+
+**Internal `_layerState`:** `{ source, width, height, bitMapping, channels, dtype, lutController, dataTrigger, colorTrigger }`
+
+**generate mode:** stale results discarded via `_seqId` monotonic counter.
+**fetch mode:** previous `AbortController` aborted on each new domain change.
+
+**Public API added beyond plan spec:**
+- `bumpColorTrigger()` — increments `_layerState.colorTrigger` + `markDirty()`; forces `BitmapDataLayer` recolorize without re-running generate/fetch. Added to support EX19 LUT wiring.
+- `setLutController(lut)`, `refresh()`, `destroy()`
+
+**Events:** `requestStart { request }`, `requestComplete { request, durationMs }`, `requestError { request, error }`
+
+---
+
+## EX18
+
+### EX18 — Variable-Resolution Bitmap Example
+
+**Branch:** `feature/F31-EX18-EX19`
+**Completed:** 2026-03-21
+**Depends on:** F31
+
+**New files:** `examples/BitmapLODExample.jsx`, `examples/src/bitmap-lod.js`, `public/bitmap-lod.html`
+
+Two-panel demo:
+
+**Panel 1 — Local generation (Gaussian heatmap):**
+- 512×512 Float64 base grid generated once (`generateHeatmapGrid`)
+- `BitmapViewGenerator` with `generate`: `sliceAndResample` extracts visible domain from base grid, `bilinearResample` resamples to `min(widthPx,1024) × min(heightPx,1024)`
+- LUT changes call `_heatGen.refresh()` (fast for in-memory data)
+- Sidebar: `LUTPanel`, debounce slider (50–500 ms), resolution readout
+
+**Panel 2 — URL fetch (CDS HiPS2FITS 2MASS K-band):**
+- `coordsys=galactic` → `ra`/`dec` params interpreted as galactic ℓ/b
+- `fov = xMax - xMin`, `ra = (xMin+xMax)/2`, `dec = (yMin+yMax)/2`
+- Width/height capped at 1024×512 to limit request size
+- `AbortSignal` passed to `fetch()` for stale-request cancellation
+- Loading badge + error badge keyed to `requestStart`/`requestComplete`/`requestError`
+
+**Deliverables:** webpack entry + HtmlWebpackPlugin; HubPage card; README Phase 5 section; `ApiReferencePage` full `BitmapViewGenerator` section (constructor options + request object + methods + events tables).
+
+---

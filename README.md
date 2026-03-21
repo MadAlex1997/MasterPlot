@@ -344,6 +344,75 @@ ctrl.registerDataLayer('heatmap', () =>
 
 ---
 
+### Phase 5 — Viewport-Driven LOD (F31, EX18, EX19)
+
+#### BitmapViewGenerator (F31)
+
+`BitmapViewGenerator` (`src/plot/layers/BitmapViewGenerator.js`) is a viewport-aware controller that re-generates or re-fetches a `BitmapDataLayer` whenever the visible domain changes. It debounces `domainChanged` events from the `PlotController` and fires a callback at exactly the current viewport resolution.
+
+```js
+import { BitmapViewGenerator } from './src/plot/layers/BitmapViewGenerator.js';
+
+const gen = new BitmapViewGenerator(plotController, {
+  layerId:    'my-layer',
+  debounceMs: 150,                // default
+  channels:   'gray',
+  dtype:      'float32',
+  lutController: myLutCtrl,
+  initialBitMapping: { bounds: [0, 0, 1, 1] },
+
+  // Local generator — receives request, returns { source, width, height, bitMapping? }
+  generate: async ({ xMin, xMax, yMin, yMax, widthPx, heightPx }) => {
+    const outW = Math.min(widthPx, 1024);
+    const outH = Math.min(heightPx, 1024);
+    const source = myResampleFn(xMin, xMax, yMin, yMax, outW, outH);
+    return { source, width: outW, height: outH };
+    // bitMapping defaults to { bounds: [xMin, yMin, xMax, yMax] } if omitted
+  },
+});
+
+// LUT changes → recolorize without re-running generate
+myLutCtrl.on('levelChanged', () => gen.bumpColorTrigger());
+myLutCtrl.on('lutChanged',   () => gen.bumpColorTrigger());
+
+// For URL fetch mode (with AbortSignal cancellation of stale requests):
+const gen2 = new BitmapViewGenerator(plotController, {
+  layerId: 'remote-layer',
+  fetch: async ({ xMin, xMax, yMin, yMax, widthPx, heightPx }, signal) => {
+    const url = buildApiUrl(xMin, xMax, yMin, yMax, widthPx, heightPx);
+    const resp = await fetch(url, { signal });
+    const blob = await resp.blob();
+    const bitmap = await createImageBitmap(blob);
+    return { source: bitmap, width: widthPx, height: heightPx };
+  },
+});
+
+gen.on('requestStart',    ({ request }) => showSpinner());
+gen.on('requestComplete', ({ request, durationMs }) => hideSpinner());
+gen.on('requestError',    ({ request, error }) => console.error(error));
+
+// Cleanup
+gen.destroy();
+```
+
+**Key design points:**
+- Exactly one of `generate` or `fetch` is required (they are mutually exclusive).
+- `generate` mode: stale results discarded via monotonic sequence counter.
+- `fetch` mode: previous `AbortController` aborted on each new domain change — no stale responses applied.
+- `bumpColorTrigger()` increments `colorTrigger` on the layer state, forcing `BitmapDataLayer` to re-colorize without re-running the (potentially expensive) generate/fetch callback.
+- `refresh()` bypasses the debounce and fires immediately.
+
+#### Bitmap LOD Example (EX18)
+
+Live demo at `bitmap-lod.html` — two panels:
+
+| Panel | Mode | What it shows |
+|-------|------|---------------|
+| 1 — Gaussian heatmap | `generate` | 512×512 base grid; visible region sliced and bilinear-resampled to viewport resolution on every zoom/pan. Debounce slider. LUTPanel sidebar. |
+| 2 — CDS HiPS2FITS | `fetch` | 2MASS K-band all-sky; re-fetched at viewport pixel dimensions on zoom/pan. Stale inflight requests cancelled via `AbortSignal`. Loading indicator. |
+
+---
+
 ## TraceGroup (F22)
 
 `TraceGroup` is a generic multi-trace data layer that partitions bulk point data by a string tag into per-tag `Float32Array` buffers, and plugs into `PlotController` via `registerDataLayer`.
@@ -753,6 +822,7 @@ src/                              ← library code only
       LineLayer.js                — deck.gl polylines
       ROILayer.js                 — deck.gl composite ROI renderer
       BitmapDataLayer.js          — generic bitmap layer; URL/ImageBitmap/TypedArray (F27)
+      BitmapViewGenerator.js      — viewport-driven LOD controller; generate or fetch mode (F31)
       _buildBitmapFromGrid.js     — CPU colorizer for typed-array grids (F27)
       LUTController.js            — colormap + level + histogram controller (F28a)
       SignalDataLayer.js          — SignalStore + buildSignalLayers for line plots (ARCH-D)
@@ -781,6 +851,7 @@ examples/                         ← example page components
   LiveSignalsExample.jsx          — three live signals + rolling window + ROI stats sidebar (EX8)
   MultiSensorExample.jsx          — 50 sensors × 10k pts via TraceGroup; visibility sidebar (EX7)
   SpectrogramV2Example.jsx        — Phase 4 spectrogram: AudioController + BitmapDataLayer + LUTPanel (EX-Spec)
+  BitmapLODExample.jsx            — BitmapViewGenerator: local bilinear LOD + URL fetch with AbortSignal (EX18)
   SharedDataExample.jsx           — two-plot shared DataStore + filtered DataView demo (F17)
   SeismographyExample.jsx         — 10 stacked channels, shared X-axis, vline picks + table (EX5)
 public/
