@@ -47,7 +47,11 @@ export class LinearRegion extends ROIBase {
   bumpVersion() {
     this.version  += 1;
     this.updatedAt = Date.now();
-    this.domain    = { x: [this.x1, this.x2] };
+    this.syncDomain();
+  }
+
+  syncDomain() {
+    this.domain = { x: [this.x1, this.x2] };
   }
 
   /**

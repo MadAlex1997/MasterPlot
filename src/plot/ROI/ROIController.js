@@ -108,6 +108,7 @@ export class ROIController extends EventEmitter {
 
   addROI(roi) {
     this._rois.set(roi.id, roi);
+    roi.syncDomain();
   }
 
   deleteROI(id) {
@@ -207,6 +208,7 @@ export class ROIController extends EventEmitter {
       existing.updatedAt = serializedROI.updatedAt;
       existing.domain    = serializedROI.domain;
       if (serializedROI.metadata) existing.metadata = serializedROI.metadata;
+      if (serializedROI.color != null) existing.color = serializedROI.color;
     } else {
       // ROI not found — create it
       const roi = this._roiFromSerialized(serializedROI);
@@ -492,6 +494,7 @@ export class ROIController extends EventEmitter {
         rect.x2 = parent.x2;
         // Clamp y within parent (no-op for LinearRegion which has ±Infinity y)
         this._constraintEngine._clampChild(rect, parent);
+        rect.syncDomain();
       }
 
       this._rois.set(rect.id, rect);
@@ -589,6 +592,7 @@ export class ROIController extends EventEmitter {
     roi.version   = s.version;
     roi.updatedAt = s.updatedAt;
     roi.domain    = s.domain;
+    if (s.color != null) roi.color = s.color;
     return roi;
   }
 

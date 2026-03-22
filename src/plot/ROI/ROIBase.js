@@ -48,6 +48,7 @@ export class ROIBase extends EventEmitter {
     };
 
     this.metadata = opts.metadata || {};
+    this.color    = opts.color    || null;
 
     // F14: versioning + serialization fields
     this.version   = opts.version   || 1;
@@ -69,7 +70,16 @@ export class ROIBase extends EventEmitter {
   bumpVersion() {
     this.version  += 1;
     this.updatedAt = Date.now();
-    this.domain    = { x: [this.x1, this.x2], y: [this.y1, this.y2] };
+    this.syncDomain();
+  }
+
+  /**
+   * Snapshot current bounds into this.domain without bumping version.
+   * Call after programmatic bound changes (e.g. post-constraint clamping on add).
+   * Subclasses override to omit non-JSON-safe axes (±Infinity y, single-axis lines).
+   */
+  syncDomain() {
+    this.domain = { x: [this.x1, this.x2], y: [this.y1, this.y2] };
   }
 
   // ─── Bounds ──────────────────────────────────────────────────────────────────
@@ -138,6 +148,7 @@ export class ROIBase extends EventEmitter {
       y2:        this.y2,
       flags:     this.flags,
       metadata:  this.metadata,
+      color:     this.color,
       version:   this.version,
       updatedAt: this.updatedAt,
       domain:    this.domain,

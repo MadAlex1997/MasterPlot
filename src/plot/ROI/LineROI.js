@@ -84,7 +84,11 @@ export class LineROI extends ROIBase {
   bumpVersion() {
     this.version   += 1;
     this.updatedAt  = Date.now();
-    this.domain     = this._buildDomain();
+    this.syncDomain();
+  }
+
+  syncDomain() {
+    this.domain = this._buildDomain();
   }
 
   // ─── Bounds ↔ position sync ───────────────────────────────────────────────
@@ -194,6 +198,7 @@ export class LineROI extends ROIBase {
       updatedAt:   this.updatedAt,
       domain:      this.domain,
       metadata:    this.metadata,
+      color:       this.color,
     };
   }
 }
