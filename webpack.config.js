@@ -1,4 +1,5 @@
 const path = require('path');
+const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 
@@ -29,6 +30,13 @@ module.exports = (env, argv) => {
     },
     resolve: {
       extensions: ['.js', '.jsx'],
+      alias: {
+        // loaders.gl packages deep-import 'process/browser'; hoist to root install
+        'process/browser': path.resolve(__dirname, 'node_modules/process/browser.js'),
+      },
+      fallback: {
+        process: path.resolve(__dirname, 'node_modules/process/browser.js'),
+      },
     },
     module: {
       rules: [
@@ -105,6 +113,9 @@ module.exports = (env, argv) => {
         template: './public/data-loaders.html',
         filename: 'data-loaders.html',
         chunks:   ['data-loaders'],
+      }),
+      new webpack.ProvidePlugin({
+        process: 'process/browser',
       }),
       new CopyWebpackPlugin({
         patterns: [{ from: 'sounds', to: 'sounds' }],
