@@ -144,22 +144,30 @@ function ScatterPanel() {
   }, [_wireAdapter]);
 
   const _preParseColumns = async (f) => {
+    // Use a temporary DataStore so we don't pollute the real one.
+    // Parse with chunkSize:1 so only 1 row is appended — fast for any format.
+    const tmpStore = new DataStore();
+    // x/y must be valid column names; we'll discover them from getColumns() after load.
+    // We use sentinel names that will fail validation — the adapter throws, but only
+    // after normalizing the columns, which populates getColumns(). Catch the error.
+    const tmpAdapter = new TableLoaderAdapter(tmpStore, {
+      x: '__col_probe__',
+      y: '__col_probe__',
+      chunkSize: 1,
+    });
     try {
-      // Create a temporary adapter just to get columns
-      const { store } = getScatterState();
-      const tmpAdapter = new TableLoaderAdapter(store, { x: '__none__', y: '__none__', chunkSize: 1 });
-      // We can't easily get just the header without parsing. Instead, read the first line of CSV.
-      const text = await f.text().catch(() => null);
-      if (text) {
-        const firstLine = text.split('\n')[0];
-        const cols = firstLine.split(/,|\t/).map(c => c.trim().replace(/^"|"$/g, ''));
-        setColumns(cols);
-        setXCol(cols[0] || '');
-        setYCol(cols[1] || '');
-        setSizeCol('');
-      }
-      tmpAdapter.destroy();
+      await tmpAdapter.loadFile(f);
     } catch {
+      // Expected — __col_probe__ column won't exist; columns are still populated.
+    }
+    const cols = tmpAdapter.getColumns();
+    tmpAdapter.destroy();
+    if (cols.length > 0) {
+      setColumns(cols);
+      setXCol(cols[0] || '');
+      setYCol(cols[1] || cols[0] || '');
+      setSizeCol('');
+    } else {
       setColumns([]);
     }
   };
