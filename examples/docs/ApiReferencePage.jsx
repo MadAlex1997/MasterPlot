@@ -893,6 +893,140 @@ function BitmapViewGeneratorSection() {
   );
 }
 
+// ── TableLoaderAdapter ────────────────────────────────────────────────────────
+
+function TableLoaderAdapterSection() {
+  return (
+    <section id="table-loader-adapter" style={classSectionStyle}>
+      <h3 style={h3Style}>TableLoaderAdapter</h3>
+      <p style={pStyle}>
+        Loads CSV, TSV, or Apache Arrow (<code style={inlineCode}>.arrow</code>) files and streams
+        parsed rows into a <code style={inlineCode}>DataStore</code> as typed-array{' '}
+        <code style={inlineCode}>bufferStruct</code>s. Extends{' '}
+        <code style={inlineCode}>EventEmitter</code>. Located in{' '}
+        <code style={inlineCode}>loaders/TableLoaderAdapter.js</code> (not library code — optional
+        utility in the <code style={inlineCode}>loaders/</code> directory).
+      </p>
+      <p style={pStyle}>
+        Import: <code style={inlineCode}>{"import { TableLoaderAdapter } from '../loaders/TableLoaderAdapter.js'"}</code>
+      </p>
+      <p style={pStyle}>
+        Live demo:{' '}
+        <a href="../data-loaders.html" style={{ color: '#7df' }}>Data Loaders (EX19)</a>
+      </p>
+
+      <h4 style={h4Style}>Constructor Options</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Option</Th><Th>Type</Th><Th>Default</Th><Th>Description</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>x</Td><Td type>string</Td><Td mono>required</Td><Td>Column name to use as X coordinates.</Td></tr>
+          <tr><Td mono>y</Td><Td type>string</Td><Td mono>required</Td><Td>Column name to use as Y coordinates.</Td></tr>
+          <tr><Td mono>size</Td><Td type>string | number | null</Td><Td mono>4.0</Td><Td>Column name for per-point size, a fixed numeric value, or null to use default.</Td></tr>
+          <tr><Td mono>color</Td><Td type>string | fn | null</Td><Td mono>null</Td><Td>Column name, or <code style={inlineCode}>fn(value) → [r,g,b,a]</code>, or null for opaque white.</Td></tr>
+          <tr><Td mono>chunkSize</Td><Td type>number</Td><Td mono>50_000</Td><Td>Rows per <code style={inlineCode}>appendData()</code> call; controls streaming granularity.</Td></tr>
+          <tr><Td mono>replace</Td><Td type>boolean</Td><Td mono>false</Td><Td>If true, calls <code style={inlineCode}>dataStore.clear()</code> before loading.</Td></tr>
+        </tbody>
+      </table>
+
+      <h4 style={h4Style}>Methods</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Method</Th><Th>Returns</Th><Th>Description</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>{'async loadFile(file)'}</Td><Td mono>Promise&lt;void&gt;</Td><Td>Parse a <code style={inlineCode}>File</code> object (from input/drop). Loader selected by file extension.</Td></tr>
+          <tr><Td mono>{'async loadURL(url, fetchOptions?)'}</Td><Td mono>Promise&lt;void&gt;</Td><Td>Fetch and parse from URL. Loader selected by URL extension.</Td></tr>
+          <tr><Td mono>getColumns()</Td><Td mono>string[]</Td><Td>Returns detected column names. Populated after the first successful load.</Td></tr>
+          <tr><Td mono>destroy()</Td><Td mono>void</Td><Td>Clears internal state and nulls dataStore reference.</Td></tr>
+        </tbody>
+      </table>
+
+      <h4 style={h4Style}>Events</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Event</Th><Th>Payload</Th><Th>When emitted</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>loaded</Td><Td mono>{'{ rowCount, columns }'}</Td><Td>All rows loaded and appended to DataStore.</Td></tr>
+          <tr><Td mono>chunk</Td><Td mono>{'{ loaded, total }'}</Td><Td>After each <code style={inlineCode}>appendData()</code> call. Use for progress bar updates.</Td></tr>
+          <tr><Td mono>parseWarning</Td><Td mono>{'{ message }'}</Td><Td>Null/NaN values replaced with 0, or BigInt precision warning.</Td></tr>
+        </tbody>
+      </table>
+
+      <div style={calloutStyle}>
+        <strong>Supported formats:</strong>{' '}
+        <code style={inlineCode}>.csv</code> / <code style={inlineCode}>.tsv</code> via{' '}
+        <code style={inlineCode}>@loaders.gl/csv</code> CSVLoader;{' '}
+        <code style={inlineCode}>.arrow</code> via <code style={inlineCode}>@loaders.gl/arrow</code>{' '}
+        ArrowLoader. Parquet is attempted via ArrowLoader with a console warning.
+      </div>
+    </section>
+  );
+}
+
+// ── RasterLoaderAdapter ───────────────────────────────────────────────────────
+
+function RasterLoaderAdapterSection() {
+  return (
+    <section id="raster-loader-adapter" style={classSectionStyle}>
+      <h3 style={h3Style}>RasterLoaderAdapter</h3>
+      <p style={pStyle}>
+        Loads a gridded dataset (NetCDF3 or image file) and registers a{' '}
+        <code style={inlineCode}>BitmapDataLayer</code> on a <code style={inlineCode}>PlotController</code>{' '}
+        with <code style={inlineCode}>bitMapping.bounds</code> inferred from coordinate arrays (NetCDF)
+        or image dimensions. Extends <code style={inlineCode}>EventEmitter</code>. Located in{' '}
+        <code style={inlineCode}>loaders/RasterLoaderAdapter.js</code>.
+      </p>
+      <p style={pStyle}>
+        Import: <code style={inlineCode}>{"import { RasterLoaderAdapter } from '../loaders/RasterLoaderAdapter.js'"}</code>
+      </p>
+      <p style={pStyle}>
+        Live demo:{' '}
+        <a href="../data-loaders.html" style={{ color: '#7df' }}>Data Loaders (EX19)</a>
+      </p>
+
+      <h4 style={h4Style}>Constructor Options</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Option</Th><Th>Type</Th><Th>Default</Th><Th>Description</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>layerId</Td><Td type>string</Td><Td mono>'raster'</Td><Td>Layer ID passed to <code style={inlineCode}>plotController.registerDataLayer()</code>.</Td></tr>
+          <tr><Td mono>variable</Td><Td type>string | null</Td><Td mono>null</Td><Td>NetCDF variable name to display. Auto-detected (first non-coordinate variable) if null.</Td></tr>
+          <tr><Td mono>xDim</Td><Td type>string</Td><Td mono>'lon'</Td><Td>NetCDF dimension name for the X axis.</Td></tr>
+          <tr><Td mono>yDim</Td><Td type>string</Td><Td mono>'lat'</Td><Td>NetCDF dimension name for the Y axis.</Td></tr>
+          <tr><Td mono>lutController</Td><Td type>LUTController | null</Td><Td mono>null</Td><Td>Forwarded to BitmapDataLayer. Data is also fed to <code style={inlineCode}>setData()</code> for histogram + auto-level.</Td></tr>
+          <tr><Td mono>flipY</Td><Td type>boolean</Td><Td mono>true</Td><Td>Flip row order so row-0 = bottom (standard raster convention). Set false if data is already bottom-up.</Td></tr>
+        </tbody>
+      </table>
+
+      <h4 style={h4Style}>Methods</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Method</Th><Th>Returns</Th><Th>Description</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>{'async loadFile(file)'}</Td><Td mono>Promise&lt;void&gt;</Td><Td>Parses file; routes .nc/.cdf to NetCDFLoader and other extensions to <code style={inlineCode}>createImageBitmap</code>.</Td></tr>
+          <tr><Td mono>{'async loadURL(url, fetchOptions?)'}</Td><Td mono>Promise&lt;void&gt;</Td><Td>Fetch and parse from URL.</Td></tr>
+          <tr><Td mono>{'loadArray(data, w, h, opts?)'}</Td><Td mono>void</Td><Td>Register directly from a typed array. <code style={inlineCode}>opts.bounds</code> defaults to pixel dimensions.</Td></tr>
+          <tr><Td mono>getVariables()</Td><Td mono>string[]</Td><Td>NetCDF variable names (empty for image formats; populated after load).</Td></tr>
+          <tr><Td mono>getDimensions()</Td><Td mono>{'{ [varName]: string[] }'}</Td><Td>Dimension names per variable (empty for image formats).</Td></tr>
+          <tr><Td mono>destroy()</Td><Td mono>void</Td><Td>Unregisters layer and removes LUT listeners.</Td></tr>
+        </tbody>
+      </table>
+
+      <h4 style={h4Style}>Events</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Event</Th><Th>Payload</Th><Th>When emitted</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>loaded</Td><Td mono>{'{ width, height, variable, bounds }'}</Td><Td>Layer registered on PlotController. Use to auto-scale axes.</Td></tr>
+          <tr><Td mono>parseWarning</Td><Td mono>{'{ message }'}</Td><Td>Missing coordinate arrays or other non-fatal parse issues.</Td></tr>
+        </tbody>
+      </table>
+
+      <div style={calloutStyle}>
+        <strong>NetCDF note:</strong> Only NetCDF v3 classic format is supported (magic bytes{' '}
+        <code style={inlineCode}>CDF</code>). NetCDF4/HDF5 (.nc4) files will throw a parse error.
+        For image formats, <code style={inlineCode}>bitMapping.bounds</code> defaults to{' '}
+        <code style={inlineCode}>[0, 0, width, height]</code> — set axes manually if geographic
+        coordinates are needed.
+      </div>
+    </section>
+  );
+}
+
 // ── AudioController ───────────────────────────────────────────────────────────
 
 function AudioControllerSection() {
@@ -1062,6 +1196,8 @@ export default function ApiReferencePage() {
       <LUTHistogramControllerSection />
       <BitmapDataLayerSection />
       <BitmapViewGeneratorSection />
+      <TableLoaderAdapterSection />
+      <RasterLoaderAdapterSection />
       <AudioControllerSection />
       <LUTPanelSection />
       <HelpOverlaySection />

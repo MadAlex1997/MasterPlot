@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 7.0
-**Last Updated:** 2026-03-14
-**Status:** Phase 4 (Bitmap/LUT Refactor) added 2026-03-14. ARCH-F through CLEANUP pending.
+**Plan Version:** 9.1
+**Last Updated:** 2026-03-28
+**Status:** Phase 6 complete. F32 / F33 / EX19 done 2026-03-28.
 
 ---
 
@@ -114,6 +114,9 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | CLEANUP | Remove Legacy Spectrogram Code | ✅ COMPLETED | feature/cleanup-old-spectrogram | 2026-03-15 |
 | F31  | BitmapViewGenerator (Viewport-Driven LOD) | ✅ COMPLETED | feature/F31-EX18-EX19 | 2026-03-21 |
 | EX18 | Variable-Resolution Bitmap Example | ✅ COMPLETED | feature/F31-EX18-EX19 | 2026-03-21 |
+| F32  | TableLoaderAdapter (CSV / Arrow / Parquet → scatter) | ✅ COMPLETED | feature/F32-F33-EX19 | 2026-03-28 |
+| F33  | RasterLoaderAdapter (NetCDF / GeoTIFF / image → BitmapDataLayer) | ✅ COMPLETED | feature/F32-F33-EX19 | 2026-03-28 |
+| EX19 | Data Loaders Example | ✅ COMPLETED | feature/F32-F33-EX19 | 2026-03-28 |
 
 ---
 
@@ -129,7 +132,9 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 ```
 F27 → F28 → F29 → F30 → EX-Spec → EX17 ✅ → EX14 ✅ → EX15 ✅ → EX16 ✅ → DOC6 ✅ → CLEANUP ✅
 
-F31 → EX18
+F31 → EX18 ✅
+
+F32 → F33 → EX19
 ```
 
 ---
@@ -298,10 +303,43 @@ Full spec: [docs/plan-archive.md#ex18](docs/plan-archive.md#ex18)
 
 ---
 
+## Phase 6 — loaders.gl Data Loaders
+
+**Motivation:** MasterPlot currently requires callers to manually decode files (Web Audio API for audio, `createImageBitmap` for images, hand-written parsers for CSV/NetCDF) before passing typed arrays to the engine. Adding loaders.gl adapter utilities covers the most common scientific file formats (CSV, Apache Arrow/Parquet, NetCDF, GeoTIFF) without touching the library core, so users can drop files straight onto plots.
+
+**Directory:** `loaders/` (new top-level directory, parallel to `ui/`; framework-agnostic — no React). Per directory-ownership rules, these are optional convenience utilities, not library code — they do not go in `src/`.
+
+**Packages required:** `@loaders.gl/core`, `@loaders.gl/csv`, `@loaders.gl/arrow`, `@loaders.gl/netcdf` (and optionally `@loaders.gl/images` for TIFF). All are tree-shakeable; users install only what they need.
+
+---
+
+### F32 [COMPLETED] TableLoaderAdapter (CSV / Arrow / Parquet → scatter)
+**Completed:** 2026-03-28 | **Branch:** feature/F32-F33-EX19
+Created `loaders/TableLoaderAdapter.js`: EventEmitter; `loadFile(File)` + `loadURL(url)`; CSVLoader (`object-row-table` shape) + ArrowLoader (`schema.fields` / `getChild()`); chunked `appendData()` per `chunkSize` rows with `'chunk'` progress events; coerces any numeric column type to Float32; BigInt64 warns once; null/NaN → 0 + `'parseWarning'`; `getColumns()` populated after load; `color` option accepts fn `(val)→[r,g,b,a]`.
+Full spec: [docs/plan-archive.md#f32](docs/plan-archive.md#f32)
+
+---
+
+### F33 [COMPLETED] RasterLoaderAdapter (NetCDF / image → BitmapDataLayer)
+**Completed:** 2026-03-28 | **Branch:** feature/F32-F33-EX19
+Created `loaders/RasterLoaderAdapter.js`: EventEmitter; `loadFile(File)` routes `.nc`/`.cdf` to NetCDFLoader (`{netcdf:{loadData:true}}`), images to `createImageBitmap`; infers `bitMapping.bounds` from coordinate arrays with half-cell padding; `flipY` flips row order for raster convention; `loadArray(Float32Array, w, h, opts)` for in-memory data; wires `lutController` levelChanged/lutChanged to `colorTrigger` bump; `getVariables()` / `getDimensions()` populated after NetCDF load; calls `plotController.registerDataLayer()` + `markDirty()`. Note: `@loaders.gl/netcdf` only supports NetCDF v3 classic (not NetCDF4/HDF5).
+Full spec: [docs/plan-archive.md#f33](docs/plan-archive.md#f33)
+
+---
+
+### EX19 [COMPLETED] Data Loaders Example
+**Completed:** 2026-03-28 | **Branch:** feature/F32-F33-EX19
+Created `examples/DataLoadersExample.jsx` + `examples/src/data-loaders.js` + `public/data-loaders.html`: Panel 1 — drag-and-drop CSV/Arrow; header-sniff column selects for X/Y/size; chunked load with progress bar + parseWarning display; "Load Sample CSV" generates 10k-row synthetic sensor CSV in-memory. Panel 2 — file input for .nc/.cdf/images; "Load Sample Grid" generates 128×128 Gaussian temperature field via `loadArray()`; LUTPanel sidebar; auto-scale axes on `'loaded'` event; HelpOverlay. Webpack entry + HtmlWebpackPlugin added; HubPage card added; README Phase 6 section added; ApiReferencePage sections for both adapters added; build zero errors (2 asset-size warnings from loaders.gl).
+Full spec: [docs/plan-archive.md#ex19](docs/plan-archive.md#ex19)
+
+---
+
 ## Recent Changelog
 
 > Full history in [docs/plan-archive.md — Change Log](docs/plan-archive.md#change-log).
 
+- **2026-03-28 [Claude]**: F32/F33/EX19 completed (v9.1) — F32: `loaders/TableLoaderAdapter.js` (CSVLoader + ArrowLoader; chunked appendData; BigInt/null coercion; 'chunk'+'parseWarning' events); F33: `loaders/RasterLoaderAdapter.js` (NetCDFLoader for .nc/.cdf, createImageBitmap for images; coordinate-array bounds; flipY; loadArray() for in-memory grids; LUT wiring); EX19: `DataLoadersExample.jsx` two-panel demo (drag-and-drop CSV + synthetic 10k sample / image+nc drop + synthetic 128×128 temp field + LUTPanel); webpack entry/HTML added; HubPage card + README Phase 6 section + ApiReferencePage sections added; build zero errors.
+- **2026-03-28 [Claude]**: Phase 6 (loaders.gl Data Loaders) added (v9.0) — F32 (`TableLoaderAdapter`: CSV/Arrow/Parquet → scatter; column mapping + streaming `parseInBatches`), F33 (`RasterLoaderAdapter`: NetCDF/GeoTIFF/image → `BitmapDataLayer`; coordinate bounds from metadata), EX19 (two-panel demo: drag-and-drop tabular + raster files). New top-level `loaders/` directory (framework-agnostic, not `src/`). Mandatory order: F32 → F33 → EX19. Branch: `feature/F32-F33-EX19`.
 - **2026-03-14 [Claude]**: Phase 4 (Bitmap/LUT Refactor) added as PENDING (v7.0) — ARCH-F through CLEANUP. Motivation: decompose monolithic SpectrogramLayer into generic BitmapDataLayer + LUTController + LUTHistogramController. Mandatory order: ARCH-F → F27 → F28 → F29 → F30 → EX-Spec → CLEANUP.
 - **2026-03-14 [Claude]**: ARCH-F completed (v7.1) — 9 webpack entry JS files moved from `src/` to `examples/src/`; `FilterPanel.jsx` and `HistogramLUTPanel.jsx` moved from `src/components/` to `ui/`; `src/components/` now holds only `PlotCanvas.jsx`; build passes zero errors. Next: F27 (unblocked).
 - **2026-03-14 [Claude]**: F27 completed (v7.2) — `BitmapDataLayer.js` and `_buildBitmapFromGrid.js` created; accepts URL/ImageBitmap/TypedArray sources; `bitMapping` exclusive bounds vs origin+scale; per-layer `lutController` duck-typed; gray/rgb/rgba/gray+alpha channel handling; build zero errors. Next: F28 (unblocked).

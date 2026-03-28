@@ -4649,3 +4649,115 @@ Two-panel demo:
 **Deliverables:** webpack entry + HtmlWebpackPlugin; HubPage card; README Phase 5 section; `ApiReferencePage` full `BitmapViewGenerator` section (constructor options + request object + methods + events tables).
 
 ---
+
+## F32
+
+### F32 — TableLoaderAdapter (CSV / Arrow / Parquet → scatter)
+
+**Branch:** `feature/F32-F33-EX19`
+**Completed:** 2026-03-28
+**Depends on:** nothing (pure utility over existing ExternalDataAdapter contract)
+
+**New file:** `loaders/TableLoaderAdapter.js`
+
+**Purpose:** Accepts a `File` object or URL and converts a tabular dataset (CSV, TSV, Apache Arrow `.arrow`) into a MasterPlot `bufferStruct` (`{x: Float32Array, y: Float32Array, size?, color?}`), then calls `dataStore.appendData()` in configurable-size chunks.
+
+**Constructor:**
+```js
+new TableLoaderAdapter(dataStore, {
+  x: 'colName',                        // required — column name for x axis
+  y: 'colName',                        // required — column name for y axis
+  size: 'colName' | number | null,     // optional; default 4.0
+  color: 'colName' | fn | null,        // optional; fn receives row value, returns [r,g,b,a]
+  chunkSize: 50_000,                   // rows per appendData call
+  replace: false,                      // if true, clears DataStore before loading
+})
+```
+
+**Public API:**
+- `async loadFile(file: File)` — parse() with loader selected by file extension
+- `async loadURL(url: string, fetchOptions?)` — fetch + parse
+- `getColumns()` — returns `string[]` (populated after first load)
+- `destroy()` — clears internal state
+
+**Format handling:**
+- `.csv`, `.tsv` → CSVLoader returns `{ shape: 'object-row-table', data: [{}] }` — row objects mapped to column arrays
+- `.arrow` → ArrowLoader returns Apache Arrow Table — `schema.fields` + `getChild(name).toArray()`
+- `.parquet` → attempted via ArrowLoader with console warning
+
+**Type coercion:** All column types coerced to Float32; BigInt64 via `Number(v)` with one-time warning; null/NaN → 0 with `'parseWarning'` event.
+
+**Events:** `'loaded'` `{ rowCount, columns }`, `'chunk'` `{ loaded, total }`, `'parseWarning'` `{ message }`
+
+---
+
+## F33
+
+### F33 — RasterLoaderAdapter (NetCDF / image → BitmapDataLayer)
+
+**Branch:** `feature/F32-F33-EX19`
+**Completed:** 2026-03-28
+**Depends on:** F27 (BitmapDataLayer)
+
+**New file:** `loaders/RasterLoaderAdapter.js`
+
+**Purpose:** Accepts a `File` or URL pointing to a gridded dataset (NetCDF3, or any image format) and registers a `BitmapDataLayer` on a `PlotController` with correct `bitMapping.bounds` inferred from coordinate arrays or image dimensions.
+
+**Constructor:** `new RasterLoaderAdapter(plotController, { layerId, variable, xDim, yDim, lutController, flipY })`
+
+**Public API:**
+- `async loadFile(file: File)` — routes .nc/.cdf to NetCDFLoader, images to createImageBitmap
+- `async loadURL(url, fetchOptions?)`
+- `loadArray(data, width, height, opts)` — in-memory typed array; `opts.bounds`, `opts.channels`, `opts.dtype`
+- `getVariables()` → `string[]` (NetCDF only; populated after load)
+- `getDimensions()` → `{ [varName]: string[] }` (NetCDF only)
+- `destroy()` — unregisters layer + removes LUT listeners
+
+**Format handling:**
+- `.nc`, `.cdf` → `@loaders.gl/netcdf` NetCDFLoader with `{netcdf:{loadData:true}}`; variable as Float32 grid; coordinate arrays → half-cell-padded bounds
+- `.png`, `.jpg`, `.webp`, `.bmp`, `.tif` → `createImageBitmap`; bounds default to `[0, 0, w, h]`
+
+**Important limitation:** `@loaders.gl/netcdf` only supports NetCDF v3 classic (magic bytes CDF). NetCDF4/HDF5 files throw a parse error.
+
+**LUT wiring:** `lutController.on('levelChanged'/'lutChanged')` → `_colorTrigger++` + `markDirty()`. `setData()` called with Float32 grid min/max on NetCDF load.
+
+**Events:** `'loaded'` `{ width, height, variable, bounds }`, `'parseWarning'` `{ message }`
+
+---
+
+## EX19
+
+### EX19 — Data Loaders Example
+
+**Branch:** `feature/F32-F33-EX19`
+**Completed:** 2026-03-28
+**Depends on:** F32, F33
+
+**New files:**
+- `examples/DataLoadersExample.jsx`
+- `examples/src/data-loaders.js`
+- `public/data-loaders.html`
+
+**Layout:** Two vertically stacked panels (flex column), each with a plot area + controls sidebar.
+
+**Panel 1 — Tabular scatter (`TableLoaderAdapter`):**
+- Drag-and-drop zone + `<input type="file">` accepting `.csv`, `.tsv`, `.arrow`
+- First-line header sniff to pre-populate X/Y/size column selects without a full parse
+- "Load File" button calls `TableLoaderAdapter.loadFile()` with chosen columns
+- Progress bar updated via `'chunk'` events; parseWarning display
+- "Load Sample CSV" generates 10k-row synthetic CSV in-memory (time/value/magnitude) and calls `loadFile()` on a Blob-derived File; sets axes to [0,100] × [0,100]
+
+**Panel 2 — Raster heatmap (`RasterLoaderAdapter`):**
+- `<input type="file">` accepting `.nc`, `.cdf`, `.nc4`, `.png`, `.jpg`, `.webp`, `.bmp`
+- After NetCDF load: variable `<select>` rendered from `adapter.getVariables()`
+- "Load Sample Grid" calls `adapter.loadArray()` with a 128×128 Gaussian temperature Float32Array and `bounds: [-180, -90, 180, 90]`
+- LUTPanel (160 px) in a fixed sidebar column; auto-scale axes on `'loaded'` event
+- HelpOverlay with controls list
+
+**Webpack / docs:**
+- webpack entry `data-loaders` + `HtmlWebpackPlugin` for `data-loaders.html`
+- HubPage card added to demos array
+- README: Phase 6 section with full API docs for both adapters
+- ApiReferencePage: `TableLoaderAdapterSection` + `RasterLoaderAdapterSection` added before AudioControllerSection
+
+---

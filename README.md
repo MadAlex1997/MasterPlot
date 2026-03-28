@@ -413,6 +413,91 @@ Live demo at `bitmap-lod.html` — two panels:
 
 ---
 
+## Phase 6 — loaders.gl Data Loaders (F32, F33, EX19)
+
+The `loaders/` directory (framework-agnostic, parallel to `ui/`) provides optional adapter utilities for loading common scientific file formats directly into MasterPlot data structures.
+
+**Packages required:**
+```
+npm install @loaders.gl/core @loaders.gl/csv @loaders.gl/arrow @loaders.gl/netcdf --legacy-peer-deps
+```
+
+---
+
+### TableLoaderAdapter (F32)
+
+Loads CSV, TSV, or Apache Arrow (`.arrow`) files and streams parsed rows into a `DataStore` as typed-array `bufferStruct`s. Columns may be any numeric type; `BigInt64` columns are converted via `Number()` with a one-time console warning.
+
+```js
+import { TableLoaderAdapter } from './loaders/TableLoaderAdapter.js';
+
+const adapter = new TableLoaderAdapter(dataStore, {
+  x:         'time',         // required — column name for X
+  y:         'amplitude',    // required — column name for Y
+  size:      'magnitude',    // optional — column name, fixed number, or omit for default 4 px
+  color:     null,           // optional — column name, fn(value)→[r,g,b,a], or null
+  chunkSize: 50_000,         // rows per appendData call (default)
+  replace:   true,           // clear DataStore before loading
+});
+
+adapter.on('loaded',       ({ rowCount, columns }) => console.log(rowCount, 'rows'));
+adapter.on('chunk',        ({ loaded, total })     => updateProgressBar(loaded / total));
+adapter.on('parseWarning', ({ message })           => console.warn(message));
+
+await adapter.loadFile(file);     // File from <input> or drag-and-drop
+await adapter.loadURL('https://example.com/data.csv');
+
+const cols = adapter.getColumns(); // string[] — populated after load
+adapter.destroy();
+```
+
+**Supported formats:** `.csv`/`.tsv` → CSVLoader · `.arrow` → ArrowLoader · `.parquet` → ArrowLoader (warns; requires `@loaders.gl/parquet`)
+
+---
+
+### RasterLoaderAdapter (F33)
+
+Loads a gridded dataset (NetCDF3 or image) and registers a `BitmapDataLayer` on a `PlotController` with `bitMapping.bounds` inferred from coordinate arrays or image dimensions.
+
+```js
+import { RasterLoaderAdapter } from './loaders/RasterLoaderAdapter.js';
+
+const adapter = new RasterLoaderAdapter(plotController, {
+  layerId:       'temperature',
+  variable:      'temp',         // NetCDF variable (auto-detected if omitted)
+  xDim:          'lon',
+  yDim:          'lat',
+  lutController: myLutCtrl,
+  flipY:         true,
+});
+
+adapter.on('loaded', ({ width, height, bounds }) => {
+  plotController.xAxis.setDomain([bounds[0], bounds[2]]);
+  plotController.yAxis.setDomain([bounds[1], bounds[3]]);
+});
+
+await adapter.loadFile(file);  // .nc/.cdf → NetCDFLoader; images → createImageBitmap
+adapter.loadArray(float32Grid, w, h, { bounds: [-180, -90, 180, 90] }); // in-memory
+adapter.destroy();
+```
+
+**Supported formats:** `.nc`/`.cdf` → NetCDF v3 classic · `.png`/`.jpg`/`.webp` → `createImageBitmap`
+
+> **Note:** NetCDF4 (HDF5-based `.nc4`) is not supported by `@loaders.gl/netcdf`; only classic NetCDF3 (v1/v2).
+
+---
+
+### Data Loaders Example (EX19)
+
+Live demo at `data-loaders.html`:
+
+| Panel | Adapter | What it shows |
+|-------|---------|---------------|
+| 1 — Tabular scatter | `TableLoaderAdapter` | Drop CSV/Arrow; X/Y/size column selects; streaming progress bar; synthetic 10k-row sample |
+| 2 — Raster heatmap | `RasterLoaderAdapter` | Drop .nc or image; auto-scale axes; LUTPanel sidebar; synthetic 128×128 temperature sample |
+
+---
+
 ## TraceGroup (F22)
 
 `TraceGroup` is a generic multi-trace data layer that partitions bulk point data by a string tag into per-tag `Float32Array` buffers, and plugs into `PlotController` via `registerDataLayer`.
