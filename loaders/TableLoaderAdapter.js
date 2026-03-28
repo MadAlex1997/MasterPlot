@@ -101,11 +101,12 @@ export class TableLoaderAdapter extends EventEmitter {
     // ── Normalize to a column map ────────────────────────────────────────────
     const columns = this._normalizeToColumns(parsed);
 
-    // ── Validate required columns ────────────────────────────────────────────
-    if (!columns[this._xCol]) throw new Error(`TableLoaderAdapter: column "${this._xCol}" not found. Available: ${Object.keys(columns).join(', ')}`);
-    if (!columns[this._yCol]) throw new Error(`TableLoaderAdapter: column "${this._yCol}" not found. Available: ${Object.keys(columns).join(', ')}`);
-
+    // Set columns before validation so getColumns() works even if load fails
     this._columns = Object.keys(columns);
+
+    // ── Validate required columns ────────────────────────────────────────────
+    if (!columns[this._xCol]) throw new Error(`TableLoaderAdapter: column "${this._xCol}" not found. Available: ${this._columns.join(', ')}`);
+    if (!columns[this._yCol]) throw new Error(`TableLoaderAdapter: column "${this._yCol}" not found. Available: ${this._columns.join(', ')}`);
 
     const xRaw  = columns[this._xCol];
     const yRaw  = columns[this._yCol];
