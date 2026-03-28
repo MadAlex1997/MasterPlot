@@ -4,7 +4,7 @@
  * Demonstrates TableLoaderAdapter (F32) and RasterLoaderAdapter (F33).
  *
  *   Panel 1 — Tabular (scatter):
- *     Drag-and-drop or <input> accepting .csv, .tsv, .arrow.
+ *     Drag-and-drop or <input> accepting .csv, .tsv, .arrow, .parquet.
  *     After parse: two <select> dropdowns for X/Y column choice.
  *     "Load" button calls TableLoaderAdapter.loadFile() with chosen columns.
  *     Progress bar updated via 'chunk' events.
@@ -271,12 +271,12 @@ function ScatterPanel() {
           onDrop={handleDrop}
           onClick={() => document.getElementById('csv-file-input').click()}
         >
-          Drop .csv / .tsv / .arrow<br />or click to browse
+          Drop .csv / .tsv / .arrow / .parquet<br />or click to browse
         </div>
         <input
           id="csv-file-input"
           type="file"
-          accept=".csv,.tsv,.arrow"
+          accept=".csv,.tsv,.arrow,.parquet"
           style={{ display: 'none' }}
           onChange={e => e.target.files[0] && handleFileSelect(e.target.files[0])}
         />

@@ -7,7 +7,7 @@
  * Supported formats (via @loaders.gl):
  *   .csv / .tsv  → @loaders.gl/csv  CSVLoader
  *   .arrow       → @loaders.gl/arrow ArrowLoader
- *   .parquet     → @loaders.gl/arrow ArrowLoader (if available; falls back with warning)
+ *   .parquet     → @loaders.gl/parquet ParquetLoader (parquetjs; no WASM required)
  *
  * Usage:
  *   const adapter = new TableLoaderAdapter(dataStore, { x: 'time', y: 'amplitude' });
@@ -20,6 +20,7 @@ import { EventEmitter } from 'events';
 import { parse } from '@loaders.gl/core';
 import { CSVLoader } from '@loaders.gl/csv';
 import { ArrowLoader } from '@loaders.gl/arrow';
+import { ParquetLoader } from '@loaders.gl/parquet';
 
 export class TableLoaderAdapter extends EventEmitter {
   /**
@@ -84,14 +85,7 @@ export class TableLoaderAdapter extends EventEmitter {
   _selectLoader(name) {
     const ext = name.split('.').pop().toLowerCase();
     if (ext === 'arrow')   return ArrowLoader;
-    if (ext === 'parquet') {
-      // ParquetWasmLoader is not bundled — use ArrowLoader and warn
-      console.warn(
-        'TableLoaderAdapter: .parquet support requires @loaders.gl/parquet (not bundled). ' +
-        'Attempting ArrowLoader — this will likely fail.'
-      );
-      return ArrowLoader;
-    }
+    if (ext === 'parquet') return ParquetLoader;
     return CSVLoader;  // csv, tsv, and anything else
   }
 

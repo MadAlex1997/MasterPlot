@@ -51,7 +51,7 @@ export default function HubPage() {
     {
       href: 'data-loaders.html',
       title: 'Data Loaders (F32 / F33 / EX19)',
-      desc: 'Two-panel loaders.gl demo. Panel 1 — Tabular scatter: drag-and-drop CSV/TSV/Arrow files; column dropdowns for X/Y/size mapping; streaming progress bar via chunk events; synthetic 10k-row sample. Panel 2 — Raster heatmap: drop .nc (NetCDF3) or image files; automatic bounds from coordinate arrays; LUTPanel sidebar; synthetic 128×128 temperature field sample.',
+      desc: 'Two-panel loaders.gl demo. Panel 1 — Tabular scatter: drag-and-drop CSV/TSV/Arrow/Parquet files; column dropdowns for X/Y/size mapping; streaming progress bar via chunk events; synthetic 10k-row sample. Panel 2 — Raster heatmap: drop .nc (NetCDF3) or image files; automatic bounds from coordinate arrays; LUTPanel sidebar; synthetic 128×128 temperature field sample.',
     },
     {
       href: 'bitmap.html',
