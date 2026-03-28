@@ -63,6 +63,11 @@ All implementation work follows the plan in `PLAN.md`. **Read that file first be
    - This keeps `PLAN.md` stable at ~600–700 lines regardless of project history
    - See the compact summary template in `PLAN.md` → "Protocol for Agents" → rule 7
 
+10. **ON HOLD features are inert:**
+   - Features marked `⏸ ON HOLD` must not be used as dependencies by any other feature
+   - They must not appear in any documentation page (Architecture, Getting Started, API Reference, Deep-Dives, README) outside of the roadmap table in `PLAN.md`
+   - Treat them as non-existent until the user explicitly resumes them
+
 9. **Update the documentation site after every completed feature:**
    - The project has a live documentation SPA at `docs.html` (built in DOC1–DOC4). After DOC1 is merged, agents must keep it current.
    - For each completed feature, check whether any of the four doc sections need updating:

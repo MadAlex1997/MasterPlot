@@ -29,6 +29,8 @@ This document tracks the multi-step implementation of MasterPlot. Each step has 
 6. **After every completed feature**: Update `README.md` to reflect new capabilities **and** update `HubPage.jsx` so the new demo/example is linked from the hub. GitHub Actions deploys from `main` — a merged PR or push to `main` is sufficient to update https://madalex1997.github.io/MasterPlot/. Do NOT mark a feature `[COMPLETED]` without completing this step.
 7. **Archive completed specs**: When marking a feature `[COMPLETED]`, replace its full spec block in this file with the compact summary format below, then append the full spec to `docs/plan-archive.md`. This keeps PLAN.md from growing indefinitely.
 
+8. **ON HOLD features are inert**: Features marked `⏸ ON HOLD` must not be used as dependencies by other features, and must not appear in any documentation page (Architecture, Getting Started, API Reference, Deep-Dives, README) outside of the Feature Status Index roadmap table. Treat them as if they do not exist until explicitly resumed by the user.
+
 **Compact summary template:**
 ```markdown
 ### FXX [COMPLETED] Title
