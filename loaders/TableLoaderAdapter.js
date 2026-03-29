@@ -105,6 +105,8 @@ export class TableLoaderAdapter extends EventEmitter {
     }
 
     // ── Discover columns — works for schema-less object-row-table (Parquet) ──
+    const total = getTableLength(table);
+    if (total === 0) throw new Error('TableLoaderAdapter: file parsed but contains no rows — Parquet may use unsupported compression (try snappy or uncompressed)');
     const columns = Object.keys(getTableRowAsObject(table, 0));
 
     // Always set before any possible throw so getColumns() works for probing
@@ -115,7 +117,6 @@ export class TableLoaderAdapter extends EventEmitter {
     if (!columns.includes(this._yCol))
       throw new Error(`TableLoaderAdapter: column "${this._yCol}" not found. Available: ${columns.join(', ')}`);
 
-    const total = getTableLength(table);
 
     if (this._replace) this._dataStore.clear();
 
