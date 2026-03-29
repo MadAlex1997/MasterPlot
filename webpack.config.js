@@ -7,13 +7,12 @@ module.exports = (env, argv) => {
   const isDev = argv.mode === 'development';
 
   return {
-    // Multi-entry: one bundle per example page
     entry: {
-      main:            './examples/src/index.js',
-      example:         './examples/src/example.js',
-      'live-signals':  './examples/src/live-signals.js',
-      'shared-data':   './examples/src/shared-data.js',
-      seismography:    './examples/src/seismography.js',
+      main:                  './examples/src/index.js',
+      example:               './examples/src/example.js',
+      'live-signals':        './examples/src/live-signals.js',
+      'shared-data':         './examples/src/shared-data.js',
+      seismography:          './examples/src/seismography.js',
       'multi-sensor':        './examples/src/multi-sensor.js',
       'spectrogram-popup':   './examples/src/spectrogram-popup.js',
       docs:                  './examples/src/docs.js',
@@ -31,11 +30,17 @@ module.exports = (env, argv) => {
     resolve: {
       extensions: ['.js', '.jsx'],
       alias: {
-        // loaders.gl packages deep-import 'process/browser'; hoist to root install
         'process/browser': path.resolve(__dirname, 'node_modules/process/browser.js'),
       },
       fallback: {
         process: path.resolve(__dirname, 'node_modules/process/browser.js'),
+        // zstd-codec (Emscripten) needs these Node built-ins polyfilled in the browser
+        fs:     false,                                   // zstd-codec checks for fs but doesn't truly need it in browser
+        path:   require.resolve('path-browserify'),
+        buffer: require.resolve('buffer/'),
+        crypto: require.resolve('crypto-browserify'),
+        stream: require.resolve('stream-browserify'),
+        vm:     require.resolve('vm-browserify'),
       },
     },
     module: {
@@ -43,13 +48,17 @@ module.exports = (env, argv) => {
         {
           test: /\.(js|jsx)$/,
           exclude: /node_modules/,
-          use: {
-            loader: 'babel-loader',
-          },
+          use: { loader: 'babel-loader' },
         },
         {
           test: /\.css$/,
           use: ['style-loader', 'css-loader'],
+        },
+        // Required for zstd-codec and any other Emscripten/WASM packages:
+        // webpack 5 must treat .wasm files as static assets, not bundled modules
+        {
+          test: /\.wasm$/,
+          type: 'asset/resource',
         },
       ],
     },
@@ -116,6 +125,8 @@ module.exports = (env, argv) => {
       }),
       new webpack.ProvidePlugin({
         process: 'process/browser',
+        // Make Buffer globally available — zstd-codec and loaders.gl both need it
+        Buffer: ['buffer', 'Buffer'],
       }),
       new CopyWebpackPlugin({
         patterns: [{ from: 'sounds', to: 'sounds' }],
