@@ -26,8 +26,7 @@ import { ArrowLoader } from '@loaders.gl/arrow';
 import { ParquetLoader } from '@loaders.gl/parquet';
 import {
   getTableLength,
-  getTableNumCols,
-  getTableColumnName,
+  getTableRowAsObject,
   getTableCell,
 } from '@loaders.gl/schema';
 
@@ -105,12 +104,8 @@ export class TableLoaderAdapter extends EventEmitter {
       throw new Error(`TableLoaderAdapter: parse failed — ${err.message}`);
     }
 
-    // ── Discover columns via schema accessors ──────────────────────────────
-    const numCols = getTableNumCols(table);
-    const columns = [];
-    for (let i = 0; i < numCols; i++) {
-      columns.push(getTableColumnName(table, i));
-    }
+    // ── Discover columns — works for schema-less object-row-table (Parquet) ──
+    const columns = Object.keys(getTableRowAsObject(table, 0));
 
     // Always set before any possible throw so getColumns() works for probing
     this._columns = columns;
