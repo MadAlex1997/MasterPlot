@@ -1,0 +1,26 @@
+# Build artifacts for the demo site (not the library)
+dist/
+
+# Example/demo source — not part of the library
+examples/
+public/
+sounds/
+
+# Documentation site source
+docs/
+
+# Dev config
+webpack.config.js
+rollup.config.js
+.babelrc
+babel.config.*
+
+# Git / CI
+.git/
+.github/
+*.md
+!README.md
+
+# Misc
+.DS_Store
+node_modules/

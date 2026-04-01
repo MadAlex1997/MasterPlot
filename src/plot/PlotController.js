@@ -220,7 +220,8 @@ export class PlotController extends EventEmitter {
     webglCanvas.addEventListener('mousedown', this._onMouseDown);
     webglCanvas.addEventListener('mousemove', this._onMouseMove);
     webglCanvas.addEventListener('mouseup',   this._onMouseUp);
-    window.addEventListener('resize',         this._onResize);
+    this._resizeObserver = new ResizeObserver(() => this._onResize());
+    this._resizeObserver.observe(this._webglCanvas);
 
     // F23: spacebar → autoScale (skipped when pan/zoom is disabled)
     if (!this._disablePanZoom) {
@@ -246,7 +247,8 @@ export class PlotController extends EventEmitter {
       this._webglCanvas.removeEventListener('mousemove', this._onMouseMove);
       this._webglCanvas.removeEventListener('mouseup',   this._onMouseUp);
     }
-    window.removeEventListener('resize', this._onResize);
+    this._resizeObserver?.disconnect();
+    this._resizeObserver = null;
     if (this._onKeyDown) window.removeEventListener('keydown', this._onKeyDown);
 
     this._roiController.destroy();
