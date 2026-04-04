@@ -31,6 +31,7 @@ const PlotCanvas = forwardRef(function PlotCanvas(props, ref) {
     yLabel,
     xAxis,      // ARCH-G: optional shared AxisController config object
     yAxis,      // ARCH-G: optional shared AxisController config object
+    bordered,   // F34: fill axis gutters with container background color
     dataStore,  // F17: optional shared DataStore instance
     onEvent,    // optional: (eventName, data) => void
     onInit,     // optional: (controller) => void — fires once after init
@@ -57,6 +58,7 @@ const PlotCanvas = forwardRef(function PlotCanvas(props, ref) {
       xScaleType, yScaleType, xDomain, yDomain, xLabel, yLabel,
       ...(xAxis     ? { xAxis     } : {}),
       ...(yAxis     ? { yAxis     } : {}),
+      ...(bordered  ? { bordered  } : {}),
       ...(dataStore ? { dataStore } : {}),
     });
 

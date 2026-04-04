@@ -25,6 +25,7 @@ export class AxisRenderer {
 
     this._visible    = true;
     this._exportMode = false;
+    this._bordered   = false;  // F34: fill gutters with container background
 
     // Style
     this._style = {
@@ -56,6 +57,17 @@ export class AxisRenderer {
     Object.assign(this._style, partial);
   }
 
+  /**
+   * F34: enable/disable gutter fill.
+   * When true, the four margin rectangles are filled with the container's
+   * CSS background color before ticks are drawn, so data never bleeds
+   * visually behind tick labels.
+   * @param {boolean} on
+   */
+  setBordered(on) {
+    this._bordered = !!on;
+  }
+
   // ─── Main render ─────────────────────────────────────────────────────────────
 
   /**
@@ -80,6 +92,9 @@ export class AxisRenderer {
     }
 
     this._clear();
+
+    // F34: fill gutters with container background before drawing any ticks/labels
+    if (this._bordered) this._fillGutters(ctx, W, H, pa);
 
     ctx.save();
 
@@ -132,6 +147,41 @@ export class AxisRenderer {
 
   _clear() {
     this._ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
+  }
+
+  /**
+   * F34: fill the four gutter rectangles (margins outside the plot area) with
+   * the container's CSS background color so data cannot bleed behind tick labels.
+   *
+   * Uses `getComputedStyle(canvas.parentElement).backgroundColor` so the color
+   * automatically matches whatever the host application sets on the container.
+   *
+   * @param {CanvasRenderingContext2D} ctx
+   * @param {number} W   — canvas width
+   * @param {number} H   — canvas height
+   * @param {{ x, y, width, height, right, bottom }} pa  — plot area
+   */
+  _fillGutters(ctx, W, H, pa) {
+    const bg = this._canvas.parentElement
+      ? getComputedStyle(this._canvas.parentElement).backgroundColor
+      : 'transparent';
+
+    // Skip if container is transparent (no gutter masking needed)
+    if (!bg || bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)') return;
+
+    ctx.save();
+    ctx.fillStyle = bg;
+
+    // Top gutter   (full width, above plot area)
+    ctx.fillRect(0, 0, W, pa.y);
+    // Bottom gutter (full width, below plot area)
+    ctx.fillRect(0, pa.bottom, W, H - pa.bottom);
+    // Left gutter   (between top and bottom gutters, left of plot area)
+    ctx.fillRect(0, pa.y, pa.x, pa.height);
+    // Right gutter  (between top and bottom gutters, right of plot area)
+    ctx.fillRect(pa.right, pa.y, W - pa.right, pa.height);
+
+    ctx.restore();
   }
 
   _renderXTicks(ctx, pa) {

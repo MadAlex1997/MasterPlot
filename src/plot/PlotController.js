@@ -138,6 +138,7 @@ export class PlotController extends EventEmitter {
 
     // Axis style overrides applied after init()
     this._hideXAxis = opts.hideXAxis ?? false;
+    this._bordered  = opts.bordered  ?? false;  // F34
 
     // Zoom/pan interaction state
     this._isPanning    = false;
@@ -216,6 +217,7 @@ export class PlotController extends EventEmitter {
     // Initialize axis renderer
     this._axisRenderer = new AxisRenderer(axisCanvas, this._xAxis, this._yAxis, this._viewport);
     if (this._hideXAxis) this._axisRenderer.setStyle({ hideXAxis: true });
+    if (this._bordered)  this._axisRenderer.setBordered(true);  // F34
 
     // Initialize ROI controller (attaches canvas listeners)
     this._roiController.init(webglCanvas);

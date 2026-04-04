@@ -5,6 +5,33 @@ All active/pending work is in [PLAN.md](../PLAN.md).
 
 ---
 
+## F34 [COMPLETED] Bordered Plot Mode
+
+**Branch:** `feature/ARCH-G-F34-F35`
+**Completed:** 2026-04-04
+
+### Purpose
+
+Fill the four axis gutter areas (margins outside the inner plot rectangle) with the container's CSS background color so data never renders visually behind tick labels. No border line is drawn. Off by default.
+
+### API
+
+`new PlotController({ bordered: true })` / `<PlotCanvas bordered />`
+
+`AxisRenderer.setBordered(bool)` — can also be called directly on an AxisRenderer instance.
+
+### Behavior
+
+Before any tick/label rendering, `AxisRenderer._fillGutters()` reads `getComputedStyle(canvas.parentElement).backgroundColor` and fills four `fillRect` calls covering the top, bottom, left, and right margin rectangles. If the resolved color is `transparent` or `rgba(0, 0, 0, 0)`, the fill is skipped (no visual change). No change to deck.gl viewport.
+
+### Files modified
+
+- `src/plot/axes/AxisRenderer.js` — `_bordered` flag; `setBordered(on)` method; `_fillGutters(ctx, W, H, pa)` private method; called from `render()` after `_clear()`
+- `src/plot/PlotController.js` — `_bordered` from `opts.bordered ?? false`; calls `_axisRenderer.setBordered(true)` after `AxisRenderer` init
+- `src/components/PlotCanvas.jsx` — `bordered` prop forwarded to `PlotController` constructor
+
+---
+
 ## ARCH-G [COMPLETED] AxisController Config/Domain Split
 
 **Branch:** `feature/ARCH-G-F34-F35`

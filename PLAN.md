@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 9.4
+**Plan Version:** 9.5
 **Last Updated:** 2026-04-04
-**Status:** Phase 6 complete. Phase 7 (Axis Refactor): B9 + ARCH-G complete; F34, F35 pending.
+**Status:** Phase 6 complete. Phase 7 (Axis Refactor): B9 + ARCH-G + F34 complete; F35 pending.
 
 ---
 
@@ -119,7 +119,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | EX19 | Data Loaders Example | ✅ COMPLETED | feature/F32-F33-EX19 | 2026-03-28 |
 | B9   | ROILayer pixel-space border widths | ✅ COMPLETED | feature/B9 | 2026-04-04 |
 | ARCH-G | AxisController Config/Domain Split | ✅ COMPLETED | feature/ARCH-G-F34-F35 | 2026-04-04 |
-| F34  | Bordered Plot Mode | 🔲 PENDING | — | — |
+| F34  | Bordered Plot Mode | ✅ COMPLETED | feature/ARCH-G-F34-F35 | 2026-04-04 |
 | F35  | Axis Positioning Modes | 🔲 PENDING | — | — |
 
 ---
@@ -364,41 +364,10 @@ Full spec: [docs/plan-archive.md#arch-g](docs/plan-archive.md#arch-g)
 
 ---
 
-### F34 [PENDING] Bordered Plot Mode
-
-**Branch:** `feature/ARCH-G-F34-F35`
-**Depends on:** ARCH-G
-
-**Purpose:** Fill the axis gutter areas (margins around the inner plot rectangle) with the container's CSS background color, so data never renders visually behind tick labels. No border line is drawn. When disabled, behavior is identical to today (transparent gutters).
-
-#### Config
-
-On `PlotController`:
-```js
-new PlotController({ bordered: false })   // default: off
-```
-
-On `PlotCanvas`:
-```jsx
-<PlotCanvas bordered />
-```
-
-#### Behavior
-
-In `AxisRenderer`, before drawing any ticks or labels:
-
-1. Read `getComputedStyle(canvas.parentElement).backgroundColor` — this resolves the CSS background color of the plot container.
-2. Fill each of the four gutter rectangles (top margin, bottom margin, left margin, right margin) with that color using `ctx.fillRect`.
-3. Then proceed with normal tick/label rendering.
-
-No change to the deck.gl viewport — data is already clipped to the inner plot area by the `OrthographicView` bounds.
-
-When `bordered: false` (default): gutter fill step is skipped entirely.
-
-**Files modified:**
-- `src/plot/axes/AxisRenderer.js` — add gutter fill pass when `bordered` is true
-- `src/plot/PlotController.js` — accept `bordered` option; pass to AxisRenderer
-- `src/components/PlotCanvas.jsx` — accept and forward `bordered` prop
+### F34 [COMPLETED] Bordered Plot Mode
+**Completed:** 2026-04-04 | **Branch:** feature/ARCH-G-F34-F35
+`PlotController({ bordered: true })` / `<PlotCanvas bordered />` fills the four axis gutter rectangles with `getComputedStyle(canvas.parentElement).backgroundColor` before ticks are drawn; skipped when container background is transparent; no-op when `bordered: false` (default); `AxisRenderer.setBordered(bool)` added.
+Full spec: [docs/plan-archive.md#f34](docs/plan-archive.md#f34)
 
 ---
 
@@ -463,6 +432,7 @@ On each render frame, given the current domain from `ViewportController`:
 
 > Full history in [docs/plan-archive.md — Change Log](docs/plan-archive.md#change-log).
 
+- **2026-04-04 [Claude]**: F34 completed (v9.5) — `AxisRenderer._fillGutters()` fills four margin rects with container CSS background before tick rendering; `AxisRenderer.setBordered(bool)` public method; `PlotController` accepts `bordered` opt and calls `setBordered(true)` after `AxisRenderer` init; `PlotCanvas` forwards `bordered` prop; transparent/unset backgrounds are skipped. Branch: `feature/ARCH-G-F34-F35`.
 - **2026-04-04 [Claude]**: ARCH-G completed (v9.4) — `AxisController` refactored to config-only (no domain state, no EventEmitter); domain mutation methods (`setXDomain`/`setYDomain`/`getXDomain`/`getYDomain`/`zoomAroundX`/`zoomAroundY`/`panByPixels({dx,dy})`/`scaleDomainFromMidpointX`/`scaleDomainFromMidpointY`) added to `ViewportController`; `PlotController` wires viewport `'domainChanged'` event; `PlotCanvas` gains `xAxis`/`yAxis` props; all 7 example/doc files + 3 src library files updated from old API; lib build zero errors. Branch: `feature/ARCH-G-F34-F35`.
 - **2026-04-04 [Claude]**: B9 completed (v9.3) — Added `lineWidthUnits: 'pixels'` to the two `PolygonLayer` outline instances in `ROILayer.js` (LinearRegion fill and RectROI fill); PathLayer + ScatterplotLayer sub-layers already had pixel units; ROI borders now render at fixed screen-pixel thickness regardless of zoom. Branch: `feature/B9`.
 - **2026-04-04 [Claude]**: Phase 7 (Axis System Refactor) added (v9.2) — B9 (ROILayer pixel-space widths; confirmed working on test branch), ARCH-G (AxisController config/domain split; domain methods move to ViewportController; shared-config pattern; breaking API change), F34 (bordered plot mode; gutter fill from CSS background), F35 (axis positioning modes; border multi-edge + relative/mobile with snap/offscreen/labelSide/tick-flip). Mandatory order: B9 independent; ARCH-G → F34 → F35 on single branch `feature/ARCH-G-F34-F35`.
