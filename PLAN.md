@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 9.1
-**Last Updated:** 2026-03-28
-**Status:** Phase 6 complete. F32 / F33 / EX19 done 2026-03-28.
+**Plan Version:** 9.2
+**Last Updated:** 2026-04-04
+**Status:** Phase 6 complete. Phase 7 (Axis Refactor) added: B9, ARCH-G, F34, F35 pending.
 
 ---
 
@@ -117,6 +117,10 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | F32  | TableLoaderAdapter (CSV / Arrow / Parquet → scatter) | ✅ COMPLETED | feature/F32-F33-EX19 | 2026-03-28 |
 | F33  | RasterLoaderAdapter (NetCDF / GeoTIFF / image → BitmapDataLayer) | ✅ COMPLETED | feature/F32-F33-EX19 | 2026-03-28 |
 | EX19 | Data Loaders Example | ✅ COMPLETED | feature/F32-F33-EX19 | 2026-03-28 |
+| B9   | ROILayer pixel-space border widths | 🔄 IN_PROGRESS | feature/B9 | — |
+| ARCH-G | AxisController Config/Domain Split | 🔲 PENDING | — | — |
+| F34  | Bordered Plot Mode | 🔲 PENDING | — | — |
+| F35  | Axis Positioning Modes | 🔲 PENDING | — | — |
 
 ---
 
@@ -135,6 +139,10 @@ F27 → F28 → F29 → F30 → EX-Spec → EX17 ✅ → EX14 ✅ → EX15 ✅ �
 F31 → EX18 ✅
 
 F32 → F33 → EX19
+
+B9  (independent — no dependencies)
+
+ARCH-G → F34 → F35
 ```
 
 ---
@@ -334,10 +342,231 @@ Full spec: [docs/plan-archive.md#ex19](docs/plan-archive.md#ex19)
 
 ---
 
+---
+
+## Phase 7 — Axis System Refactor
+
+**Motivation:** The axis rendering system has two UX problems: (1) ROI borders thin to near-invisibility at extreme zoom (thousandths↔thousands of data units); (2) tick labels have no gutter background, so data renders through them making them illegible. Additionally, the `AxisController` mixes config/behavior with domain state, preventing sharing of axis configuration across multiple plots and coupling concerns that should be independent. This phase separates config from state, adds a bordered mode, and introduces flexible axis positioning.
+
+---
+
+### B9 [IN_PROGRESS] ROILayer pixel-space border widths
+
+**Branch:** `feature/B9`
+**Depends on:** none — fully independent
+
+**Problem:** ROI border and handle line widths are specified in data-coordinate units, so they scale with zoom. At extreme zoom levels (data range ~0.001 or ~100,000) borders become imperceptibly thin or grossly thick.
+
+**Fix:** In `src/plot/layers/ROILayer.js`, change all `PathLayer`, `LineLayer`, and handle-rendering calls to use `widthUnits: 'pixels'` (and `widthMinPixels` / `widthMaxPixels` where appropriate). Border thickness becomes a fixed screen-pixel value regardless of zoom.
+
+**Files modified:**
+- `src/plot/layers/ROILayer.js`
+
+**Verification:** confirmed working on test branch. No example changes needed.
+
+---
+
+### ARCH-G [PENDING] AxisController Config/Domain Split
+
+**Branch:** `feature/ARCH-G-F34-F35`
+**Depends on:** none (but F34 and F35 depend on ARCH-G)
+
+**Motivation:** Split `AxisController` into a config-only object (scale type, tick format, appearance, positioning) and move all domain-state methods (`setDomain`, `getDomain`, `zoomAround`, `panByPixels`, `scaleDomainFromMidpoint`) into `ViewportController`. This allows axis configuration to be shared across multiple `PlotController` instances (shared-style pattern) while each plot retains its own independent domain state.
+
+#### New public API surface
+
+**`plotController.xAxis` / `plotController.yAxis`** → `AxisController` instance (config only)
+
+**`plotController.viewport`** → `ViewportController` instance — gains all domain-mutation methods:
+
+| Old call | New call |
+|---|---|
+| `plotController.xAxis.setDomain([a, b])` | `plotController.viewport.setXDomain([a, b])` |
+| `plotController.yAxis.setDomain([a, b])` | `plotController.viewport.setYDomain([a, b])` |
+| `plotController.xAxis.getDomain()` | `plotController.viewport.getXDomain()` |
+| `plotController.yAxis.getDomain()` | `plotController.viewport.getYDomain()` |
+| `plotController.xAxis.zoomAround(c, f)` | `plotController.viewport.zoomAroundX(c, f)` |
+| `plotController.yAxis.zoomAround(c, f)` | `plotController.viewport.zoomAroundY(c, f)` |
+| `plotController.xAxis.panByPixels(px)` | `plotController.viewport.panByPixels({ dx: px })` |
+| `plotController.yAxis.panByPixels(px)` | `plotController.viewport.panByPixels({ dy: px })` |
+| `plotController.xAxis.scaleDomainFromMidpoint(m, f)` | `plotController.viewport.scaleDomainFromMidpointX(m, f)` |
+| `plotController.yAxis.scaleDomainFromMidpoint(m, f)` | `plotController.viewport.scaleDomainFromMidpointY(m, f)` |
+
+`domainChanged` event: continues to be emitted by `PlotController` as before.
+
+#### AxisController (new shape)
+
+Config-only object. No domain state. No EventEmitter required.
+
+**Constructor:** `new AxisController(opts)`
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `scaleType` | `'linear' \| 'log' \| 'time'` | `'linear'` | d3 scale type |
+| `tickFormat` | `fn \| null` | `null` | Custom tick formatter — `(value, index) => string` |
+| `tickCount` | `number` | `5` | Approximate target tick count |
+| `label` | `string \| null` | `null` | Axis label text |
+
+Positioning options are added by F35 (see below).
+
+**Methods consumed by AxisRenderer:**
+- `getScale(domain, range)` → d3 scale (linear/log/time) with domain and range applied
+- `getTicks(scale)` → `number[]`
+- `formatTick(value, index)` → `string`
+- `getTickSize()` → `number` (px)
+
+#### Shared-config usage pattern
+
+```js
+// sharedAxes.js
+export const myXAxis = new AxisController({ scaleType: 'log', tickCount: 8 });
+export const myYAxis = new AxisController({ scaleType: 'linear' });
+
+// plot1.js
+const plot1 = new PlotController({ xAxis: myXAxis, yAxis: myYAxis });
+
+// plot2.js
+const plot2 = new PlotController({ xAxis: myXAxis, yAxis: myYAxis });
+// Each plot maintains its own domain; both use the same config/render rules.
+```
+
+#### ViewportController additions
+
+`ViewportController` already exists at `src/plot/ViewportController.js` and handles canvas↔data coordinate transforms. Add:
+
+- `setXDomain([min, max])` — sets x domain; calls `_updateScales()` internally; triggers PlotController `_dirty`
+- `setYDomain([min, max])` — same for y
+- `getXDomain()` → `[min, max]`
+- `getYDomain()` → `[min, max]`
+- `zoomAroundX(dataCenter, factor)` — zoom x-axis around a data coordinate
+- `zoomAroundY(dataCenter, factor)` — zoom y-axis around a data coordinate
+- `panByPixels({ dx?, dy? })` — pan by pixel deltas (existing direction conventions preserved)
+- `scaleDomainFromMidpointX(midpx, factor)` — midpoint zoom for x (F21 axis drag)
+- `scaleDomainFromMidpointY(midpx, factor)` — midpoint zoom for y
+
+#### Files modified
+
+- `src/plot/axes/AxisController.js` — major refactor; remove all domain state; add `getScale`, `getTicks`, `formatTick`, `getTickSize`
+- `src/plot/ViewportController.js` — add all domain-mutation methods listed above
+- `src/plot/PlotController.js` — accept `xAxis`/`yAxis` constructor opts; create defaults if not provided; wire viewport domain mutations to `_updateScales` and `_dirty`; expose `xAxis`/`yAxis` getters (config only); keep `viewport` getter
+- `src/plot/axes/AxisRenderer.js` — receive domain from `ViewportController` on each render tick (passed by PlotController)
+- `src/components/PlotCanvas.jsx` — add `xAxis` / `yAxis` props (pass through to PlotController)
+
+#### Examples to update (breaking)
+
+All examples that call `xAxis.*` or `yAxis.*` domain methods must be updated to `viewport.*`. Agent must update each and flag them for user verification:
+- `examples/ExampleApp.jsx`
+- `examples/LiveSignalsExample.jsx`
+- `examples/MultiSensorExample.jsx`
+- `examples/SeismographyExample.jsx`
+- `examples/SharedDataExample.jsx`
+- `examples/SpectrogramV2Example.jsx`
+- Any other file calling `plotController.xAxis.setDomain` / `.getDomain` / `.zoomAround` / `.panByPixels` / `.scaleDomainFromMidpoint` (grep before starting)
+
+**⚠️ Breaking change — warn user and list all modified examples before marking COMPLETED.**
+
+---
+
+### F34 [PENDING] Bordered Plot Mode
+
+**Branch:** `feature/ARCH-G-F34-F35`
+**Depends on:** ARCH-G
+
+**Purpose:** Fill the axis gutter areas (margins around the inner plot rectangle) with the container's CSS background color, so data never renders visually behind tick labels. No border line is drawn. When disabled, behavior is identical to today (transparent gutters).
+
+#### Config
+
+On `PlotController`:
+```js
+new PlotController({ bordered: false })   // default: off
+```
+
+On `PlotCanvas`:
+```jsx
+<PlotCanvas bordered />
+```
+
+#### Behavior
+
+In `AxisRenderer`, before drawing any ticks or labels:
+
+1. Read `getComputedStyle(canvas.parentElement).backgroundColor` — this resolves the CSS background color of the plot container.
+2. Fill each of the four gutter rectangles (top margin, bottom margin, left margin, right margin) with that color using `ctx.fillRect`.
+3. Then proceed with normal tick/label rendering.
+
+No change to the deck.gl viewport — data is already clipped to the inner plot area by the `OrthographicView` bounds.
+
+When `bordered: false` (default): gutter fill step is skipped entirely.
+
+**Files modified:**
+- `src/plot/axes/AxisRenderer.js` — add gutter fill pass when `bordered` is true
+- `src/plot/PlotController.js` — accept `bordered` option; pass to AxisRenderer
+- `src/components/PlotCanvas.jsx` — accept and forward `bordered` prop
+
+---
+
+### F35 [PENDING] Axis Positioning Modes
+
+**Branch:** `feature/ARCH-G-F34-F35`
+**Depends on:** ARCH-G (config-only AxisController is the foundation for new positioning options)
+
+**Purpose:** Add flexible per-axis positioning. Axes can be fixed to one or more edges (`border` mode) or fixed to a data coordinate that moves with the viewport (`relative` mode, optionally with snap/mobile behavior).
+
+#### AxisController new options (extends ARCH-G shape)
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `mode` | `'border' \| 'relative'` | `'border'` | Positioning mode |
+| `edges` | `string[]` | `['bottom']` (x) / `['left']` (y) | **border mode**: which edges to render at. Valid values per axis: x → `'top'`/`'bottom'`; y → `'left'`/`'right'`. Multiple values = mirrored axes. |
+| `crossingValue` | `number` | `0` | **relative mode**: data coordinate the axis line sits at |
+| `snapTolerancePx` | `number` | `0` | **relative mode**: pixels from edge at which axis snaps to border. `0` = never snap (stationary-relative). `> 0` = mobile behavior |
+| `offscreen` | `'border' \| 'hide'` | `'border'` | **relative mode**: behavior when `crossingValue` is outside the visible domain |
+| `labelSide` | `'auto' \| 'positive' \| 'negative'` | `'auto'` | **relative mode**: which side of the axis line labels appear. `'auto'` = toward nearest edge |
+
+#### Named patterns (all just AxisController config)
+
+| Pattern | Config |
+|---|---|
+| Stationary border (current default) | `{ mode: 'border', edges: ['bottom'] }` |
+| Mirrored top+bottom | `{ mode: 'border', edges: ['bottom', 'top'] }` |
+| Stationary crossing (data coord) | `{ mode: 'relative', crossingValue: 0, snapTolerancePx: 0 }` |
+| Mobile (snaps to edges) | `{ mode: 'relative', crossingValue: 0, snapTolerancePx: 20, offscreen: 'border' }` |
+| Mobile, hide when off-screen | `{ mode: 'relative', crossingValue: 0, snapTolerancePx: 20, offscreen: 'hide' }` |
+
+#### AxisRenderer behavior — border mode
+
+- Render the axis line and ticks at each edge in `edges`.
+- Multiple edges: same tick values and labels on each, ticks face **outward** (away from plot center) on both.
+- Tick direction: always outward (away from inner plot area) regardless of which edge.
+
+#### AxisRenderer behavior — relative mode
+
+On each render frame, given the current domain from `ViewportController`:
+
+1. Compute screen pixel position `px = xScale(crossingValue)` (or `yScale` for y-axis).
+2. **Snap check:** if `|px - edgePx| <= snapTolerancePx` for any edge → render as if `mode: 'border'` at that edge.
+3. **Off-screen check:** if `crossingValue` is outside the visible domain → apply `offscreen`:
+   - `'border'`: render at the nearest border edge.
+   - `'hide'`: render nothing.
+4. **Mid-plot render:** draw axis line at screen position `px`. Then:
+   - **Tick direction:** flip when `px` crosses the viewport midpoint pixel. Ticks point toward the nearer half.
+   - **Label side:** resolve `labelSide`:
+     - `'auto'` → labels on the side toward the nearest edge.
+     - `'positive'` → labels on the data-positive side of the line.
+     - `'negative'` → labels on the data-negative side of the line.
+
+#### Files modified
+
+- `src/plot/axes/AxisController.js` — add all new positioning options to constructor; expose them as getters for AxisRenderer
+- `src/plot/axes/AxisRenderer.js` — implement border-mode multi-edge + relative-mode positioning logic described above
+
+---
+
 ## Recent Changelog
 
 > Full history in [docs/plan-archive.md — Change Log](docs/plan-archive.md#change-log).
 
+- **2026-04-04 [Claude]**: Phase 7 (Axis System Refactor) added (v9.2) — B9 (ROILayer pixel-space widths; confirmed working on test branch), ARCH-G (AxisController config/domain split; domain methods move to ViewportController; shared-config pattern; breaking API change), F34 (bordered plot mode; gutter fill from CSS background), F35 (axis positioning modes; border multi-edge + relative/mobile with snap/offscreen/labelSide/tick-flip). Mandatory order: B9 independent; ARCH-G → F34 → F35 on single branch `feature/ARCH-G-F34-F35`.
 - **2026-03-28 [Claude]**: F32/F33/EX19 completed (v9.1) — F32: `loaders/TableLoaderAdapter.js` (CSVLoader + ArrowLoader; chunked appendData; BigInt/null coercion; 'chunk'+'parseWarning' events); F33: `loaders/RasterLoaderAdapter.js` (NetCDFLoader for .nc/.cdf, createImageBitmap for images; coordinate-array bounds; flipY; loadArray() for in-memory grids; LUT wiring); EX19: `DataLoadersExample.jsx` two-panel demo (drag-and-drop CSV + synthetic 10k sample / image+nc drop + synthetic 128×128 temp field + LUTPanel); webpack entry/HTML added; HubPage card + README Phase 6 section + ApiReferencePage sections added; build zero errors.
 - **2026-03-28 [Claude]**: Phase 6 (loaders.gl Data Loaders) added (v9.0) — F32 (`TableLoaderAdapter`: CSV/Arrow/Parquet → scatter; column mapping + streaming `parseInBatches`), F33 (`RasterLoaderAdapter`: NetCDF/GeoTIFF/image → `BitmapDataLayer`; coordinate bounds from metadata), EX19 (two-panel demo: drag-and-drop tabular + raster files). New top-level `loaders/` directory (framework-agnostic, not `src/`). Mandatory order: F32 → F33 → EX19. Branch: `feature/F32-F33-EX19`.
 - **2026-03-14 [Claude]**: Phase 4 (Bitmap/LUT Refactor) added as PENDING (v7.0) — ARCH-F through CLEANUP. Motivation: decompose monolithic SpectrogramLayer into generic BitmapDataLayer + LUTController + LUTHistogramController. Mandatory order: ARCH-F → F27 → F28 → F29 → F30 → EX-Spec → CLEANUP.
