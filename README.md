@@ -147,7 +147,7 @@ Fifty stacked seismograph channels in a single page, each backed by its own `Dat
 | Feature | Details |
 |---|---|
 | **50 channels** | Independent sin-wave signals with distinct frequency and phase per channel |
-| **Shared X-axis** | Zoom or pan on any channel propagates the new x-domain to all others via `domainChanged` → `xAxis.setDomain()` |
+| **Shared X-axis** | Zoom or pan on any channel propagates the new x-domain to all others via `domainChanged` → `viewport.setXDomain()` |
 | **P-wave picks** | Each channel has a pre-seeded `vline-half-bottom` LineROI with a station label rendered on the canvas overlay |
 | **Draggable picks** | Drag any pick to update its position; table row refreshes on `roiFinalized` |
 | **Sidebar table** | Station · Label · Pos (s); edits committed on Enter/blur |
@@ -472,8 +472,8 @@ const adapter = new RasterLoaderAdapter(plotController, {
 });
 
 adapter.on('loaded', ({ width, height, bounds }) => {
-  plotController.xAxis.setDomain([bounds[0], bounds[2]]);
-  plotController.yAxis.setDomain([bounds[1], bounds[3]]);
+  plotController.viewport.setXDomain([bounds[0], bounds[2]]);
+  plotController.viewport.setYDomain([bounds[1], bounds[3]]);
 });
 
 await adapter.loadFile(file);  // .nc/.cdf → NetCDFLoader; images → createImageBitmap
@@ -599,8 +599,8 @@ MasterPlot is **controller-driven**, not React-state-driven. React only manages 
 PlotController (EventEmitter)
 ├── DataStore             — GPU typed array buffers (x/y/color/size)
 │   └── PlotDataView      — lazy derived view (filter, histogram, snapshot)
-├── ViewportController    — canvas dimensions + screen↔data transforms
-├── AxisController (x)    — d3-scale domain/range, tick generation
+├── ViewportController    — canvas dimensions + screen↔data transforms + domain state (ARCH-G)
+├── AxisController (x)    — config-only: scale type, tick format, label (ARCH-G)
 ├── AxisController (y)
 ├── ROIController         — creation, drag, resize, delete
 │   ├── ConstraintEngine  — parent-child bound enforcement
@@ -635,10 +635,10 @@ appendData(chunk)
 
 wheel event
     → PlotController._onWheel
-    → AxisController.zoomAround(factor, focalData)
-    → AxisController.emit('domainChanged')
-    → ViewportController scale updated
-    → deck.gl viewState rebuilt → _dirty = true
+    → ViewportController.zoomAround(focalX, focalY, factor)   [ARCH-G]
+    → ViewportController.emit('domainChanged')
+    → PlotController re-emits 'domainChanged' → _dirty = true
+    → deck.gl viewState rebuilt on next rAF
 
 rAF loop
     → _render()

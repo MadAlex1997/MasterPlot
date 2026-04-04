@@ -3,8 +3,8 @@
  *
  * Owns all subsystems:
  *   - DataStore        (GPU buffers)
- *   - AxisController   (x/y domains + scale functions)
- *   - ViewportController (coordinate transforms)
+ *   - AxisController   (config-only: scale type, tick format, appearance) [ARCH-G]
+ *   - ViewportController (coordinate transforms + domain state)            [ARCH-G]
  *   - ROIController    (ROI CRUD + interaction)
  *   - AxisRenderer     (canvas 2D overlay for ticks)
  *   - deck.gl Deck     (WebGL rendering)
@@ -17,9 +17,9 @@
  *   plotController.appendData(chunk)
  *   plotController.destroy()
  *
- * Event model:
- *   All subsystem events are re-emitted on PlotController for external
- *   consumers (console logging, UI badges, etc.).
+ * ARCH-G: All domain mutations (setDomain, zoom, pan) now go through
+ *   plotController.viewport.setXDomain() / .setYDomain() / .panByPixels() etc.
+ *   AxisController instances are config-only and can be shared across plots.
  */
 
 import { EventEmitter } from 'events';
@@ -56,8 +56,12 @@ import { PlotLayer }          from './layers/PlotLayer.js';
 export class PlotController extends EventEmitter {
   /**
    * @param {object} opts
-   * @param {string}  [opts.xScaleType='linear']
-   * @param {string}  [opts.yScaleType='linear']
+   * @param {AxisController} [opts.xAxis]       — shared config object; created from scaleType if absent
+   * @param {AxisController} [opts.yAxis]       — shared config object; created from scaleType if absent
+   * @param {string}  [opts.xScaleType='linear'] — used only when opts.xAxis is not supplied
+   * @param {string}  [opts.yScaleType='linear'] — used only when opts.yAxis is not supplied
+   * @param {string}  [opts.xLabel]             — convenience; sets xAxis.label when not sharing
+   * @param {string}  [opts.yLabel]             — convenience; sets yAxis.label when not sharing
    * @param {number[]} [opts.xDomain=[0,1]]
    * @param {number[]} [opts.yDomain=[0,100]]
    * @param {boolean} [opts.disableDefaultDataLayer=false]
@@ -94,23 +98,27 @@ export class PlotController extends EventEmitter {
     this._onDataViewDirty      = () => { this._dirty = true; };
     this._onDataViewRecomputed = () => { this._dataTrigger++; };
 
-    this._xAxis = new AxisController({
-      axis:      'x',
+    // ARCH-G: AxisController is config-only.  Accept a shared instance or create a default.
+    this._xAxis = opts.xAxis || new AxisController({
       scaleType: opts.xScaleType || 'linear',
-      domain:    opts.xDomain    || [0, 1],
+      label:     opts.xLabel     || null,
+    });
+    this._yAxis = opts.yAxis || new AxisController({
+      scaleType: opts.yScaleType || 'linear',
+      label:     opts.yLabel     || null,
     });
 
-    this._yAxis = new AxisController({
-      axis:      'y',
-      scaleType: opts.yScaleType || 'linear',
-      domain:    opts.yDomain    || [0, 100],
-    });
+    // Convenience: set label from opts even when a shared xAxis was passed
+    // (only if the shared instance has no label of its own)
+    if (opts.xLabel && !this._xAxis.label) this._xAxis.label = opts.xLabel;
+    if (opts.yLabel && !this._yAxis.label) this._yAxis.label = opts.yLabel;
+
+    // Wire axis config into viewport; set initial domains (silently, no event yet)
+    this._viewport._xDomain = opts.xDomain || [0, 1];
+    this._viewport._yDomain = opts.yDomain || [0, 100];
+    this._viewport.setAxisConfig(this._xAxis, this._yAxis);
 
     this._roiController = new ROIController(this._viewport);
-
-    // Set axis labels (optional)
-    if (opts.xLabel) this._xAxis.label = opts.xLabel;
-    if (opts.yLabel) this._yAxis.label = opts.yLabel;
 
     // Canvas references (set during init)
     this._webglCanvas = null;
@@ -338,9 +346,7 @@ export class PlotController extends EventEmitter {
       xDomain = [xMin - xPad, xMax + xPad];
       yDomain = [yMin - yPad, yMax + yPad];
     }
-    this._xAxis.setDomain(xDomain);
-    this._yAxis.setDomain(yDomain);
-    this._updateScales();
+    this._viewport.setDomains(xDomain, yDomain);
     this._dirty = true;
     this.emit('autoScaled', { xDomain, yDomain });
   }
@@ -359,17 +365,14 @@ export class PlotController extends EventEmitter {
   // ─── Zoom / Pan ────────────────────────────────────────────────────────────
 
   /**
+   * Zoom around a focal data point (both axes).
    * Called by PlotController's own wheel handler.
-   * Zoom around a focal data point.
    */
   setZoom(factor, focalScreenX, focalScreenY) {
     const focalDataX = this._viewport.screenXToData(focalScreenX);
     const focalDataY = this._viewport.screenYToData(focalScreenY);
 
-    this._xAxis.zoomAround(factor, focalDataX);
-    this._yAxis.zoomAround(factor, focalDataY);
-
-    this._updateScales();
+    this._viewport.zoomAround(focalDataX, focalDataY, factor);
     this._dirty = true;
     this.emit('zoomChanged', { factor, focalDataX, focalDataY });
   }
@@ -377,8 +380,11 @@ export class PlotController extends EventEmitter {
   // ─── Public access ─────────────────────────────────────────────────────────
 
   get dataStore()      { return this._dataStore; }
+  /** Config-only AxisController for the x axis (scale type, tick format, label). */
   get xAxis()          { return this._xAxis;     }
+  /** Config-only AxisController for the y axis. */
   get yAxis()          { return this._yAxis;     }
+  /** ViewportController — owns domain state and all zoom/pan mutations. */
   get viewport()       { return this._viewport;  }
   get roiController()  { return this._roiController; }
 
@@ -440,17 +446,8 @@ export class PlotController extends EventEmitter {
 
   // ─── Export placeholder (v2) ───────────────────────────────────────────────
 
-  /**
-   * Export the plot as PNG.
-   * v2 feature — architecture is in place; implementation deferred.
-   *
-   * @param {object} [options]
-   * @param {boolean} [options.hideAxes=false]
-   * @param {boolean} [options.hideLegend=false]
-   * @param {number}  [options.resolutionMultiplier=2]
-   */
   exportPNG(options = {}) {
-    const { hideAxes = false, resolutionMultiplier = 2 } = options;
+    const { hideAxes = false } = options;
     if (hideAxes) this._axisRenderer.exportMode(true);
     // TODO (v2): offscreen canvas + WebGL readPixels + axis canvas composite
     console.warn('exportPNG: v2 feature, not yet implemented');
@@ -468,9 +465,10 @@ export class PlotController extends EventEmitter {
         const dist = Math.sqrt(dx * dx + dy * dy);
         const DEAD_ZONE = 5;
         if (dist > DEAD_ZONE) {
-          this._xAxis.panByPixels(-dx * this._followPanSpeed);
-          this._yAxis.panByPixels(-dy * this._followPanSpeed); // negate: inverted y range flips panByPixels direction
-          this._updateScales();
+          this._viewport.panByPixels({
+            dx: -dx * this._followPanSpeed,
+            dy: -dy * this._followPanSpeed, // inverted y range handles sign automatically
+          });
           this._dirty = true;
           this.emit('panChanged', {
             dx: Math.round(-dx * this._followPanSpeed),
@@ -494,9 +492,9 @@ export class PlotController extends EventEmitter {
     const gpuAttrs = this._dataView
       ? this._dataView.getData()
       : this._dataStore.getGPUAttributes();
-    const rois     = this._roiController.getAllROIs();
-    const [xMin, xMax] = this._xAxis.getDomain();
-    const [yMin, yMax] = this._yAxis.getDomain();
+    const rois          = this._roiController.getAllROIs();
+    const [xMin, xMax]  = this._viewport.getXDomain();
+    const [yMin, yMax]  = this._viewport.getYDomain();
     const xIsLog = this._xAxis.scaleType === 'log';
     const yIsLog = this._yAxis.scaleType === 'log';
 
@@ -550,22 +548,15 @@ export class PlotController extends EventEmitter {
     this._viewport.setCanvasSize(width, height);
     const { plotArea: pa } = this._viewport;
 
-    // Set axis ranges to plot area pixel bounds
-    this._xAxis.setRange([pa.x, pa.x + pa.width]);
-    // y axis: screen y increases downward, so invert range
-    this._yAxis.setRange([pa.y + pa.height, pa.y]);
-
-    this._updateScales();
-  }
-
-  _updateScales() {
-    // Provide current scale functions to ViewportController
-    this._viewport.setScales(this._xAxis.getScale(), this._yAxis.getScale());
+    // Set axis pixel ranges on viewport
+    this._viewport.setXRange([pa.x, pa.x + pa.width]);
+    // y axis: screen y increases downward → invert range so data-y=0 is at bottom
+    this._viewport.setYRange([pa.y + pa.height, pa.y]);
   }
 
   _buildViewState() {
-    const [xMin, xMax] = this._xAxis.getDomain();
-    const [yMin, yMax] = this._yAxis.getDomain();
+    const [xMin, xMax] = this._viewport.getXDomain();
+    const [yMin, yMax] = this._viewport.getYDomain();
 
     const { canvasWidth: W, canvasHeight: H, plotArea: pa,
             marginLeft, marginBottom } = this._viewport;
@@ -587,13 +578,6 @@ export class PlotController extends EventEmitter {
     const zoomX = Math.log2(pa.width  / xSpan);
     const zoomY = Math.log2(pa.height / ySpan);
 
-    // Adjust target to compensate for margin offset.
-    // Derived from OrthographicView (flipY:true) projection equations:
-    //   screenX = (worldX - tx) * 2^zoomX + W/2  →  solve for tx so that
-    //   deckXMin maps to marginLeft and deckXMax maps to marginLeft+plotWidth.
-    //
-    //   screenY = -(worldY - ty) * 2^zoomY + H/2  (flipY negates y)
-    //   deckYMin maps to marginTop+plotHeight, deckYMax maps to marginTop.
     const tx = deckXMin + (W / 2 - marginLeft) * xSpan / pa.width;
     const ty = deckYMin + (H / 2 - marginBottom) * ySpan / pa.height;
 
@@ -617,24 +601,22 @@ export class PlotController extends EventEmitter {
       if (ys[i] > yMax) yMax = ys[i];
     }
 
-    const [curXMin, curXMax] = this._xAxis.getDomain();
-    const [curYMin, curYMax] = this._yAxis.getDomain();
+    const [curXMin, curXMax] = this._viewport.getXDomain();
+    const [curYMin, curYMax] = this._viewport.getYDomain();
 
-    let changed = false;
+    let newX = null, newY = null;
     if (xMin < curXMin || xMax > curXMax) {
-      this._xAxis.setDomain([Math.min(xMin, curXMin), Math.max(xMax, curXMax)]);
-      changed = true;
+      newX = [Math.min(xMin, curXMin), Math.max(xMax, curXMax)];
     }
     if (yMin < curYMin || yMax > curYMax) {
-      this._yAxis.setDomain([Math.min(yMin, curYMin), Math.max(yMax, curYMax)]);
-      changed = true;
+      newY = [Math.min(yMin, curYMin), Math.max(yMax, curYMax)];
     }
 
-    if (changed) {
-      this._updateScales();
+    if (newX || newY) {
+      this._viewport.setDomains(newX, newY);
       this.emit('domainChanged', {
-        xDomain: this._xAxis.getDomain(),
-        yDomain: this._yAxis.getDomain(),
+        xDomain: this._viewport.getXDomain(),
+        yDomain: this._viewport.getYDomain(),
       });
     }
   }
@@ -658,12 +640,10 @@ export class PlotController extends EventEmitter {
       if (data.y[i] > yMax) yMax = data.y[i];
     }
 
-    this._xAxis.setDomain([xMin, xMax]);
-    this._yAxis.setDomain([yMin, yMax]);
-    this._updateScales();
+    this._viewport.setDomains([xMin, xMax], [yMin, yMax]);
     this.emit('domainChanged', {
-      xDomain: this._xAxis.getDomain(),
-      yDomain: this._yAxis.getDomain(),
+      xDomain: this._viewport.getXDomain(),
+      yDomain: this._viewport.getYDomain(),
     });
   }
 
@@ -704,8 +684,8 @@ export class PlotController extends EventEmitter {
         this._axisDragAxis   = axisHit;
         this._axisDragStart  = {
           x: pos.x, y: pos.y,
-          xDomain: this._xAxis.getDomain(),
-          yDomain: this._yAxis.getDomain(),
+          xDomain: this._viewport.getXDomain(),
+          yDomain: this._viewport.getYDomain(),
         };
         return;
       }
@@ -713,7 +693,6 @@ export class PlotController extends EventEmitter {
 
     if (this._roiController._mode !== 'idle') return; // ROI creation takes priority
     if (this._roiController._hitTest) {
-      // Check if ROIController will handle this event
       const { x: screenX, y: screenY } = { x: pos.x, y: pos.y };
       if (this._roiController._hitTest(screenX, screenY)) return;
     }
@@ -726,8 +705,8 @@ export class PlotController extends EventEmitter {
     this._panStart  = {
       screenX:  pos.x,
       screenY:  pos.y,
-      xDomain: this._xAxis.getDomain(),
-      yDomain: this._yAxis.getDomain(),
+      xDomain: this._viewport.getXDomain(),
+      yDomain: this._viewport.getYDomain(),
     };
     // F5: track current cursor position for velocity pan
     this._panCurrentPos = { x: pos.x, y: pos.y };
@@ -745,14 +724,11 @@ export class PlotController extends EventEmitter {
     const pos = this._viewport.getCanvasPosition(e, this._webglCanvas);
 
     if (this._panMode === 'drag') {
-      // F4: drag pan — data moves with cursor (restore-and-reapply, inverted signs)
+      // F4: drag pan — restore start domains then re-apply pixel delta (avoids float drift)
       const dx = pos.x - this._panStart.screenX;
       const dy = pos.y - this._panStart.screenY;
-      this._xAxis.setDomain(this._panStart.xDomain);
-      this._yAxis.setDomain(this._panStart.yDomain);
-      this._xAxis.panByPixels(dx);    // drag right → data moves right
-      this._yAxis.panByPixels( dy);   // drag down → data moves down (inverted y range makes +dy correct)
-      this._updateScales();
+      this._viewport.setDomains(this._panStart.xDomain, this._panStart.yDomain);
+      this._viewport.panByPixels({ dx, dy });
       this._dirty = true;
       this.emit('panChanged', { dx, dy });
     } else {
@@ -787,8 +763,8 @@ export class PlotController extends EventEmitter {
     this._isRightDragging = true;
     this._rightDragStart  = {
       x: pos.x, y: pos.y,
-      xDomain: this._xAxis.getDomain(),
-      yDomain: this._yAxis.getDomain(),
+      xDomain: this._viewport.getXDomain(),
+      yDomain: this._viewport.getYDomain(),
     };
   }
 
@@ -800,15 +776,11 @@ export class PlotController extends EventEmitter {
     // drag up (totalDy<0) → factor<1 → zoom in
     const factor = Math.pow(0.992, -totalDy);
     // Restore initial domains to avoid float drift
-    this._xAxis.setDomain(this._rightDragStart.xDomain);
-    this._yAxis.setDomain(this._rightDragStart.yDomain);
-    this._updateScales();
+    this._viewport.setDomains(this._rightDragStart.xDomain, this._rightDragStart.yDomain);
     // Focal point in data space at the right-click origin
     const focalDataX = this._viewport.screenXToData(this._rightDragStart.x);
     const focalDataY = this._viewport.screenYToData(this._rightDragStart.y);
-    this._xAxis.zoomAround(factor, focalDataX);
-    this._yAxis.zoomAround(factor, focalDataY);
-    this._updateScales();
+    this._viewport.zoomAround(focalDataX, focalDataY, factor);
     this._dirty = true;
     this.emit('zoomChanged', { factor, focalDataX, focalDataY });
   }
@@ -830,17 +802,14 @@ export class PlotController extends EventEmitter {
     const zoomFactor  = Math.exp(delta * SENSITIVITY);
 
     // Restore initial domains before re-applying to prevent float drift
-    this._xAxis.setDomain(this._axisDragStart.xDomain);
-    this._yAxis.setDomain(this._axisDragStart.yDomain);
-    this._updateScales();
+    this._viewport.setDomains(this._axisDragStart.xDomain, this._axisDragStart.yDomain);
 
     if (axis === 'x') {
-      this._xAxis.scaleDomainFromMidpoint(zoomFactor);
+      this._viewport.scaleDomainFromMidpointX(zoomFactor);
     } else {
-      this._yAxis.scaleDomainFromMidpoint(zoomFactor);
+      this._viewport.scaleDomainFromMidpointY(zoomFactor);
     }
 
-    this._updateScales();
     this._dirty = true;
     this.emit('zoomChanged', { factor: zoomFactor, axis });
   }
@@ -866,7 +835,7 @@ export class PlotController extends EventEmitter {
   _wireEvents() {
     // DataStore events
     this._dataStore.on('dataExpired', e => this.emit('dataExpired', e));
-    // DataStore dirty without a DataView — still need to re-render (e.g. shared store, no DataView)
+    // DataStore dirty without a DataView — still need to re-render
     this._dataStore.on('dirty', () => {
       if (!this._dataView) { this._dirty = true; }
     });
@@ -885,15 +854,10 @@ export class PlotController extends EventEmitter {
     this._roiController.on('roiExternalUpdate', e => this.emit('roiExternalUpdate', e)); // F14
     this._roiController.on('roisChanged',  () => { this._dirty = true; });
 
-    // Axis domain events
-    this._xAxis.on('domainChanged', e => {
-      this._updateScales();
+    // ARCH-G: domain changes come from viewport now (not from individual AxisControllers)
+    this._viewport.on('domainChanged', ({ xDomain, yDomain }) => {
       this._dirty = true;
-      this.emit('domainChanged', { ...e, xDomain: e.domain });
-    });
-    this._yAxis.on('domainChanged', e => {
-      this._updateScales();
-      this._dirty = true;
+      this.emit('domainChanged', { xDomain, yDomain });
     });
 
     // Viewport resize

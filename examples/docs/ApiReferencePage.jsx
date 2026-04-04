@@ -195,9 +195,9 @@ function PlotControllerSection() {
         <thead><tr><Th>Getter</Th><Th>Returns</Th><Th>Description</Th></tr></thead>
         <tbody>
           <tr><Td mono>dataStore</Td><Td type>DataStore</Td><Td>The owned or injected DataStore.</Td></tr>
-          <tr><Td mono>xAxis</Td><Td type>AxisController</Td><Td>X-axis controller — domain, scale, ticks.</Td></tr>
-          <tr><Td mono>yAxis</Td><Td type>AxisController</Td><Td>Y-axis controller — domain, scale, ticks.</Td></tr>
-          <tr><Td mono>viewport</Td><Td type>ViewportController</Td><Td>Coordinate-transform helper (screen ↔ data).</Td></tr>
+          <tr><Td mono>xAxis</Td><Td type>AxisController</Td><Td>Config-only x-axis descriptor (scale type, tick format, label). Domain state lives in viewport.</Td></tr>
+          <tr><Td mono>yAxis</Td><Td type>AxisController</Td><Td>Config-only y-axis descriptor. Domain state lives in viewport.</Td></tr>
+          <tr><Td mono>viewport</Td><Td type>ViewportController</Td><Td>Coordinate-transform helper and domain owner — use viewport.setXDomain() etc. for all domain mutations (ARCH-G).</Td></tr>
           <tr><Td mono>roiController</Td><Td type>ROIController</Td><Td>The ROI system controller.</Td></tr>
         </tbody>
       </table>
@@ -232,10 +232,16 @@ function AxisControllerSection() {
     <section id="axis-controller" style={classSectionStyle}>
       <h3 style={h3Style}>AxisController</h3>
       <p style={pStyle}>
-        Manages a single axis: domain, d3-scale instance, tick generation, and
-        zoom/pan arithmetic. PlotController owns one for each axis (accessible via{' '}
-        <code style={inlineCode}>ctrl.xAxis</code> / <code style={inlineCode}>ctrl.yAxis</code>).
-        Extends <code style={inlineCode}>EventEmitter</code>.
+        <strong>Config-only</strong> axis descriptor (ARCH-G). Holds scale type, tick formatting,
+        and label. No domain state — domain is owned by{' '}
+        <code style={inlineCode}>ViewportController</code>. Can be shared across multiple{' '}
+        <code style={inlineCode}>PlotController</code> instances so they use the same tick
+        rules while maintaining independent domains.
+      </p>
+      <p style={pStyle}>
+        Accessed via <code style={inlineCode}>ctrl.xAxis</code> /{' '}
+        <code style={inlineCode}>ctrl.yAxis</code>. Can be constructed and passed in as{' '}
+        <code style={inlineCode}>opts.xAxis</code> / <code style={inlineCode}>opts.yAxis</code>.
       </p>
       <p style={pStyle}>
         Import: <code style={inlineCode}>{'import { AxisController } from \'../src/plot/axes/AxisController.js\''}</code>
@@ -245,10 +251,10 @@ function AxisControllerSection() {
       <table style={tableStyle}>
         <thead><tr><Th>Option</Th><Th>Type</Th><Th>Default</Th><Th>Description</Th></tr></thead>
         <tbody>
-          <tr><Td mono>axis</Td><Td type>'x'|'y'</Td><Td mono>'x'</Td><Td>Axis identifier; included in emitted events</Td></tr>
-          <tr><Td mono>scaleType</Td><Td type>'linear'|'log'|'time'</Td><Td mono>'linear'</Td><Td>Initial d3 scale type</Td></tr>
-          <tr><Td mono>domain</Td><Td type>number[]</Td><Td mono>[0, 1]</Td><Td>Initial data domain [min, max]</Td></tr>
-          <tr><Td mono>range</Td><Td type>number[]</Td><Td mono>[0, 600]</Td><Td>Initial pixel range [start, end]. For Y, PlotController sets an inverted range so y=0 is at the visual bottom.</Td></tr>
+          <tr><Td mono>scaleType</Td><Td type>'linear'|'log'|'time'</Td><Td mono>'linear'</Td><Td>d3 scale type</Td></tr>
+          <tr><Td mono>tickCount</Td><Td type>number</Td><Td mono>5</Td><Td>Approximate target tick count</Td></tr>
+          <tr><Td mono>label</Td><Td type>string|null</Td><Td mono>null</Td><Td>Axis label text rendered next to the gutter</Td></tr>
+          <tr><Td mono>tickFormat</Td><Td type>fn|null</Td><Td mono>null</Td><Td>Custom tick formatter <code style={inlineCode}>(value, index) =&gt; string</code>; defaults to SI/fixed auto-formatter</Td></tr>
         </tbody>
       </table>
 
@@ -256,17 +262,65 @@ function AxisControllerSection() {
       <table style={tableStyle}>
         <thead><tr><Th>Method</Th><Th>Returns</Th><Th>Description</Th></tr></thead>
         <tbody>
-          <tr><Td mono>setDomain(domain)</Td><Td mono>void</Td><Td>Set [min, max] domain; rebuilds the d3 scale; emits 'domainChanged'. Ignores degenerate (min === max) domains.</Td></tr>
-          <tr><Td mono>getDomain()</Td><Td type>number[]</Td><Td>Returns a copy of the current [min, max] domain.</Td></tr>
-          <tr><Td mono>setRange(range)</Td><Td mono>void</Td><Td>Set pixel range; rebuilds scale. Called automatically by PlotController on canvas resize.</Td></tr>
-          <tr><Td mono>getRange()</Td><Td type>number[]</Td><Td>Returns a copy of the current pixel range.</Td></tr>
-          <tr><Td mono>getScale()</Td><Td type>Function</Td><Td>Returns the current d3 scale function (data value → screen pixel).</Td></tr>
-          <tr><Td mono>setScaleType(type)</Td><Td mono>void</Td><Td>Change scale type at runtime; rebuilds scale and formatter; emits 'scaleTypeChanged'.</Td></tr>
-          <tr><Td mono>getTicks(count?)</Td><Td type>object[]</Td><Td>Returns up to <code style={inlineCode}>count</code> (default 8) tick descriptors: <code style={inlineCode}>{'{ value, screen, label }'}</code>.</Td></tr>
-          <tr><Td mono>zoomAround(factor, focalData)</Td><Td mono>void</Td><Td>Zoom domain around a data-space focal point (e.g. cursor position). factor {'>'} 1 = zoom in. Handles log-space arithmetic correctly.</Td></tr>
-          <tr><Td mono>scaleDomainFromMidpoint(factor)</Td><Td mono>void</Td><Td>Zoom domain centered on its midpoint — used by axis drag scaling (F21) where there is no meaningful focal data point.</Td></tr>
-          <tr><Td mono>panByPixels(pixelDelta)</Td><Td mono>void</Td><Td>Shift domain by a pixel delta. Handles log-space arithmetic. See the Y-axis sign-convention note in the Architecture doc.</Td></tr>
-          <tr><Td mono>expandToInclude(value, margin?)</Td><Td mono>void</Td><Td>Expand domain to include a value with optional fractional padding (default 10 %). No-op if value is already within bounds.</Td></tr>
+          <tr><Td mono>getScale(domain, range)</Td><Td type>Function</Td><Td>Build and return a fresh d3 scale with the given domain and range. Does not mutate internal state.</Td></tr>
+          <tr><Td mono>getTicks(scale)</Td><Td type>object[]</Td><Td>Generate tick descriptors from a pre-built d3 scale: <code style={inlineCode}>{'{ value, screen, label }[]'}</code>. Count controlled by <code style={inlineCode}>tickCount</code>.</Td></tr>
+          <tr><Td mono>formatTick(value, index?)</Td><Td type>string</Td><Td>Format a single tick value as a display string using the configured formatter.</Td></tr>
+          <tr><Td mono>getTickSize()</Td><Td type>number</Td><Td>Tick mark length in pixels (default 5).</Td></tr>
+        </tbody>
+      </table>
+
+      <div style={calloutStyle}>
+        <strong>Domain mutations have moved to ViewportController (ARCH-G).</strong><br />
+        Use <code style={inlineCode}>ctrl.viewport.setXDomain([a, b])</code>,{' '}
+        <code style={inlineCode}>ctrl.viewport.getXDomain()</code>,{' '}
+        <code style={inlineCode}>ctrl.viewport.zoomAroundX(focal, factor)</code>,{' '}
+        <code style={inlineCode}>ctrl.viewport.panByPixels({'{ dx, dy }'})</code>, etc.
+        See the <strong>ViewportController</strong> section below.
+      </div>
+    </section>
+  );
+}
+
+// ── ViewportController ────────────────────────────────────────────────────────
+
+function ViewportControllerSection() {
+  return (
+    <section id="viewport-controller" style={classSectionStyle}>
+      <h3 style={h3Style}>ViewportController</h3>
+      <p style={pStyle}>
+        Owns canvas dimensions, coordinate transforms (screen ↔ data), and — after ARCH-G —
+        all domain state and zoom/pan mutations. Accessed via{' '}
+        <code style={inlineCode}>ctrl.viewport</code>. Extends{' '}
+        <code style={inlineCode}>EventEmitter</code>.
+      </p>
+
+      <h4 style={h4Style}>Domain methods (ARCH-G)</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Method</Th><Th>Returns</Th><Th>Description</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>setXDomain([min, max])</Td><Td mono>void</Td><Td>Set x-axis domain; rebuilds scales; emits 'domainChanged'.</Td></tr>
+          <tr><Td mono>setYDomain([min, max])</Td><Td mono>void</Td><Td>Set y-axis domain; rebuilds scales; emits 'domainChanged'.</Td></tr>
+          <tr><Td mono>setDomains(xDomain, yDomain)</Td><Td mono>void</Td><Td>Set both domains atomically — one scale rebuild, one event. Pass null to skip an axis.</Td></tr>
+          <tr><Td mono>getXDomain()</Td><Td type>number[]</Td><Td>Returns copy of current x domain [min, max].</Td></tr>
+          <tr><Td mono>getYDomain()</Td><Td type>number[]</Td><Td>Returns copy of current y domain [min, max].</Td></tr>
+          <tr><Td mono>zoomAroundX(dataCenter, factor)</Td><Td mono>void</Td><Td>Zoom x domain around a focal data coordinate. factor {'>'} 1 = zoom in. Handles log-space.</Td></tr>
+          <tr><Td mono>zoomAroundY(dataCenter, factor)</Td><Td mono>void</Td><Td>Zoom y domain around a focal data coordinate.</Td></tr>
+          <tr><Td mono>zoomAround(focalX, focalY, factor)</Td><Td mono>void</Td><Td>Zoom both axes simultaneously — one event emitted.</Td></tr>
+          <tr><Td mono>panByPixels({'{ dx?, dy? }'})</Td><Td mono>void</Td><Td>Pan x/y domain by pixel deltas. Sign conventions match legacy AxisController.panByPixels — y range inversion is handled internally.</Td></tr>
+          <tr><Td mono>scaleDomainFromMidpointX(factor)</Td><Td mono>void</Td><Td>Midpoint zoom for x — used by F21 axis drag where there is no focal data point.</Td></tr>
+          <tr><Td mono>scaleDomainFromMidpointY(factor)</Td><Td mono>void</Td><Td>Midpoint zoom for y.</Td></tr>
+        </tbody>
+      </table>
+
+      <h4 style={h4Style}>Coordinate transforms</h4>
+      <table style={tableStyle}>
+        <thead><tr><Th>Method</Th><Th>Returns</Th><Th>Description</Th></tr></thead>
+        <tbody>
+          <tr><Td mono>dataXToScreen(dataX)</Td><Td type>number</Td><Td>Data x → canvas pixel x.</Td></tr>
+          <tr><Td mono>dataYToScreen(dataY)</Td><Td type>number</Td><Td>Data y → canvas pixel y.</Td></tr>
+          <tr><Td mono>screenXToData(screenX)</Td><Td type>number</Td><Td>Canvas pixel x → data x (inverse scale).</Td></tr>
+          <tr><Td mono>screenYToData(screenY)</Td><Td type>number</Td><Td>Canvas pixel y → data y.</Td></tr>
+          <tr><Td mono>isInPlotArea(screenX, screenY)</Td><Td type>boolean</Td><Td>True when the pixel coordinate is inside the plot area (within margins).</Td></tr>
         </tbody>
       </table>
 
@@ -274,8 +328,8 @@ function AxisControllerSection() {
       <table style={tableStyle}>
         <thead><tr><Th>Event</Th><Th>Payload</Th><Th>When emitted</Th></tr></thead>
         <tbody>
-          <tr><Td mono>domainChanged</Td><Td mono>{'{ axis, domain }'}</Td><Td>After setDomain(), zoomAround(), scaleDomainFromMidpoint(), panByPixels(), or expandToInclude()</Td></tr>
-          <tr><Td mono>scaleTypeChanged</Td><Td mono>{'{ axis, type }'}</Td><Td>After setScaleType()</Td></tr>
+          <tr><Td mono>domainChanged</Td><Td mono>{'{ xDomain, yDomain }'}</Td><Td>After any domain mutation. PlotController re-emits this on itself.</Td></tr>
+          <tr><Td mono>resize</Td><Td mono>{'{ width, height, plotArea }'}</Td><Td>After setCanvasSize(). PlotController calls this on canvas resize.</Td></tr>
         </tbody>
       </table>
     </section>
@@ -1186,6 +1240,7 @@ export default function ApiReferencePage() {
 
       <PlotControllerSection />
       <AxisControllerSection />
+      <ViewportControllerSection />
       <ROIControllerSection />
       <DataStoreSection />
       <PlotDataViewSection />

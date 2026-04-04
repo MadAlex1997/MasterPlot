@@ -165,7 +165,7 @@ export default function SeismographyExample() {
           if (syncingRef.current || !xDomain) return;
           syncingRef.current = true;
           ctrlsRef.current.forEach((other, j) => {
-            if (j !== i && other) other.xAxis.setDomain(xDomain);
+            if (j !== i && other) other.viewport.setXDomain(xDomain);
           });
           syncingRef.current = false;
         });

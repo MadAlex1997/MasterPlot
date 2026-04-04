@@ -136,7 +136,11 @@ export class AxisRenderer {
 
   _renderXTicks(ctx, pa) {
     const s = this._style;
-    const ticks = this._xAxis.getTicks(10);
+    // ARCH-G: build scale from viewport, then pass to config-only AxisController
+    const xScale = this._viewport.getXScale();
+    if (!xScale) return;
+    const ticks = this._xAxis.getTicks(xScale);
+    const tickLength = this._xAxis.getTickSize();
 
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'top';
@@ -160,12 +164,12 @@ export class AxisRenderer {
       ctx.strokeStyle = s.tickColor;
       ctx.beginPath();
       ctx.moveTo(sx, pa.y + pa.height);
-      ctx.lineTo(sx, pa.y + pa.height + s.tickLength);
+      ctx.lineTo(sx, pa.y + pa.height + tickLength);
       ctx.stroke();
 
       // Label
       ctx.fillStyle = s.labelColor;
-      ctx.fillText(tick.label, sx, pa.y + pa.height + s.tickLength + s.labelPadding);
+      ctx.fillText(tick.label, sx, pa.y + pa.height + tickLength + s.labelPadding);
     }
 
     // X axis label (bottom center)
@@ -176,7 +180,12 @@ export class AxisRenderer {
 
   _renderYTicks(ctx, pa) {
     const s = this._style;
-    const ticks = this._yAxis.getTicks(8);
+    // ARCH-G: build scale from viewport, then pass to config-only AxisController
+    const yScale = this._viewport.getYScale();
+    if (!yScale) return;
+    const ticks = this._yAxis.getTicks(yScale);
+
+    const tickLength = this._yAxis.getTickSize();
 
     ctx.textAlign    = 'right';
     ctx.textBaseline = 'middle';
@@ -198,13 +207,13 @@ export class AxisRenderer {
       // Tick mark
       ctx.strokeStyle = s.tickColor;
       ctx.beginPath();
-      ctx.moveTo(pa.x - s.tickLength, sy);
+      ctx.moveTo(pa.x - tickLength, sy);
       ctx.lineTo(pa.x, sy);
       ctx.stroke();
 
       // Label
       ctx.fillStyle = s.labelColor;
-      ctx.fillText(tick.label, pa.x - s.tickLength - s.labelPadding, sy);
+      ctx.fillText(tick.label, pa.x - tickLength - s.labelPadding, sy);
     }
 
     // Y axis label (rotated, left side)

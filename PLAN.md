@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 9.3
+**Plan Version:** 9.4
 **Last Updated:** 2026-04-04
-**Status:** Phase 6 complete. Phase 7 (Axis Refactor): B9 complete; ARCH-G, F34, F35 pending.
+**Status:** Phase 6 complete. Phase 7 (Axis Refactor): B9 + ARCH-G complete; F34, F35 pending.
 
 ---
 
@@ -118,7 +118,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | F33  | RasterLoaderAdapter (NetCDF / GeoTIFF / image → BitmapDataLayer) | ✅ COMPLETED | feature/F32-F33-EX19 | 2026-03-28 |
 | EX19 | Data Loaders Example | ✅ COMPLETED | feature/F32-F33-EX19 | 2026-03-28 |
 | B9   | ROILayer pixel-space border widths | ✅ COMPLETED | feature/B9 | 2026-04-04 |
-| ARCH-G | AxisController Config/Domain Split | 🔲 PENDING | — | — |
+| ARCH-G | AxisController Config/Domain Split | ✅ COMPLETED | feature/ARCH-G-F34-F35 | 2026-04-04 |
 | F34  | Bordered Plot Mode | 🔲 PENDING | — | — |
 | F35  | Axis Positioning Modes | 🔲 PENDING | — | — |
 
@@ -357,104 +357,10 @@ Full spec: [docs/plan-archive.md#b9](docs/plan-archive.md#b9)
 
 ---
 
-### ARCH-G [PENDING] AxisController Config/Domain Split
-
-**Branch:** `feature/ARCH-G-F34-F35`
-**Depends on:** none (but F34 and F35 depend on ARCH-G)
-
-**Motivation:** Split `AxisController` into a config-only object (scale type, tick format, appearance, positioning) and move all domain-state methods (`setDomain`, `getDomain`, `zoomAround`, `panByPixels`, `scaleDomainFromMidpoint`) into `ViewportController`. This allows axis configuration to be shared across multiple `PlotController` instances (shared-style pattern) while each plot retains its own independent domain state.
-
-#### New public API surface
-
-**`plotController.xAxis` / `plotController.yAxis`** → `AxisController` instance (config only)
-
-**`plotController.viewport`** → `ViewportController` instance — gains all domain-mutation methods:
-
-| Old call | New call |
-|---|---|
-| `plotController.xAxis.setDomain([a, b])` | `plotController.viewport.setXDomain([a, b])` |
-| `plotController.yAxis.setDomain([a, b])` | `plotController.viewport.setYDomain([a, b])` |
-| `plotController.xAxis.getDomain()` | `plotController.viewport.getXDomain()` |
-| `plotController.yAxis.getDomain()` | `plotController.viewport.getYDomain()` |
-| `plotController.xAxis.zoomAround(c, f)` | `plotController.viewport.zoomAroundX(c, f)` |
-| `plotController.yAxis.zoomAround(c, f)` | `plotController.viewport.zoomAroundY(c, f)` |
-| `plotController.xAxis.panByPixels(px)` | `plotController.viewport.panByPixels({ dx: px })` |
-| `plotController.yAxis.panByPixels(px)` | `plotController.viewport.panByPixels({ dy: px })` |
-| `plotController.xAxis.scaleDomainFromMidpoint(m, f)` | `plotController.viewport.scaleDomainFromMidpointX(m, f)` |
-| `plotController.yAxis.scaleDomainFromMidpoint(m, f)` | `plotController.viewport.scaleDomainFromMidpointY(m, f)` |
-
-`domainChanged` event: continues to be emitted by `PlotController` as before.
-
-#### AxisController (new shape)
-
-Config-only object. No domain state. No EventEmitter required.
-
-**Constructor:** `new AxisController(opts)`
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `scaleType` | `'linear' \| 'log' \| 'time'` | `'linear'` | d3 scale type |
-| `tickFormat` | `fn \| null` | `null` | Custom tick formatter — `(value, index) => string` |
-| `tickCount` | `number` | `5` | Approximate target tick count |
-| `label` | `string \| null` | `null` | Axis label text |
-
-Positioning options are added by F35 (see below).
-
-**Methods consumed by AxisRenderer:**
-- `getScale(domain, range)` → d3 scale (linear/log/time) with domain and range applied
-- `getTicks(scale)` → `number[]`
-- `formatTick(value, index)` → `string`
-- `getTickSize()` → `number` (px)
-
-#### Shared-config usage pattern
-
-```js
-// sharedAxes.js
-export const myXAxis = new AxisController({ scaleType: 'log', tickCount: 8 });
-export const myYAxis = new AxisController({ scaleType: 'linear' });
-
-// plot1.js
-const plot1 = new PlotController({ xAxis: myXAxis, yAxis: myYAxis });
-
-// plot2.js
-const plot2 = new PlotController({ xAxis: myXAxis, yAxis: myYAxis });
-// Each plot maintains its own domain; both use the same config/render rules.
-```
-
-#### ViewportController additions
-
-`ViewportController` already exists at `src/plot/ViewportController.js` and handles canvas↔data coordinate transforms. Add:
-
-- `setXDomain([min, max])` — sets x domain; calls `_updateScales()` internally; triggers PlotController `_dirty`
-- `setYDomain([min, max])` — same for y
-- `getXDomain()` → `[min, max]`
-- `getYDomain()` → `[min, max]`
-- `zoomAroundX(dataCenter, factor)` — zoom x-axis around a data coordinate
-- `zoomAroundY(dataCenter, factor)` — zoom y-axis around a data coordinate
-- `panByPixels({ dx?, dy? })` — pan by pixel deltas (existing direction conventions preserved)
-- `scaleDomainFromMidpointX(midpx, factor)` — midpoint zoom for x (F21 axis drag)
-- `scaleDomainFromMidpointY(midpx, factor)` — midpoint zoom for y
-
-#### Files modified
-
-- `src/plot/axes/AxisController.js` — major refactor; remove all domain state; add `getScale`, `getTicks`, `formatTick`, `getTickSize`
-- `src/plot/ViewportController.js` — add all domain-mutation methods listed above
-- `src/plot/PlotController.js` — accept `xAxis`/`yAxis` constructor opts; create defaults if not provided; wire viewport domain mutations to `_updateScales` and `_dirty`; expose `xAxis`/`yAxis` getters (config only); keep `viewport` getter
-- `src/plot/axes/AxisRenderer.js` — receive domain from `ViewportController` on each render tick (passed by PlotController)
-- `src/components/PlotCanvas.jsx` — add `xAxis` / `yAxis` props (pass through to PlotController)
-
-#### Examples to update (breaking)
-
-All examples that call `xAxis.*` or `yAxis.*` domain methods must be updated to `viewport.*`. Agent must update each and flag them for user verification:
-- `examples/ExampleApp.jsx`
-- `examples/LiveSignalsExample.jsx`
-- `examples/MultiSensorExample.jsx`
-- `examples/SeismographyExample.jsx`
-- `examples/SharedDataExample.jsx`
-- `examples/SpectrogramV2Example.jsx`
-- Any other file calling `plotController.xAxis.setDomain` / `.getDomain` / `.zoomAround` / `.panByPixels` / `.scaleDomainFromMidpoint` (grep before starting)
-
-**⚠️ Breaking change — warn user and list all modified examples before marking COMPLETED.**
+### ARCH-G [COMPLETED] AxisController Config/Domain Split
+**Completed:** 2026-04-04 | **Branch:** feature/ARCH-G-F34-F35
+`AxisController` is now config-only (`scaleType`, `tickCount`, `label`, `tickFormat`; methods: `getScale(domain, range)`, `getTicks(scale)`, `formatTick`, `getTickSize`); all domain-mutation methods (`setDomain`, `getDomain`, `zoomAround`, `panByPixels`, `scaleDomainFromMidpoint`) moved to `ViewportController` as `setXDomain`/`setYDomain`/`getXDomain`/`getYDomain`/`zoomAroundX`/`zoomAroundY`/`panByPixels({dx,dy})`/`scaleDomainFromMidpointX`/`scaleDomainFromMidpointY`; `PlotCanvas` gains `xAxis`/`yAxis` props; all 7 callers in examples + 3 src files updated.
+Full spec: [docs/plan-archive.md#arch-g](docs/plan-archive.md#arch-g)
 
 ---
 
@@ -557,6 +463,7 @@ On each render frame, given the current domain from `ViewportController`:
 
 > Full history in [docs/plan-archive.md — Change Log](docs/plan-archive.md#change-log).
 
+- **2026-04-04 [Claude]**: ARCH-G completed (v9.4) — `AxisController` refactored to config-only (no domain state, no EventEmitter); domain mutation methods (`setXDomain`/`setYDomain`/`getXDomain`/`getYDomain`/`zoomAroundX`/`zoomAroundY`/`panByPixels({dx,dy})`/`scaleDomainFromMidpointX`/`scaleDomainFromMidpointY`) added to `ViewportController`; `PlotController` wires viewport `'domainChanged'` event; `PlotCanvas` gains `xAxis`/`yAxis` props; all 7 example/doc files + 3 src library files updated from old API; lib build zero errors. Branch: `feature/ARCH-G-F34-F35`.
 - **2026-04-04 [Claude]**: B9 completed (v9.3) — Added `lineWidthUnits: 'pixels'` to the two `PolygonLayer` outline instances in `ROILayer.js` (LinearRegion fill and RectROI fill); PathLayer + ScatterplotLayer sub-layers already had pixel units; ROI borders now render at fixed screen-pixel thickness regardless of zoom. Branch: `feature/B9`.
 - **2026-04-04 [Claude]**: Phase 7 (Axis System Refactor) added (v9.2) — B9 (ROILayer pixel-space widths; confirmed working on test branch), ARCH-G (AxisController config/domain split; domain methods move to ViewportController; shared-config pattern; breaking API change), F34 (bordered plot mode; gutter fill from CSS background), F35 (axis positioning modes; border multi-edge + relative/mobile with snap/offscreen/labelSide/tick-flip). Mandatory order: B9 independent; ARCH-G → F34 → F35 on single branch `feature/ARCH-G-F34-F35`.
 - **2026-03-28 [Claude]**: F32/F33/EX19 completed (v9.1) — F32: `loaders/TableLoaderAdapter.js` (CSVLoader + ArrowLoader; chunked appendData; BigInt/null coercion; 'chunk'+'parseWarning' events); F33: `loaders/RasterLoaderAdapter.js` (NetCDFLoader for .nc/.cdf, createImageBitmap for images; coordinate-array bounds; flipY; loadArray() for in-memory grids; LUT wiring); EX19: `DataLoadersExample.jsx` two-panel demo (drag-and-drop CSV + synthetic 10k sample / image+nc drop + synthetic 128×128 temp field + LUTPanel); webpack entry/HTML added; HubPage card + README Phase 6 section + ApiReferencePage sections added; build zero errors.

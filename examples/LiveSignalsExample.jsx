@@ -137,8 +137,8 @@ export default function LiveSignalsExample() {
     signals.trimBefore(xWindowMin);
     const trimmed = prevCount - signals.getPointCount();
 
-    ctrl.xAxis.setDomain([xWindowMin, now]); // triggers dirty via _wireEvents
-    ctrl.yAxis.setDomain([Y_BOTTOM, Y_TOP]);
+    ctrl.viewport.setXDomain([xWindowMin, now]);
+    ctrl.viewport.setYDomain([Y_BOTTOM, Y_TOP]);
 
     const totalPts = signals.getPointCount();
     setPointCount(totalPts);
@@ -258,7 +258,7 @@ export default function LiveSignalsExample() {
     const now = (Date.now() - startTimeRef.current) / 1000;
     const xWindowMin = now - newSecs;
     signals.trimBefore(xWindowMin);
-    ctrl.xAxis.setDomain([xWindowMin, now]);
+    ctrl.viewport.setXDomain([xWindowMin, now]);
     addLog(`window changed → ${newSecs}s`);
   };
 

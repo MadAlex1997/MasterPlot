@@ -1,17 +1,17 @@
 /**
- * AxisController — manages axis domains and d3-scale instances.
+ * AxisController — config-only axis descriptor (ARCH-G).
  *
- * Wraps d3-scale (linear / log / time) and exposes a unified API for:
- *   - Setting domain (data range)
- *   - Getting the scale function (data → screen pixels)
- *   - Generating tick values + formatted labels
- *   - Emitting domainChanged events when zoom/pan updates domain
+ * Holds scale type, tick formatting, and appearance options that can be shared
+ * across multiple PlotController instances.  All domain/range state and
+ * zoom/pan mutations have moved to ViewportController.
  *
- * PlotController owns one AxisController per axis (x, y) and feeds screen
- * range when canvas size changes.
+ * Shared-config example:
+ *   const xAxis = new AxisController({ scaleType: 'log', tickCount: 8 });
+ *   const plot1 = new PlotController({ xAxis });
+ *   const plot2 = new PlotController({ xAxis });
+ *   // Both plots use the same tick formatting; each has its own domain.
  */
 
-import { EventEmitter } from 'events';
 import { scaleLinear, scaleLog, scaleTime } from 'd3-scale';
 import { format } from 'd3-format';
 import { timeFormat } from 'd3-time-format';
@@ -32,208 +32,85 @@ function defaultFormatter(scaleType) {
   };
 }
 
-export class AxisController extends EventEmitter {
+const DEFAULT_TICK_SIZE = 5; // px
+
+export class AxisController {
   /**
    * @param {object} opts
    * @param {'linear'|'log'|'time'} [opts.scaleType='linear']
-   * @param {string} [opts.axis='x']  — 'x' or 'y'
-   * @param {number[]} [opts.domain]  — initial domain [min, max]
-   * @param {number[]} [opts.range]   — initial pixel range [start, end]
+   * @param {function|null}          [opts.tickFormat=null]  — (value, index) => string
+   * @param {number}                 [opts.tickCount=5]
+   * @param {string|null}            [opts.label=null]
+   *
+   * @deprecated opts.axis / opts.domain / opts.range — accepted silently for
+   *   backwards-compat during migration; domain/range are now owned by ViewportController.
    */
   constructor(opts = {}) {
-    super();
+    this.scaleType  = opts.scaleType  || 'linear';
+    this.tickCount  = opts.tickCount  ?? 5;
+    this.label      = opts.label      ?? null;
+    this.tickFormat = opts.tickFormat ?? null;
 
-    this.axis      = opts.axis      || 'x';
-    this.scaleType = opts.scaleType || 'linear';
-    this._domain   = opts.domain    || [0, 1];
-    this._range    = opts.range     || [0, 600];
+    // axis label convenience (legacy prop name)
+    if (!this.label && opts.axis) {
+      // 'axis' used to mean 'x'/'y' identifier, not the label — ignore
+    }
 
-    this._formatter = defaultFormatter(this.scaleType);
-    this._scale     = this._buildScale();
+    this._formatter = this.tickFormat || defaultFormatter(this.scaleType);
   }
 
-  // ─── Domain ──────────────────────────────────────────────────────────────────
-
-  setDomain(domain) {
-    const [min, max] = domain;
-    if (min === max) return; // degenerate domain — ignore
-    this._domain = [min, max];
-    this._scale  = this._buildScale();
-    this.emit('domainChanged', { axis: this.axis, domain: this._domain });
-  }
-
-  getDomain() {
-    return [...this._domain];
-  }
-
-  setRange(range) {
-    this._range = range;
-    this._scale = this._buildScale();
-  }
-
-  getRange() {
-    return [...this._range];
-  }
-
-  // ─── Scale ───────────────────────────────────────────────────────────────────
-
-  /** @returns {Function} d3 scale function */
-  getScale() {
-    return this._scale;
-  }
+  // ─── Methods consumed by AxisRenderer / ViewportController ──────────────────
 
   /**
-   * Change the scale type and rebuild.
-   * @param {'linear'|'log'|'time'} type
+   * Build and return a fresh d3 scale with the given domain and range applied.
+   * Does NOT mutate any internal state — safe to share across plots.
+   *
+   * @param {number[]} domain  — [min, max]
+   * @param {number[]} range   — [pxStart, pxEnd]
+   * @returns {Function} d3 scale
    */
-  setScaleType(type) {
-    this.scaleType  = type;
-    this._formatter = defaultFormatter(type);
-    this._scale     = this._buildScale();
-    this.emit('scaleTypeChanged', { axis: this.axis, type });
+  getScale(domain, range) {
+    let scale;
+    switch (this.scaleType) {
+      case 'log':   scale = scaleLog();   break;
+      case 'time':  scale = scaleTime();  break;
+      default:      scale = scaleLinear(); break;
+    }
+    return scale.domain(domain).range(range);
   }
 
-  // ─── Ticks ───────────────────────────────────────────────────────────────────
-
   /**
-   * Generate tick descriptors for rendering.
-   * @param {number} [count=8]
+   * Generate tick values from a pre-built d3 scale.
+   *
+   * @param {Function} scale — d3 scale (already has domain+range applied)
    * @returns {{ value: number, screen: number, label: string }[]}
    */
-  getTicks(count = 8) {
-    const ticks = this._scale.ticks(count);
-    return ticks.map(v => ({
+  getTicks(scale) {
+    const ticks = scale.ticks(this.tickCount);
+    return ticks.map((v, i) => ({
       value:  v,
-      screen: this._scale(v),
-      label:  this._formatter(v),
+      screen: scale(v),
+      label:  this._formatter(v, i),
     }));
   }
 
   /**
-   * Zoom the domain around a focal point (data coordinate).
-   * factor > 1 = zoom in (domain shrinks), factor < 1 = zoom out.
+   * Format a single tick value as a display string.
    *
-   * @param {number} factor
-   * @param {number} focalData — data value at cursor
-   */
-  zoomAround(factor, focalData) {
-    const [min, max] = this._domain;
-    const span = max - min;
-
-    if (this.scaleType === 'log') {
-      // Log space zoom
-      const logMin   = Math.log10(min);
-      const logMax   = Math.log10(max);
-      const logFocal = Math.log10(focalData);
-      const logSpan  = logMax - logMin;
-      const newLogSpan = logSpan / factor;
-      const ratio = (logFocal - logMin) / logSpan;
-      const newLogMin = logFocal - ratio * newLogSpan;
-      const newLogMax = newLogMin + newLogSpan;
-      this.setDomain([Math.pow(10, newLogMin), Math.pow(10, newLogMax)]);
-    } else {
-      const newSpan = span / factor;
-      const ratio   = (focalData - min) / span;
-      const newMin  = focalData - ratio * newSpan;
-      this.setDomain([newMin, newMin + newSpan]);
-    }
-  }
-
-  /**
-   * Zoom the domain centered on its midpoint.
-   * factor > 1 = zoom in (domain shrinks), factor < 1 = zoom out.
-   *
-   * Used by axis drag scaling (F21): user drags on the axis gutter rather
-   * than inside the plot, so there is no meaningful focal data point —
-   * the midpoint is the natural anchor.
-   *
-   * @param {number} factor
-   */
-  scaleDomainFromMidpoint(factor) {
-    const [min, max] = this._domain;
-
-    if (this.scaleType === 'log') {
-      const logMin  = Math.log10(Math.max(min, 1e-10));
-      const logMax  = Math.log10(Math.max(max, 1e-10));
-      const logMid  = (logMin + logMax) / 2;
-      const newHalf = (logMax - logMin) / (2 * factor);
-      this.setDomain([
-        Math.pow(10, logMid - newHalf),
-        Math.pow(10, logMid + newHalf),
-      ]);
-    } else {
-      const mid     = (min + max) / 2;
-      const newHalf = (max - min) / (2 * factor);
-      this.setDomain([mid - newHalf, mid + newHalf]);
-    }
-  }
-
-  /**
-   * Shift the domain by a pixel delta (pan).
-   * @param {number} pixelDelta — positive = right/down
-   */
-  panByPixels(pixelDelta) {
-    const [pxMin, pxMax] = this._range;
-    const pxSpan = pxMax - pxMin;
-    if (pxSpan === 0) return;
-
-    const [min, max] = this._domain;
-
-    if (this.scaleType === 'log') {
-      const logMin  = Math.log10(min);
-      const logMax  = Math.log10(max);
-      const logSpan = logMax - logMin;
-      const dataDelta = -(pixelDelta / pxSpan) * logSpan;
-      this.setDomain([
-        Math.pow(10, logMin + dataDelta),
-        Math.pow(10, logMax + dataDelta),
-      ]);
-    } else {
-      const dataDelta = -(pixelDelta / pxSpan) * (max - min);
-      this.setDomain([min + dataDelta, max + dataDelta]);
-    }
-  }
-
-  /**
-   * Expand domain to include a value (used for auto-domain during data append).
    * @param {number} value
-   * @param {number} [margin=0.1] — fractional padding
+   * @param {number} [index=0]
+   * @returns {string}
    */
-  expandToInclude(value, margin = 0.1) {
-    let [min, max] = this._domain;
-    let changed = false;
-
-    if (value < min) {
-      min = value - Math.abs(value * margin);
-      changed = true;
-    }
-    if (value > max) {
-      max = value + Math.abs(value * margin);
-      changed = true;
-    }
-
-    if (changed) this.setDomain([min, max]);
+  formatTick(value, index = 0) {
+    return this._formatter(value, index);
   }
 
-  // ─── Internal ────────────────────────────────────────────────────────────────
-
-  _buildScale() {
-    let scale;
-
-    switch (this.scaleType) {
-      case 'log':
-        scale = scaleLog();
-        break;
-      case 'time':
-        scale = scaleTime();
-        break;
-      case 'linear':
-      default:
-        scale = scaleLinear();
-        break;
-    }
-
-    return scale.domain(this._domain).range(this._range);
+  /**
+   * Tick mark length in pixels.
+   * @returns {number}
+   */
+  getTickSize() {
+    return DEFAULT_TICK_SIZE;
   }
 }
 

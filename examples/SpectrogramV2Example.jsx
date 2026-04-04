@@ -164,13 +164,13 @@ function _ensureState() {
   _specCtrl.on('domainChanged', ({ xDomain }) => {
     if (_syncingX || !xDomain) return;
     _syncingX = true;
-    _waveCtrl.xAxis.setDomain(xDomain);
+    _waveCtrl.viewport.setXDomain(xDomain);
     _syncingX = false;
   });
   _waveCtrl.on('domainChanged', ({ xDomain }) => {
     if (_syncingX || !xDomain) return;
     _syncingX = true;
-    _specCtrl.xAxis.setDomain(xDomain);
+    _specCtrl.viewport.setXDomain(xDomain);
     _syncingX = false;
   });
 }
@@ -375,11 +375,11 @@ export default function SpectrogramV2Example() {
       }
       const yPad = (yMax - yMin) * 0.1 || 0.1;
       const d = [0, dur];
-      _waveCtrl.xAxis.setDomain(d);
-      _waveCtrl.yAxis.setDomain([yMin - yPad, yMax + yPad]);
+      _waveCtrl.viewport.setXDomain(d);
+      _waveCtrl.viewport.setYDomain([yMin - yPad, yMax + yPad]);
       _waveCtrl.markDirty();
-      _specCtrl.xAxis.setDomain(d);
-      _specCtrl.yAxis.setDomain([0, sr / 2]);
+      _specCtrl.viewport.setXDomain(d);
+      _specCtrl.viewport.setYDomain([0, sr / 2]);
       _specCtrl.markDirty();
 
       // Register home domains so Space → autoScale() snaps to full extents
@@ -552,7 +552,7 @@ export default function SpectrogramV2Example() {
         if (pt[1] > yMax) yMax = pt[1];
       }
       const yPad = (yMax - yMin) * 0.1 || 0.1;
-      _waveCtrl.yAxis.setDomain([yMin - yPad, yMax + yPad]);
+      _waveCtrl.viewport.setYDomain([yMin - yPad, yMax + yPad]);
       _waveCtrl.setHomeDomain([0, _audioCtrl.duration], [yMin - yPad, yMax + yPad]);
       _waveCtrl.markDirty();
       // Rebuild AudioBuffer so playback plays the filtered signal
@@ -657,8 +657,8 @@ export default function SpectrogramV2Example() {
         if (zoomOnSelectRef.current) {
           const roi = _specCtrl?.roiController.getROI(payload.id);
           if (roi?.domain?.x) {
-            _specCtrl.xAxis.setDomain(roi.domain.x);
-            if (roi.domain.y) _specCtrl.yAxis.setDomain(roi.domain.y);
+            _specCtrl.viewport.setXDomain(roi.domain.x);
+            if (roi.domain.y) _specCtrl.viewport.setYDomain(roi.domain.y);
             _specCtrl.markDirty();
           }
         }

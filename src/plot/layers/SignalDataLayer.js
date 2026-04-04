@@ -13,8 +13,8 @@
  *   signals.addSignal('a', [255, 100, 100, 255]);
  *   signals.appendSignalData('a', yValues, xBase);
  *   const { xDomain, yDomain } = signals.expandDomains();
- *   ctrl.xAxis.setDomain(xDomain);
- *   ctrl.yAxis.setDomain(yDomain);
+ *   ctrl.viewport.setXDomain(xDomain);
+ *   ctrl.viewport.setYDomain(yDomain);
  */
 
 import { PathLayer } from '@deck.gl/layers';

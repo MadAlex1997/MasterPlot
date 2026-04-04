@@ -277,8 +277,8 @@ export default function SpectrogramExample() {
     const buf = await file.arrayBuffer();
     await audioCtrl.loadFile(buf);
     setStatus('Computing STFT…');
-    spectCtrlRef.current?.xAxis.setDomain([0, audioCtrl.duration]);
-    spectCtrlRef.current?.yAxis.setDomain([0, audioCtrl.sampleRate / 2]);
+    spectCtrlRef.current?.viewport.setXDomain([0, audioCtrl.duration]);
+    spectCtrlRef.current?.viewport.setYDomain([0, audioCtrl.sampleRate / 2]);
     await audioCtrl.computeSTFT({ windowSize: 1024, hopSize: 512 });
     setStatus('Done — press Play');
   }

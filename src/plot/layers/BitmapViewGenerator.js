@@ -113,8 +113,8 @@ export class BitmapViewGenerator extends EventEmitter {
     const widthPx  = Math.max(1, Math.round(pa.width));
     const heightPx = Math.max(1, Math.round(pa.height));
 
-    const [xMin, xMax] = this._ctrl.xAxis.getDomain();
-    const [yMin, yMax] = this._ctrl.yAxis.getDomain();
+    const [xMin, xMax] = this._ctrl.viewport.getXDomain();
+    const [yMin, yMax] = this._ctrl.viewport.getYDomain();
 
     const xSpan = xMax - xMin || 1;
     const ySpan = yMax - yMin || 1;

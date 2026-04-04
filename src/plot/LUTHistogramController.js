@@ -144,7 +144,7 @@ export class LUTHistogramController {
     this._rebuildBars(bins, edges, globalMin, globalMax);
 
     // Update y-domain to match new data range
-    this._plotController.yAxis.setDomain([globalMin, globalMax]);
+    this._plotController.viewport.setYDomain([globalMin, globalMax]);
 
     // Clamp hlines into new y-domain
     this._clampHlinePositions(globalMin, globalMax);
@@ -216,7 +216,7 @@ export class LUTHistogramController {
     this._barData = bars;
 
     // Update x-domain to count range
-    this._plotController.xAxis.setDomain([0, maxCount]);
+    this._plotController.viewport.setXDomain([0, maxCount]);
   }
 
   /** Ensure hline positions stay within the current y-domain. */

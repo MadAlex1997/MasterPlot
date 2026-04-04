@@ -5,6 +5,58 @@ All active/pending work is in [PLAN.md](../PLAN.md).
 
 ---
 
+## ARCH-G [COMPLETED] AxisController Config/Domain Split
+
+**Branch:** `feature/ARCH-G-F34-F35`
+**Completed:** 2026-04-04
+
+### Motivation
+
+Split `AxisController` into a config-only object (scale type, tick format, appearance) and move all domain-state methods (`setDomain`, `getDomain`, `zoomAround`, `panByPixels`, `scaleDomainFromMidpoint`) into `ViewportController`. This allows axis configuration to be shared across multiple `PlotController` instances (shared-style pattern) while each plot retains its own independent domain state.
+
+### New public API
+
+**`plotController.xAxis` / `plotController.yAxis`** → config-only `AxisController`
+
+**`plotController.viewport`** → `ViewportController` with all domain mutations:
+
+| Old call | New call |
+|---|---|
+| `plotController.xAxis.setDomain([a, b])` | `plotController.viewport.setXDomain([a, b])` |
+| `plotController.yAxis.setDomain([a, b])` | `plotController.viewport.setYDomain([a, b])` |
+| `plotController.xAxis.getDomain()` | `plotController.viewport.getXDomain()` |
+| `plotController.yAxis.getDomain()` | `plotController.viewport.getYDomain()` |
+| `plotController.xAxis.zoomAround(c, f)` | `plotController.viewport.zoomAroundX(c, f)` |
+| `plotController.yAxis.zoomAround(c, f)` | `plotController.viewport.zoomAroundY(c, f)` |
+| `plotController.xAxis.panByPixels(px)` | `plotController.viewport.panByPixels({ dx: px })` |
+| `plotController.yAxis.panByPixels(px)` | `plotController.viewport.panByPixels({ dy: px })` |
+| `plotController.xAxis.scaleDomainFromMidpoint(f)` | `plotController.viewport.scaleDomainFromMidpointX(f)` |
+| `plotController.yAxis.scaleDomainFromMidpoint(f)` | `plotController.viewport.scaleDomainFromMidpointY(f)` |
+
+Additional viewport method: `setDomains(xDomain, yDomain)` — sets both atomically (one scale rebuild, one event).
+
+### AxisController new shape
+
+Config-only (no EventEmitter). Constructor: `new AxisController({ scaleType, tickCount, label, tickFormat })`.
+
+Methods: `getScale(domain, range)` → d3 scale; `getTicks(scale)` → `[{value, screen, label}]`; `formatTick(value, index)` → string; `getTickSize()` → number (px).
+
+`xAxis`/`yAxis` props on `PlotCanvas` allow passing shared config instances from outside.
+
+### Files modified
+
+- `src/plot/axes/AxisController.js` — major refactor: removed domain state + EventEmitter; added `getScale(domain, range)`, `getTicks(scale)`, `formatTick`, `getTickSize`
+- `src/plot/ViewportController.js` — added all domain-mutation methods; `setAxisConfig(xAxis, yAxis)`; `_updateScales()` builds scales internally; `getXScale()`/`getYScale()` accessors; `'domainChanged'` event carries `{ xDomain, yDomain }`
+- `src/plot/PlotController.js` — accepts `opts.xAxis`/`opts.yAxis` shared instances; delegates all domain ops to `_viewport`; listens to `viewport.'domainChanged'` instead of per-axis events
+- `src/plot/axes/AxisRenderer.js` — `_renderXTicks`/`_renderYTicks` now get scale from `viewport.getXScale()`/`getYScale()` and pass to `axis.getTicks(scale)`
+- `src/components/PlotCanvas.jsx` — added `xAxis`/`yAxis` props
+- `src/plot/LUTHistogramController.js` — `xAxis.setDomain` → `viewport.setXDomain`, `yAxis.setDomain` → `viewport.setYDomain`
+- `src/plot/layers/BitmapViewGenerator.js` — `xAxis.getDomain()` → `viewport.getXDomain()`, `yAxis.getDomain()` → `viewport.getYDomain()`
+- `src/plot/layers/SignalDataLayer.js` — doc comment updated
+- `examples/ExampleApp.jsx`, `examples/LiveSignalsExample.jsx`, `examples/SeismographyExample.jsx`, `examples/SpectrogramV2Example.jsx`, `examples/DataLoadersExample.jsx`, `examples/docs/GettingStartedPage.jsx` — all `xAxis.*`/`yAxis.*` domain calls updated to `viewport.*`
+
+---
+
 ## DOC2 [COMPLETED] Documentation: Getting Started Tutorial
 
 **Branch:** `feature/DOC2`

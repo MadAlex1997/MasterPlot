@@ -235,8 +235,8 @@ function ScatterPanel() {
 
     try {
       await adapter.loadFile(sampleFile);
-      ctrl.xAxis.setDomain([0, 100]);
-      ctrl.yAxis.setDomain([0, 100]);
+      ctrl.viewport.setXDomain([0, 100]);
+      ctrl.viewport.setYDomain([0, 100]);
       ctrl.markDirty();
     } catch (err) {
       setStatus(`Error: ${err.message}`);
@@ -375,8 +375,8 @@ function RasterPanel() {
         setLoaded(true);
         setStatus(`${width}×${height}  bounds: [${bounds.map(v => v.toFixed(2)).join(', ')}]${variable ? `  var: ${variable}` : ''}`);
         // Auto-scale axes
-        ctrl.xAxis.setDomain([bounds[0], bounds[2]]);
-        ctrl.yAxis.setDomain([bounds[1], bounds[3]]);
+        ctrl.viewport.setXDomain([bounds[0], bounds[2]]);
+        ctrl.viewport.setYDomain([bounds[1], bounds[3]]);
         ctrl.markDirty();
       });
       rs.adapter.on('parseWarning', ({ message }) => {

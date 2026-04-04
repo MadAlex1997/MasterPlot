@@ -368,8 +368,8 @@ export default function ExampleApp() {
     controller.dataStore.clear();
 
     // Reset domain to the generator's range so autoExpand has a clean baseline
-    controller.xAxis.setDomain([0, 10000]);
-    controller.yAxis.setDomain([0, 100]);
+    controller.viewport.setXDomain([0, 10000]);
+    controller.viewport.setYDomain([0, 100]);
 
     // Load new data — no large arrays stored in React state
     controller.appendData(generatePoints(count));
