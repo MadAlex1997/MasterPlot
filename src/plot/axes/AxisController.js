@@ -37,24 +37,56 @@ const DEFAULT_TICK_SIZE = 5; // px
 export class AxisController {
   /**
    * @param {object} opts
+   *
+   * Scale / tick appearance (ARCH-G):
    * @param {'linear'|'log'|'time'} [opts.scaleType='linear']
    * @param {function|null}          [opts.tickFormat=null]  — (value, index) => string
    * @param {number}                 [opts.tickCount=5]
    * @param {string|null}            [opts.label=null]
    *
+   * Positioning (F35):
+   * @param {'border'|'relative'}    [opts.mode='border']
+   *   'border'   — axis rendered at fixed canvas edges (default behavior)
+   *   'relative' — axis line tracks a data coordinate; can snap/hide at edges
+   *
+   * Border-mode options:
+   * @param {string[]|null}          [opts.edges=null]
+   *   Edges to render at. For x-axis: 'top'|'bottom'; for y-axis: 'left'|'right'.
+   *   Multiple values produce mirrored axes. `null` → AxisRenderer uses its
+   *   per-axis default (['bottom'] for x, ['left'] for y).
+   *
+   * Relative-mode options:
+   * @param {number}   [opts.crossingValue=0]
+   *   The data coordinate the axis line is anchored to (y-value for x-axis,
+   *   x-value for y-axis).
+   * @param {number}   [opts.snapTolerancePx=0]
+   *   Pixels from edge at which the axis snaps to border rendering.
+   *   0 = never snap (stationary). >0 = mobile behavior.
+   * @param {'border'|'hide'} [opts.offscreen='border']
+   *   What to do when crossingValue is outside the visible domain.
+   *   'border' = render at nearest border edge. 'hide' = render nothing.
+   * @param {'auto'|'positive'|'negative'} [opts.labelSide='auto']
+   *   Which side of the axis line labels appear on.
+   *   'auto' = toward nearest edge. 'positive' = data-positive side.
+   *   'negative' = data-negative side.
+   *
    * @deprecated opts.axis / opts.domain / opts.range — accepted silently for
    *   backwards-compat during migration; domain/range are now owned by ViewportController.
    */
   constructor(opts = {}) {
+    // ── Appearance ────────────────────────────────────────────────────────────
     this.scaleType  = opts.scaleType  || 'linear';
     this.tickCount  = opts.tickCount  ?? 5;
     this.label      = opts.label      ?? null;
     this.tickFormat = opts.tickFormat ?? null;
 
-    // axis label convenience (legacy prop name)
-    if (!this.label && opts.axis) {
-      // 'axis' used to mean 'x'/'y' identifier, not the label — ignore
-    }
+    // ── Positioning (F35) ─────────────────────────────────────────────────────
+    this.mode             = opts.mode             ?? 'border';
+    this.edges            = opts.edges            ?? null;   // null → renderer default
+    this.crossingValue    = opts.crossingValue    ?? 0;
+    this.snapTolerancePx  = opts.snapTolerancePx  ?? 0;
+    this.offscreen        = opts.offscreen        ?? 'border';
+    this.labelSide        = opts.labelSide        ?? 'auto';
 
     this._formatter = this.tickFormat || defaultFormatter(this.scaleType);
   }

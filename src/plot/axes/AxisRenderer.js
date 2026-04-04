@@ -103,11 +103,9 @@ export class AxisRenderer {
     ctx.lineWidth   = 1;
     ctx.strokeRect(pa.x, pa.y, pa.width, pa.height);
 
-    // X-axis ticks
-    if (!this._style.hideXAxis) this._renderXTicks(ctx, pa);
-
-    // Y-axis ticks
-    this._renderYTicks(ctx, pa);
+    // F35: dispatch to mode-aware x/y axis renderers
+    if (!this._style.hideXAxis) this._renderXAxis(ctx, pa);
+    this._renderYAxis(ctx, pa);
 
     // LineROI labels (half-variants only; canvas overlay per spec)
     this._renderLineROILabels(ctx, rois, pa);
@@ -184,96 +182,390 @@ export class AxisRenderer {
     ctx.restore();
   }
 
-  _renderXTicks(ctx, pa) {
-    const s = this._style;
-    // ARCH-G: build scale from viewport, then pass to config-only AxisController
+  // ─── F35: X-axis dispatch ────────────────────────────────────────────────────
+
+  _renderXAxis(ctx, pa) {
     const xScale = this._viewport.getXScale();
     if (!xScale) return;
     const ticks = this._xAxis.getTicks(xScale);
+    const mode  = this._xAxis.mode || 'border';
+
+    if (mode === 'relative') {
+      this._renderXAxisRelative(ctx, pa, ticks);
+    } else {
+      // border mode — render grid once, then per-edge ticks
+      const edges = this._xAxis.edges ?? ['bottom'];
+      this._renderXGrid(ctx, pa, ticks);
+      for (const edge of edges) {
+        this._renderXTicksAtEdge(ctx, pa, ticks, edge);
+      }
+      // axis label at outermost of the listed edges (bottom if available, else top)
+      if (this._xAxis.label) {
+        const labelEdge = edges.includes('bottom') ? 'bottom' : (edges[0] ?? 'bottom');
+        this._renderXLabel(ctx, pa, labelEdge);
+      }
+    }
+  }
+
+  /** Grid lines only — rendered once regardless of number of edges. */
+  _renderXGrid(ctx, pa, ticks) {
+    const s = this._style;
+    ctx.strokeStyle = s.gridColor;
+    ctx.lineWidth   = 1;
+    for (const tick of ticks) {
+      const sx = tick.screen;
+      if (sx < pa.x || sx > pa.x + pa.width) continue;
+      ctx.beginPath();
+      ctx.moveTo(sx, pa.y);
+      ctx.lineTo(sx, pa.y + pa.height);
+      ctx.stroke();
+    }
+  }
+
+  /**
+   * Tick marks + labels at a single x-axis edge.
+   * @param {'top'|'bottom'} edge
+   */
+  _renderXTicksAtEdge(ctx, pa, ticks, edge) {
+    const s          = this._style;
     const tickLength = this._xAxis.getTickSize();
+    const atBottom   = edge !== 'top';
+    const baseY      = atBottom ? pa.y + pa.height : pa.y;
+    // Outward direction: +1 = downward (outward from bottom), -1 = upward (outward from top)
+    const outDir     = atBottom ? 1 : -1;
 
     ctx.textAlign    = 'center';
-    ctx.textBaseline = 'top';
+    ctx.textBaseline = atBottom ? 'top' : 'bottom';
     ctx.font         = `${s.fontSize}px ${s.fontFamily}`;
-    ctx.fillStyle    = s.labelColor;
-    ctx.strokeStyle  = s.tickColor;
     ctx.lineWidth    = 1;
 
     for (const tick of ticks) {
       const sx = tick.screen;
       if (sx < pa.x || sx > pa.x + pa.width) continue;
 
-      // Grid line
-      ctx.strokeStyle = s.gridColor;
-      ctx.beginPath();
-      ctx.moveTo(sx, pa.y);
-      ctx.lineTo(sx, pa.y + pa.height);
-      ctx.stroke();
-
-      // Tick mark
       ctx.strokeStyle = s.tickColor;
       ctx.beginPath();
-      ctx.moveTo(sx, pa.y + pa.height);
-      ctx.lineTo(sx, pa.y + pa.height + tickLength);
+      ctx.moveTo(sx, baseY);
+      ctx.lineTo(sx, baseY + outDir * tickLength);
       ctx.stroke();
 
-      // Label
       ctx.fillStyle = s.labelColor;
-      ctx.fillText(tick.label, sx, pa.y + pa.height + tickLength + s.labelPadding);
-    }
-
-    // X axis label (bottom center)
-    if (this._xAxis.label) {
-      ctx.fillText(this._xAxis.label, pa.x + pa.width / 2, pa.y + pa.height + 30);
+      ctx.fillText(tick.label, sx, baseY + outDir * (tickLength + s.labelPadding));
     }
   }
 
-  _renderYTicks(ctx, pa) {
+  _renderXLabel(ctx, pa, edge) {
+    const s      = this._style;
+    const atBottom = edge !== 'top';
+    ctx.font         = `${s.fontSize}px ${s.fontFamily}`;
+    ctx.textAlign    = 'center';
+    ctx.fillStyle    = s.labelColor;
+    if (atBottom) {
+      ctx.textBaseline = 'top';
+      ctx.fillText(this._xAxis.label, pa.x + pa.width / 2, pa.y + pa.height + 30);
+    } else {
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(this._xAxis.label, pa.x + pa.width / 2, pa.y - 18);
+    }
+  }
+
+  /**
+   * Relative-mode x-axis: the axis line is horizontal, anchored at a y-data
+   * value (`crossingValue`), and can snap to edges or hide when off-screen.
+   */
+  _renderXAxisRelative(ctx, pa, ticks) {
+    const yScale         = this._viewport.getYScale();
+    if (!yScale) return;
+    const ax             = this._xAxis;
+    const crossVal       = ax.crossingValue ?? 0;
+    const [yMin, yMax]   = this._viewport.getYDomain();
+
+    // Off-screen check
+    const inDomain = crossVal >= Math.min(yMin, yMax) && crossVal <= Math.max(yMin, yMax);
+    if (!inDomain) {
+      if (ax.offscreen === 'hide') return;
+      // 'border' → nearest edge
+      const nearEdge = crossVal < Math.min(yMin, yMax) ? 'bottom' : 'top';
+      // y domain min/max doesn't directly map to bottom/top because of inverted range
+      // screenY at domain edge: yMin maps to plotBottom (pa.y+pa.height), yMax to pa.y
+      // crossVal < yMin → off the bottom of data → screen bottom edge
+      const [rangeA, rangeB] = [yScale.range()[0], yScale.range()[1]];
+      const screenBottomVal  = rangeA > rangeB ? rangeA : rangeB; // larger screen-y = bottom
+      const offEdge = (yScale(crossVal) > screenBottomVal) ? 'bottom' : 'top';
+      this._renderXGrid(ctx, pa, ticks);
+      this._renderXTicksAtEdge(ctx, pa, ticks, offEdge);
+      if (ax.label) this._renderXLabel(ctx, pa, offEdge);
+      return;
+    }
+
+    const screenY = yScale(crossVal);
+
+    // Snap check
+    const snap = ax.snapTolerancePx ?? 0;
+    if (snap > 0) {
+      const distBottom = Math.abs(screenY - (pa.y + pa.height));
+      const distTop    = Math.abs(screenY - pa.y);
+      if (distBottom <= snap || distTop <= snap) {
+        const snapEdge = distBottom <= distTop ? 'bottom' : 'top';
+        this._renderXGrid(ctx, pa, ticks);
+        this._renderXTicksAtEdge(ctx, pa, ticks, snapEdge);
+        if (ax.label) this._renderXLabel(ctx, pa, snapEdge);
+        return;
+      }
+    }
+
+    // Mid-plot render
     const s = this._style;
-    // ARCH-G: build scale from viewport, then pass to config-only AxisController
+
+    // Grid lines (at each x-tick position, full plot height)
+    this._renderXGrid(ctx, pa, ticks);
+
+    // Axis line (horizontal at screenY, full plot width)
+    ctx.strokeStyle = s.axisColor;
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.moveTo(pa.x, screenY);
+    ctx.lineTo(pa.x + pa.width, screenY);
+    ctx.stroke();
+
+    // Tick direction: toward nearer edge
+    const midY     = pa.y + pa.height / 2;
+    // Ticks point outward toward nearest edge:
+    //   upper half (screenY < midY) → ticks go upward (-1)
+    //   lower half (screenY >= midY) → ticks go downward (+1)
+    const tickDir  = screenY < midY ? -1 : 1;
+    const tickLen  = ax.getTickSize();
+
+    // Label side: resolve from labelSide option
+    // 'auto'     → same side as ticks (toward nearest edge)
+    // 'positive' → above the line (data-positive y direction = lower screen y)
+    // 'negative' → below the line (data-negative y direction = higher screen y)
+    let labelDir;
+    if (ax.labelSide === 'positive') {
+      // positive y in data = smaller screen y (inverted range)
+      labelDir = -1;
+    } else if (ax.labelSide === 'negative') {
+      labelDir = 1;
+    } else {
+      // 'auto' → same direction as ticks
+      labelDir = tickDir;
+    }
+    const labelBaseline = labelDir < 0 ? 'bottom' : 'top';
+
+    ctx.font      = `${s.fontSize}px ${s.fontFamily}`;
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 1;
+
+    for (const tick of ticks) {
+      const sx = tick.screen;
+      if (sx < pa.x || sx > pa.x + pa.width) continue;
+
+      ctx.strokeStyle = s.tickColor;
+      ctx.beginPath();
+      ctx.moveTo(sx, screenY);
+      ctx.lineTo(sx, screenY + tickDir * tickLen);
+      ctx.stroke();
+
+      ctx.fillStyle    = s.labelColor;
+      ctx.textBaseline = labelBaseline;
+      ctx.fillText(tick.label, sx, screenY + labelDir * (tickLen + s.labelPadding));
+    }
+
+    if (ax.label) {
+      ctx.fillStyle    = s.labelColor;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = labelBaseline;
+      ctx.fillText(ax.label, pa.x + pa.width / 2,
+        screenY + labelDir * (tickLen + s.labelPadding + 14));
+    }
+  }
+
+  // ─── F35: Y-axis dispatch ────────────────────────────────────────────────────
+
+  _renderYAxis(ctx, pa) {
     const yScale = this._viewport.getYScale();
     if (!yScale) return;
     const ticks = this._yAxis.getTicks(yScale);
+    const mode  = this._yAxis.mode || 'border';
 
+    if (mode === 'relative') {
+      this._renderYAxisRelative(ctx, pa, ticks);
+    } else {
+      const edges = this._yAxis.edges ?? ['left'];
+      this._renderYGrid(ctx, pa, ticks);
+      for (const edge of edges) {
+        this._renderYTicksAtEdge(ctx, pa, ticks, edge);
+      }
+      if (this._yAxis.label) {
+        const labelEdge = edges.includes('left') ? 'left' : (edges[0] ?? 'left');
+        this._renderYLabel(ctx, pa, labelEdge);
+      }
+    }
+  }
+
+  _renderYGrid(ctx, pa, ticks) {
+    const s = this._style;
+    ctx.strokeStyle = s.gridColor;
+    ctx.lineWidth   = 1;
+    for (const tick of ticks) {
+      const sy = tick.screen;
+      if (sy < pa.y || sy > pa.y + pa.height) continue;
+      ctx.beginPath();
+      ctx.moveTo(pa.x, sy);
+      ctx.lineTo(pa.x + pa.width, sy);
+      ctx.stroke();
+    }
+  }
+
+  /**
+   * Tick marks + labels at a single y-axis edge.
+   * @param {'left'|'right'} edge
+   */
+  _renderYTicksAtEdge(ctx, pa, ticks, edge) {
+    const s          = this._style;
     const tickLength = this._yAxis.getTickSize();
+    const atLeft     = edge !== 'right';
+    const baseX      = atLeft ? pa.x : pa.x + pa.width;
+    // Outward: -1 = leftward (outward from left edge), +1 = rightward (outward from right)
+    const outDir     = atLeft ? -1 : 1;
 
-    ctx.textAlign    = 'right';
     ctx.textBaseline = 'middle';
+    ctx.textAlign    = atLeft ? 'right' : 'left';
     ctx.font         = `${s.fontSize}px ${s.fontFamily}`;
-    ctx.fillStyle    = s.labelColor;
     ctx.lineWidth    = 1;
 
     for (const tick of ticks) {
       const sy = tick.screen;
       if (sy < pa.y || sy > pa.y + pa.height) continue;
 
-      // Grid line
-      ctx.strokeStyle = s.gridColor;
-      ctx.beginPath();
-      ctx.moveTo(pa.x, sy);
-      ctx.lineTo(pa.x + pa.width, sy);
-      ctx.stroke();
-
-      // Tick mark
       ctx.strokeStyle = s.tickColor;
       ctx.beginPath();
-      ctx.moveTo(pa.x - tickLength, sy);
-      ctx.lineTo(pa.x, sy);
+      ctx.moveTo(baseX, sy);
+      ctx.lineTo(baseX + outDir * tickLength, sy);
       ctx.stroke();
 
-      // Label
       ctx.fillStyle = s.labelColor;
-      ctx.fillText(tick.label, pa.x - tickLength - s.labelPadding, sy);
+      ctx.fillText(tick.label, baseX + outDir * (tickLength + s.labelPadding), sy);
+    }
+  }
+
+  _renderYLabel(ctx, pa, edge) {
+    const s      = this._style;
+    const atLeft = edge !== 'right';
+    ctx.save();
+    if (atLeft) {
+      ctx.translate(12, pa.y + pa.height / 2);
+    } else {
+      ctx.translate(pa.x + pa.width + this._viewport.marginRight - 12, pa.y + pa.height / 2);
+    }
+    ctx.rotate(-Math.PI / 2);
+    ctx.font         = `${s.fontSize}px ${s.fontFamily}`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle    = s.labelColor;
+    ctx.fillText(this._yAxis.label, 0, 0);
+    ctx.restore();
+  }
+
+  /**
+   * Relative-mode y-axis: the axis line is vertical, anchored at an x-data
+   * value (`crossingValue`), with snap/offscreen/labelSide support.
+   */
+  _renderYAxisRelative(ctx, pa, ticks) {
+    const xScale         = this._viewport.getXScale();
+    if (!xScale) return;
+    const ay             = this._yAxis;
+    const crossVal       = ay.crossingValue ?? 0;
+    const [xMin, xMax]   = this._viewport.getXDomain();
+
+    // Off-screen check
+    const inDomain = crossVal >= Math.min(xMin, xMax) && crossVal <= Math.max(xMin, xMax);
+    if (!inDomain) {
+      if (ay.offscreen === 'hide') return;
+      const offEdge = crossVal < Math.min(xMin, xMax) ? 'left' : 'right';
+      this._renderYGrid(ctx, pa, ticks);
+      this._renderYTicksAtEdge(ctx, pa, ticks, offEdge);
+      if (ay.label) this._renderYLabel(ctx, pa, offEdge);
+      return;
     }
 
-    // Y axis label (rotated, left side)
-    if (this._yAxis.label) {
+    const screenX = xScale(crossVal);
+
+    // Snap check
+    const snap = ay.snapTolerancePx ?? 0;
+    if (snap > 0) {
+      const distLeft  = Math.abs(screenX - pa.x);
+      const distRight = Math.abs(screenX - (pa.x + pa.width));
+      if (distLeft <= snap || distRight <= snap) {
+        const snapEdge = distLeft <= distRight ? 'left' : 'right';
+        this._renderYGrid(ctx, pa, ticks);
+        this._renderYTicksAtEdge(ctx, pa, ticks, snapEdge);
+        if (ay.label) this._renderYLabel(ctx, pa, snapEdge);
+        return;
+      }
+    }
+
+    // Mid-plot render
+    const s = this._style;
+
+    this._renderYGrid(ctx, pa, ticks);
+
+    // Axis line (vertical at screenX, full plot height)
+    ctx.strokeStyle = s.axisColor;
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.moveTo(screenX, pa.y);
+    ctx.lineTo(screenX, pa.y + pa.height);
+    ctx.stroke();
+
+    // Tick direction: toward nearer edge
+    const midX    = pa.x + pa.width / 2;
+    // Left half  (screenX < midX) → ticks go left  (-1)
+    // Right half (screenX >= midX) → ticks go right (+1)
+    const tickDir = screenX < midX ? -1 : 1;
+    const tickLen = ay.getTickSize();
+
+    // Label side
+    let labelDir;
+    if (ay.labelSide === 'positive') {
+      // positive x direction = rightward (+1)
+      labelDir = 1;
+    } else if (ay.labelSide === 'negative') {
+      labelDir = -1;
+    } else {
+      // 'auto' → same as ticks
+      labelDir = tickDir;
+    }
+    const textAlign = labelDir < 0 ? 'right' : 'left';
+
+    ctx.font         = `${s.fontSize}px ${s.fontFamily}`;
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth    = 1;
+
+    for (const tick of ticks) {
+      const sy = tick.screen;
+      if (sy < pa.y || sy > pa.y + pa.height) continue;
+
+      ctx.strokeStyle = s.tickColor;
+      ctx.beginPath();
+      ctx.moveTo(screenX, sy);
+      ctx.lineTo(screenX + tickDir * tickLen, sy);
+      ctx.stroke();
+
+      ctx.fillStyle = s.labelColor;
+      ctx.textAlign = textAlign;
+      ctx.fillText(tick.label, screenX + labelDir * (tickLen + s.labelPadding), sy);
+    }
+
+    if (ay.label) {
       ctx.save();
-      ctx.translate(12, pa.y + pa.height / 2);
+      ctx.translate(screenX + labelDir * (tickLen + s.labelPadding + 14),
+                    pa.y + pa.height / 2);
       ctx.rotate(-Math.PI / 2);
       ctx.textAlign    = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(this._yAxis.label, 0, 0);
+      ctx.fillStyle    = s.labelColor;
+      ctx.fillText(ay.label, 0, 0);
       ctx.restore();
     }
   }

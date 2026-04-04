@@ -5,6 +5,37 @@ All active/pending work is in [PLAN.md](../PLAN.md).
 
 ---
 
+## F35 [COMPLETED] Axis Positioning Modes
+
+**Branch:** `feature/ARCH-G-F34-F35`
+**Completed:** 2026-04-04
+
+### AxisController new options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `mode` | `'border'|'relative'` | `'border'` | Positioning mode |
+| `edges` | `string[]|null` | `null` (renderer default: `['bottom']`/`['left']`) | Border mode: edges to render at. x → `'top'`/`'bottom'`; y → `'left'`/`'right'`. Multiple = mirrored axes. |
+| `crossingValue` | `number` | `0` | Relative mode: data coordinate the axis is anchored to (y-value for x-axis, x-value for y-axis) |
+| `snapTolerancePx` | `number` | `0` | Relative mode: pixel distance from edge at which axis snaps to border. 0 = stationary. |
+| `offscreen` | `'border'|'hide'` | `'border'` | Relative mode: behavior when crossingValue outside visible domain |
+| `labelSide` | `'auto'|'positive'|'negative'` | `'auto'` | Relative mode: which side of axis line labels appear. auto = toward nearest edge |
+
+### AxisRenderer behavior
+
+**Border mode:** Grid drawn once. For each edge: outward-facing ticks + labels. `_renderXGrid`/`_renderYGrid` separated from `_renderXTicksAtEdge`/`_renderYTicksAtEdge` to avoid doubled grid lines with multiple edges.
+
+**Relative mode (x-axis):** `crossingValue` is a y-data value. `screenY = yScale(crossingValue)`. Off-screen → snap to nearest border edge or hide. Snap check → within `snapTolerancePx` of top/bottom → render as border. Mid-plot → horizontal axis line at `screenY`; ticks flip direction at plot midpoint (toward nearer edge); labels on side resolved from `labelSide` (auto = same as ticks; positive = above line = lower screen-y; negative = below).
+
+**Relative mode (y-axis):** Mirror of above with x-axis. `crossingValue` is an x-data value. `screenX = xScale(crossingValue)`. Snap to left/right. Tick flip at horizontal midpoint.
+
+### Files modified
+
+- `src/plot/axes/AxisController.js` — 6 new constructor options; `_formatter` unchanged
+- `src/plot/axes/AxisRenderer.js` — replaced `_renderXTicks`/`_renderYTicks` with: `_renderXAxis`/`_renderYAxis` (dispatch); `_renderXGrid`/`_renderYGrid`; `_renderXTicksAtEdge(ctx, pa, ticks, edge)`/`_renderYTicksAtEdge`; `_renderXLabel`/`_renderYLabel`; `_renderXAxisRelative`/`_renderYAxisRelative` (full relative logic)
+
+---
+
 ## F34 [COMPLETED] Bordered Plot Mode
 
 **Branch:** `feature/ARCH-G-F34-F35`

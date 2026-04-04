@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 9.5
+**Plan Version:** 9.6
 **Last Updated:** 2026-04-04
-**Status:** Phase 6 complete. Phase 7 (Axis Refactor): B9 + ARCH-G + F34 complete; F35 pending.
+**Status:** Phase 7 complete. B9 + ARCH-G + F34 + F35 all done. No pending features.
 
 ---
 
@@ -120,7 +120,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | B9   | ROILayer pixel-space border widths | ✅ COMPLETED | feature/B9 | 2026-04-04 |
 | ARCH-G | AxisController Config/Domain Split | ✅ COMPLETED | feature/ARCH-G-F34-F35 | 2026-04-04 |
 | F34  | Bordered Plot Mode | ✅ COMPLETED | feature/ARCH-G-F34-F35 | 2026-04-04 |
-| F35  | Axis Positioning Modes | 🔲 PENDING | — | — |
+| F35  | Axis Positioning Modes | ✅ COMPLETED | feature/ARCH-G-F34-F35 | 2026-04-04 |
 
 ---
 
@@ -371,60 +371,10 @@ Full spec: [docs/plan-archive.md#f34](docs/plan-archive.md#f34)
 
 ---
 
-### F35 [PENDING] Axis Positioning Modes
-
-**Branch:** `feature/ARCH-G-F34-F35`
-**Depends on:** ARCH-G (config-only AxisController is the foundation for new positioning options)
-
-**Purpose:** Add flexible per-axis positioning. Axes can be fixed to one or more edges (`border` mode) or fixed to a data coordinate that moves with the viewport (`relative` mode, optionally with snap/mobile behavior).
-
-#### AxisController new options (extends ARCH-G shape)
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `mode` | `'border' \| 'relative'` | `'border'` | Positioning mode |
-| `edges` | `string[]` | `['bottom']` (x) / `['left']` (y) | **border mode**: which edges to render at. Valid values per axis: x → `'top'`/`'bottom'`; y → `'left'`/`'right'`. Multiple values = mirrored axes. |
-| `crossingValue` | `number` | `0` | **relative mode**: data coordinate the axis line sits at |
-| `snapTolerancePx` | `number` | `0` | **relative mode**: pixels from edge at which axis snaps to border. `0` = never snap (stationary-relative). `> 0` = mobile behavior |
-| `offscreen` | `'border' \| 'hide'` | `'border'` | **relative mode**: behavior when `crossingValue` is outside the visible domain |
-| `labelSide` | `'auto' \| 'positive' \| 'negative'` | `'auto'` | **relative mode**: which side of the axis line labels appear. `'auto'` = toward nearest edge |
-
-#### Named patterns (all just AxisController config)
-
-| Pattern | Config |
-|---|---|
-| Stationary border (current default) | `{ mode: 'border', edges: ['bottom'] }` |
-| Mirrored top+bottom | `{ mode: 'border', edges: ['bottom', 'top'] }` |
-| Stationary crossing (data coord) | `{ mode: 'relative', crossingValue: 0, snapTolerancePx: 0 }` |
-| Mobile (snaps to edges) | `{ mode: 'relative', crossingValue: 0, snapTolerancePx: 20, offscreen: 'border' }` |
-| Mobile, hide when off-screen | `{ mode: 'relative', crossingValue: 0, snapTolerancePx: 20, offscreen: 'hide' }` |
-
-#### AxisRenderer behavior — border mode
-
-- Render the axis line and ticks at each edge in `edges`.
-- Multiple edges: same tick values and labels on each, ticks face **outward** (away from plot center) on both.
-- Tick direction: always outward (away from inner plot area) regardless of which edge.
-
-#### AxisRenderer behavior — relative mode
-
-On each render frame, given the current domain from `ViewportController`:
-
-1. Compute screen pixel position `px = xScale(crossingValue)` (or `yScale` for y-axis).
-2. **Snap check:** if `|px - edgePx| <= snapTolerancePx` for any edge → render as if `mode: 'border'` at that edge.
-3. **Off-screen check:** if `crossingValue` is outside the visible domain → apply `offscreen`:
-   - `'border'`: render at the nearest border edge.
-   - `'hide'`: render nothing.
-4. **Mid-plot render:** draw axis line at screen position `px`. Then:
-   - **Tick direction:** flip when `px` crosses the viewport midpoint pixel. Ticks point toward the nearer half.
-   - **Label side:** resolve `labelSide`:
-     - `'auto'` → labels on the side toward the nearest edge.
-     - `'positive'` → labels on the data-positive side of the line.
-     - `'negative'` → labels on the data-negative side of the line.
-
-#### Files modified
-
-- `src/plot/axes/AxisController.js` — add all new positioning options to constructor; expose them as getters for AxisRenderer
-- `src/plot/axes/AxisRenderer.js` — implement border-mode multi-edge + relative-mode positioning logic described above
+### F35 [COMPLETED] Axis Positioning Modes
+**Completed:** 2026-04-04 | **Branch:** feature/ARCH-G-F34-F35
+`AxisController` gains `mode`/`edges`/`crossingValue`/`snapTolerancePx`/`offscreen`/`labelSide` options. `AxisRenderer` refactored: `_renderXAxis`/`_renderYAxis` dispatch to border (multi-edge, grid once, outward ticks) or relative (anchor at data coordinate, off-screen/snap/mid-plot with tick-flip and labelSide); grid separated from tick rendering so multi-edge doesn't double grid lines.
+Full spec: [docs/plan-archive.md#f35](docs/plan-archive.md#f35)
 
 ---
 
@@ -432,6 +382,7 @@ On each render frame, given the current domain from `ViewportController`:
 
 > Full history in [docs/plan-archive.md — Change Log](docs/plan-archive.md#change-log).
 
+- **2026-04-04 [Claude]**: F35 completed (v9.6) — `AxisController` gains `mode`/`edges`/`crossingValue`/`snapTolerancePx`/`offscreen`/`labelSide` positioning options. `AxisRenderer` refactored: `_renderXTicks`/`_renderYTicks` replaced by `_renderXAxis`/`_renderYAxis` dispatchers; border mode loops over `edges[]` with outward-facing ticks and single grid pass; relative mode anchors axis line to a data coordinate with snap-to-edge, off-screen handling, mid-plot tick-flip at viewport midpoint, and configurable label side. Branch: `feature/ARCH-G-F34-F35`.
 - **2026-04-04 [Claude]**: F34 completed (v9.5) — `AxisRenderer._fillGutters()` fills four margin rects with container CSS background before tick rendering; `AxisRenderer.setBordered(bool)` public method; `PlotController` accepts `bordered` opt and calls `setBordered(true)` after `AxisRenderer` init; `PlotCanvas` forwards `bordered` prop; transparent/unset backgrounds are skipped. Branch: `feature/ARCH-G-F34-F35`.
 - **2026-04-04 [Claude]**: ARCH-G completed (v9.4) — `AxisController` refactored to config-only (no domain state, no EventEmitter); domain mutation methods (`setXDomain`/`setYDomain`/`getXDomain`/`getYDomain`/`zoomAroundX`/`zoomAroundY`/`panByPixels({dx,dy})`/`scaleDomainFromMidpointX`/`scaleDomainFromMidpointY`) added to `ViewportController`; `PlotController` wires viewport `'domainChanged'` event; `PlotCanvas` gains `xAxis`/`yAxis` props; all 7 example/doc files + 3 src library files updated from old API; lib build zero errors. Branch: `feature/ARCH-G-F34-F35`.
 - **2026-04-04 [Claude]**: B9 completed (v9.3) — Added `lineWidthUnits: 'pixels'` to the two `PolygonLayer` outline instances in `ROILayer.js` (LinearRegion fill and RectROI fill); PathLayer + ScatterplotLayer sub-layers already had pixel units; ROI borders now render at fixed screen-pixel thickness regardless of zoom. Branch: `feature/B9`.
