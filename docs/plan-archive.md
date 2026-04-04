@@ -4761,3 +4761,20 @@ new TableLoaderAdapter(dataStore, {
 - ApiReferencePage: `TableLoaderAdapterSection` + `RasterLoaderAdapterSection` added before AudioControllerSection
 
 ---
+
+### B9 — ROILayer pixel-space border widths
+
+**Branch:** `feature/B9`
+**Completed:** 2026-04-04
+**Depends on:** none — fully independent
+
+**Problem:** ROI border and handle line widths were specified in data-coordinate units, so they scaled with zoom. At extreme zoom levels (data range ~0.001 or ~100,000) borders became imperceptibly thin or grossly thick.
+
+**Fix:** In `src/plot/layers/ROILayer.js`, added `lineWidthUnits: 'pixels'` to the two `PolygonLayer` outlines (LinearRegion fill and RectROI fill). The `PathLayer` and `ScatterplotLayer` sub-layers already had `widthUnits: 'pixels'` / `radiusUnits: 'pixels'` set. Border thickness is now a fixed screen-pixel value regardless of zoom.
+
+**Files modified:**
+- `src/plot/layers/ROILayer.js` — added `lineWidthUnits: 'pixels'` to LinearRegion and RectROI PolygonLayer instances
+
+**Verification:** confirmed working. No example changes needed.
+
+---

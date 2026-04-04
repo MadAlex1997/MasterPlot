@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 9.2
+**Plan Version:** 9.3
 **Last Updated:** 2026-04-04
-**Status:** Phase 6 complete. Phase 7 (Axis Refactor) added: B9, ARCH-G, F34, F35 pending.
+**Status:** Phase 6 complete. Phase 7 (Axis Refactor): B9 complete; ARCH-G, F34, F35 pending.
 
 ---
 
@@ -117,7 +117,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | F32  | TableLoaderAdapter (CSV / Arrow / Parquet → scatter) | ✅ COMPLETED | feature/F32-F33-EX19 | 2026-03-28 |
 | F33  | RasterLoaderAdapter (NetCDF / GeoTIFF / image → BitmapDataLayer) | ✅ COMPLETED | feature/F32-F33-EX19 | 2026-03-28 |
 | EX19 | Data Loaders Example | ✅ COMPLETED | feature/F32-F33-EX19 | 2026-03-28 |
-| B9   | ROILayer pixel-space border widths | 🔄 IN_PROGRESS | feature/B9 | — |
+| B9   | ROILayer pixel-space border widths | ✅ COMPLETED | feature/B9 | 2026-04-04 |
 | ARCH-G | AxisController Config/Domain Split | 🔲 PENDING | — | — |
 | F34  | Bordered Plot Mode | 🔲 PENDING | — | — |
 | F35  | Axis Positioning Modes | 🔲 PENDING | — | — |
@@ -350,19 +350,10 @@ Full spec: [docs/plan-archive.md#ex19](docs/plan-archive.md#ex19)
 
 ---
 
-### B9 [IN_PROGRESS] ROILayer pixel-space border widths
-
-**Branch:** `feature/B9`
-**Depends on:** none — fully independent
-
-**Problem:** ROI border and handle line widths are specified in data-coordinate units, so they scale with zoom. At extreme zoom levels (data range ~0.001 or ~100,000) borders become imperceptibly thin or grossly thick.
-
-**Fix:** In `src/plot/layers/ROILayer.js`, change all `PathLayer`, `LineLayer`, and handle-rendering calls to use `widthUnits: 'pixels'` (and `widthMinPixels` / `widthMaxPixels` where appropriate). Border thickness becomes a fixed screen-pixel value regardless of zoom.
-
-**Files modified:**
-- `src/plot/layers/ROILayer.js`
-
-**Verification:** confirmed working on test branch. No example changes needed.
+### B9 [COMPLETED] ROILayer pixel-space border widths
+**Completed:** 2026-04-04 | **Branch:** feature/B9
+Added `lineWidthUnits: 'pixels'` to the two `PolygonLayer` outline instances in `ROILayer.js` (LinearRegion fill and RectROI fill); `PathLayer` and `ScatterplotLayer` sub-layers already had pixel units set; ROI borders now render at a fixed screen-pixel thickness regardless of zoom level.
+Full spec: [docs/plan-archive.md#b9](docs/plan-archive.md#b9)
 
 ---
 
@@ -566,6 +557,7 @@ On each render frame, given the current domain from `ViewportController`:
 
 > Full history in [docs/plan-archive.md — Change Log](docs/plan-archive.md#change-log).
 
+- **2026-04-04 [Claude]**: B9 completed (v9.3) — Added `lineWidthUnits: 'pixels'` to the two `PolygonLayer` outline instances in `ROILayer.js` (LinearRegion fill and RectROI fill); PathLayer + ScatterplotLayer sub-layers already had pixel units; ROI borders now render at fixed screen-pixel thickness regardless of zoom. Branch: `feature/B9`.
 - **2026-04-04 [Claude]**: Phase 7 (Axis System Refactor) added (v9.2) — B9 (ROILayer pixel-space widths; confirmed working on test branch), ARCH-G (AxisController config/domain split; domain methods move to ViewportController; shared-config pattern; breaking API change), F34 (bordered plot mode; gutter fill from CSS background), F35 (axis positioning modes; border multi-edge + relative/mobile with snap/offscreen/labelSide/tick-flip). Mandatory order: B9 independent; ARCH-G → F34 → F35 on single branch `feature/ARCH-G-F34-F35`.
 - **2026-03-28 [Claude]**: F32/F33/EX19 completed (v9.1) — F32: `loaders/TableLoaderAdapter.js` (CSVLoader + ArrowLoader; chunked appendData; BigInt/null coercion; 'chunk'+'parseWarning' events); F33: `loaders/RasterLoaderAdapter.js` (NetCDFLoader for .nc/.cdf, createImageBitmap for images; coordinate-array bounds; flipY; loadArray() for in-memory grids; LUT wiring); EX19: `DataLoadersExample.jsx` two-panel demo (drag-and-drop CSV + synthetic 10k sample / image+nc drop + synthetic 128×128 temp field + LUTPanel); webpack entry/HTML added; HubPage card + README Phase 6 section + ApiReferencePage sections added; build zero errors.
 - **2026-03-28 [Claude]**: Phase 6 (loaders.gl Data Loaders) added (v9.0) — F32 (`TableLoaderAdapter`: CSV/Arrow/Parquet → scatter; column mapping + streaming `parseInBatches`), F33 (`RasterLoaderAdapter`: NetCDF/GeoTIFF/image → `BitmapDataLayer`; coordinate bounds from metadata), EX19 (two-panel demo: drag-and-drop tabular + raster files). New top-level `loaders/` directory (framework-agnostic, not `src/`). Mandatory order: F32 → F33 → EX19. Branch: `feature/F32-F33-EX19`.
