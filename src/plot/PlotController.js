@@ -138,7 +138,7 @@ export class PlotController extends EventEmitter {
 
     // Axis style overrides applied after init()
     this._hideXAxis = opts.hideXAxis ?? false;
-    this._bordered  = opts.bordered  ?? false;  // F34
+    this._bordered  = opts.bordered  ?? true;   // F34: default on — gutters are opaque by default
 
     // Zoom/pan interaction state
     this._isPanning    = false;

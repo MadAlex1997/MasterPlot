@@ -121,6 +121,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | ARCH-G | AxisController Config/Domain Split | ✅ COMPLETED | feature/ARCH-G-F34-F35 | 2026-04-04 |
 | F34  | Bordered Plot Mode | ✅ COMPLETED | feature/ARCH-G-F34-F35 | 2026-04-04 |
 | F35  | Axis Positioning Modes | ✅ COMPLETED | feature/ARCH-G-F34-F35 | 2026-04-04 |
+| EX20 | Axis Options Showcase | 🔲 PENDING | — | — |
 
 ---
 
@@ -140,9 +141,11 @@ F31 → EX18 ✅
 
 F32 → F33 → EX19
 
-B9  (independent — no dependencies)
+B9  (independent — no dependencies) ✅
 
-ARCH-G → F34 → F35
+ARCH-G → F34 → F35 ✅
+
+F35 → EX20
 ```
 
 ---
@@ -375,6 +378,40 @@ Full spec: [docs/plan-archive.md#f34](docs/plan-archive.md#f34)
 **Completed:** 2026-04-04 | **Branch:** feature/ARCH-G-F34-F35
 `AxisController` gains `mode`/`edges`/`crossingValue`/`snapTolerancePx`/`offscreen`/`labelSide` options. `AxisRenderer` refactored: `_renderXAxis`/`_renderYAxis` dispatch to border (multi-edge, grid once, outward ticks) or relative (anchor at data coordinate, off-screen/snap/mid-plot with tick-flip and labelSide); grid separated from tick rendering so multi-edge doesn't double grid lines.
 Full spec: [docs/plan-archive.md#f35](docs/plan-archive.md#f35)
+
+---
+
+### EX20 [PENDING] Axis Options Showcase
+
+**Branch:** `feature/EX20`
+**Depends on:** F35
+
+**Purpose:** A single page with 6 small plots arranged in a 2×3 grid, each seeded with the same ~200 random points, demonstrating the key axis positioning and appearance options from F34/F35. Intended as a visual reference for users exploring axis config.
+
+#### Layout (2 columns × 3 rows)
+
+| Position | Title | Config |
+|---|---|---|
+| Top-left | Default (bordered) | `bordered: true` (default), `mode: 'border', edges: ['bottom']` / `['left']` |
+| Top-right | No border fill | `bordered: false`, `mode: 'border'` |
+| Mid-left | Mirrored axes | `bordered: true`, x edges: `['bottom','top']`, y edges: `['left','right']` |
+| Mid-right | Crossing at zero | `bordered: true`, x: `{ mode: 'relative', crossingValue: 0, snapTolerancePx: 0 }`, y: same |
+| Bot-left | Mobile axes (snap) | `bordered: true`, x+y: `{ mode: 'relative', crossingValue: 0, snapTolerancePx: 30, offscreen: 'border' }` |
+| Bot-right | Mobile, hide offscreen | `bordered: true`, x+y: `{ mode: 'relative', crossingValue: 0, snapTolerancePx: 30, offscreen: 'hide' }` |
+
+Each plot is independently pannable/zoomable so the user can drag to see snap and hide behaviors live. A small label below each plot names the config in use.
+
+#### Data
+
+Each plot uses its own `DataStore` seeded with 200 points: x uniform `[-5, 5]`, y uniform `[-5, 5]`. Domain set to `[-6, 6]` on both axes so the crossing value (0) is visible on load.
+
+#### New files
+
+- `examples/AxisShowcaseExample.jsx`
+- `examples/src/axis-showcase.js`
+- `public/axis-showcase.html`
+
+**Also:** add HubPage card, webpack entry + HtmlWebpackPlugin, README entry.
 
 ---
 
