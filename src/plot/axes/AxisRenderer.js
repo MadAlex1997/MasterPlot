@@ -160,12 +160,20 @@ export class AxisRenderer {
    * @param {{ x, y, width, height, right, bottom }} pa  — plot area
    */
   _fillGutters(ctx, W, H, pa) {
-    const bg = this._canvas.parentElement
-      ? getComputedStyle(this._canvas.parentElement).backgroundColor
-      : 'transparent';
+    // Walk up the DOM until we find a non-transparent background color.
+    // This handles cases where the immediate parent has no background set
+    // (e.g. a flex wrapper with only layout styles).
+    const isTransparent = c => !c || c === 'transparent' || c === 'rgba(0, 0, 0, 0)';
+    let bg = 'transparent';
+    let el = this._canvas.parentElement;
+    while (el && el !== document.documentElement) {
+      const c = getComputedStyle(el).backgroundColor;
+      if (!isTransparent(c)) { bg = c; break; }
+      el = el.parentElement;
+    }
 
-    // Skip if container is transparent (no gutter masking needed)
-    if (!bg || bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)') return;
+    // Skip if no opaque background found
+    if (isTransparent(bg)) return;
 
     ctx.save();
     ctx.fillStyle = bg;
@@ -285,7 +293,6 @@ export class AxisRenderer {
     if (!inDomain) {
       if (ax.offscreen === 'hide') return;
       // 'border' → nearest edge
-      const nearEdge = crossVal < Math.min(yMin, yMax) ? 'bottom' : 'top';
       // y domain min/max doesn't directly map to bottom/top because of inverted range
       // screenY at domain edge: yMin maps to plotBottom (pa.y+pa.height), yMax to pa.y
       // crossVal < yMin → off the bottom of data → screen bottom edge
