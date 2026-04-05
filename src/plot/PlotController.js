@@ -145,7 +145,7 @@ export class PlotController extends EventEmitter {
     this._panStart     = null;  // { screenX, screenY, xDomain, yDomain }
 
     // F4: pan mode toggle
-    this._panMode = opts.panMode || 'follow';
+    this._panMode = opts.panMode || 'drag';
 
     // F7: follow pan speed — runtime-tunable (default matches original hardcoded value)
     this._followPanSpeed = 0.02;
