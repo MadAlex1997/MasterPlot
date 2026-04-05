@@ -88,10 +88,10 @@ const PANELS = [
   },
   {
     title: 'Mobile axes (snaps to edges)',
-    sub:   'mode: "relative", crossingValue: 0, snapTolerancePx: 30, offscreen: "border"',
+    sub:   'mode: "relative", crossingValue: 3, snapTolerancePx: 30, offscreen: "border"',
     ctrl: () => new PlotController({
-      xAxis: new AxisController({ scaleType: 'linear', tickCount: 4, mode: 'relative', crossingValue: 0, snapTolerancePx: 30, offscreen: 'border' }),
-      yAxis: new AxisController({ scaleType: 'linear', tickCount: 4, mode: 'relative', crossingValue: 0, snapTolerancePx: 30, offscreen: 'border' }),
+      xAxis: new AxisController({ scaleType: 'linear', tickCount: 4, mode: 'relative', crossingValue: 3, snapTolerancePx: 30, offscreen: 'border' }),
+      yAxis: new AxisController({ scaleType: 'linear', tickCount: 4, mode: 'relative', crossingValue: 3, snapTolerancePx: 30, offscreen: 'border' }),
       xDomain: [-6, 6], yDomain: [-6, 6],
       bordered: true, autoExpand: false,
     }),
