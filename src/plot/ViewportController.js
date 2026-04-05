@@ -272,17 +272,6 @@ export class ViewportController extends EventEmitter {
     };
   }
 
-  // ─── Legacy scale registration (kept for compat; ARCH-G moves this inward) ───
-
-  /**
-   * @deprecated Use setAxisConfig() instead.  Still accepted so any code that
-   *   calls setScales() directly continues to work during migration.
-   */
-  setScales(xScale, yScale) {
-    this._xScale = xScale;
-    this._yScale = yScale;
-  }
-
   // ─── Coordinate transforms ───────────────────────────────────────────────────
 
   dataXToScreen(dataX) {

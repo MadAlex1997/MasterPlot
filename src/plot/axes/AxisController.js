@@ -70,8 +70,6 @@ export class AxisController {
    *   'auto' = toward nearest edge. 'positive' = data-positive side.
    *   'negative' = data-negative side.
    *
-   * @deprecated opts.axis / opts.domain / opts.range — accepted silently for
-   *   backwards-compat during migration; domain/range are now owned by ViewportController.
    */
   constructor(opts = {}) {
     // ── Appearance ────────────────────────────────────────────────────────────
