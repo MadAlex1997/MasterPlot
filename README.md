@@ -498,6 +498,87 @@ Live demo at `data-loaders.html`:
 
 ---
 
+## Phase 7 — Axis System Refactor (B9, ARCH-G, F34, F35, EX20)
+
+### B9 — ROILayer Pixel-Space Border Widths
+
+`PolygonLayer` outline instances in `ROILayer.js` now use `lineWidthUnits: 'pixels'` — ROI borders render at fixed screen-pixel thickness regardless of zoom level.
+
+### ARCH-G — AxisController Config/Domain Split
+
+`AxisController` is now a config-only descriptor (scale type, tick count, label, format, positioning options). All domain state and mutation methods have moved to `ViewportController`.
+
+**Shared-config pattern:**
+```js
+const xAxis = new AxisController({ scaleType: 'log', tickCount: 8 });
+const plot1 = new PlotController({ xAxis, xDomain: [1, 1000] });
+const plot2 = new PlotController({ xAxis, xDomain: [1, 100] });
+// Both use same tick formatting; each has an independent domain.
+```
+
+**New ViewportController domain API** (replaces old `xAxis.setDomain` etc.):
+
+| Method | Description |
+|---|---|
+| `viewport.setXDomain([min, max])` | Set X domain |
+| `viewport.setYDomain([min, max])` | Set Y domain |
+| `viewport.setDomains(xDomain, yDomain)` | Atomic set of both (one event) |
+| `viewport.getXDomain()` | Returns `[min, max]` |
+| `viewport.getYDomain()` | Returns `[min, max]` |
+| `viewport.zoomAroundX(dataCenter, factor)` | Zoom X around a data coordinate |
+| `viewport.zoomAroundY(dataCenter, factor)` | Zoom Y around a data coordinate |
+| `viewport.zoomAround(focalX, focalY, factor)` | Zoom both axes simultaneously |
+| `viewport.panByPixels({ dx?, dy? })` | Pan by pixel delta |
+| `viewport.scaleDomainFromMidpointX(factor)` | Scale X from midpoint |
+| `viewport.scaleDomainFromMidpointY(factor)` | Scale Y from midpoint |
+
+### F34 — Bordered Plot Mode
+
+Pass `bordered: true` to `PlotController` (or `PlotCanvas`) to fill the axis gutter areas with the container element's CSS `backgroundColor` before rendering ticks. Useful for dark-background layouts where the plot background needs to extend into the margins.
+
+```js
+const ctrl = new PlotController({ bordered: true, xDomain: [-5, 5], yDomain: [-5, 5] });
+```
+
+### F35 — Axis Positioning Modes
+
+Each `AxisController` now supports a `mode` option:
+
+**Border mode** (default) — axis rendered at fixed canvas edges:
+```js
+// Mirrored axes (ticks on both sides):
+new AxisController({ mode: 'border', edges: ['bottom', 'top'] })  // x-axis
+new AxisController({ mode: 'border', edges: ['left', 'right'] })  // y-axis
+```
+
+**Relative mode** — axis line floats at a data coordinate, optionally snapping to edges:
+```js
+new AxisController({
+  mode: 'relative',
+  crossingValue: 0,         // axis sits at y=0 (for x-axis) or x=0 (for y-axis)
+  snapTolerancePx: 30,      // snap to edge when within 30px (0 = stationary)
+  offscreen: 'border',      // 'border' = pin to edge, 'hide' = hide when off-screen
+  labelSide: 'auto',        // 'auto' | 'positive' | 'negative'
+})
+```
+
+### Axis Options Showcase (EX20)
+
+Live demo at `axis-showcase.html` — 2×3 grid of independently pannable/zoomable plots covering all axis configuration combinations:
+
+| Panel | Config |
+|-------|--------|
+| Default border axes | `bordered: true`, `mode: 'border'`, default edges |
+| No border fill | `bordered: false`, `mode: 'border'` |
+| Mirrored axes | `bordered: true`, x: `edges: ['bottom','top']`, y: `edges: ['left','right']` |
+| Crossing at zero (stationary) | `mode: 'relative'`, `crossingValue: 0`, `snapTolerancePx: 0` |
+| Mobile axes (snaps to edges) | `mode: 'relative'`, `snapTolerancePx: 30`, `offscreen: 'border'` |
+| Mobile, hide when off-screen | `mode: 'relative'`, `snapTolerancePx: 30`, `offscreen: 'hide'` |
+
+Pan any plot away from the origin to see the relative-mode axis float and snap.
+
+---
+
 ## TraceGroup (F22)
 
 `TraceGroup` is a generic multi-trace data layer that partitions bulk point data by a string tag into per-tag `Float32Array` buffers, and plugs into `PlotController` via `registerDataLayer`.

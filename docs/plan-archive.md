@@ -5,6 +5,41 @@ All active/pending work is in [PLAN.md](../PLAN.md).
 
 ---
 
+## EX20 [COMPLETED] Axis Options Showcase
+
+**Branch:** `feature/EX20`
+**Completed:** 2026-04-04
+**Depends on:** F35
+
+### Purpose
+
+A single page (`axis-showcase.html`) with 6 small plots arranged in a 2×3 grid, each seeded with the same 200 random points, demonstrating the key axis positioning and appearance options from F34/F35.
+
+### Layout (2 columns × 3 rows)
+
+| Position | Title | Config |
+|---|---|---|
+| Top-left | Default border axes | `bordered: true`, `mode: 'border'`, edges: `['bottom']` / `['left']` |
+| Top-right | No border fill | `bordered: false`, `mode: 'border'` |
+| Mid-left | Mirrored axes | `bordered: true`, x edges: `['bottom','top']`, y edges: `['left','right']` |
+| Mid-right | Crossing at zero | `bordered: true`, x+y: `{ mode: 'relative', crossingValue: 0, snapTolerancePx: 0 }` |
+| Bot-left | Mobile axes (snap) | `bordered: true`, x+y: `{ mode: 'relative', crossingValue: 0, snapTolerancePx: 30, offscreen: 'border' }` |
+| Bot-right | Mobile, hide offscreen | `bordered: true`, x+y: `{ mode: 'relative', crossingValue: 0, snapTolerancePx: 30, offscreen: 'hide' }` |
+
+### Data
+
+Deterministic LCG `makeData()` produces 200 points: x uniform `[-5,5]`, y uniform `[-5,5]`, quadrant-based RGBA colors. Module-level `SEED_DATA` constant; each `PlotCell` seeds its own `PlotController` with the same data and resets domain to `[-6,6]`.
+
+### New files
+
+- `examples/AxisShowcaseExample.jsx` — page component + `PlotCell`
+- `examples/src/axis-showcase.js` — webpack entry
+- `public/axis-showcase.html` — HTML template
+
+**Also updated:** `webpack.config.js` (entry + HtmlWebpackPlugin), `examples/HubPage.jsx` (card), `README.md` (Phase 7 section).
+
+---
+
 ## F35 [COMPLETED] Axis Positioning Modes
 
 **Branch:** `feature/ARCH-G-F34-F35`

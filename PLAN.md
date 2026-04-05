@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 9.6
+**Plan Version:** 9.7
 **Last Updated:** 2026-04-04
-**Status:** Phase 7 complete. B9 + ARCH-G + F34 + F35 all done. No pending features.
+**Status:** Phase 7 complete. B9 + ARCH-G + F34 + F35 + EX20 all done. No pending features.
 
 ---
 
@@ -121,7 +121,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | ARCH-G | AxisController Config/Domain Split | ✅ COMPLETED | feature/ARCH-G-F34-F35 | 2026-04-04 |
 | F34  | Bordered Plot Mode | ✅ COMPLETED | feature/ARCH-G-F34-F35 | 2026-04-04 |
 | F35  | Axis Positioning Modes | ✅ COMPLETED | feature/ARCH-G-F34-F35 | 2026-04-04 |
-| EX20 | Axis Options Showcase | 🔲 PENDING | — | — |
+| EX20 | Axis Options Showcase | ✅ COMPLETED | feature/EX20 | 2026-04-04 |
 
 ---
 
@@ -381,37 +381,10 @@ Full spec: [docs/plan-archive.md#f35](docs/plan-archive.md#f35)
 
 ---
 
-### EX20 [PENDING] Axis Options Showcase
-
-**Branch:** `feature/EX20`
-**Depends on:** F35
-
-**Purpose:** A single page with 6 small plots arranged in a 2×3 grid, each seeded with the same ~200 random points, demonstrating the key axis positioning and appearance options from F34/F35. Intended as a visual reference for users exploring axis config.
-
-#### Layout (2 columns × 3 rows)
-
-| Position | Title | Config |
-|---|---|---|
-| Top-left | Default (bordered) | `bordered: true` (default), `mode: 'border', edges: ['bottom']` / `['left']` |
-| Top-right | No border fill | `bordered: false`, `mode: 'border'` |
-| Mid-left | Mirrored axes | `bordered: true`, x edges: `['bottom','top']`, y edges: `['left','right']` |
-| Mid-right | Crossing at zero | `bordered: true`, x: `{ mode: 'relative', crossingValue: 0, snapTolerancePx: 0 }`, y: same |
-| Bot-left | Mobile axes (snap) | `bordered: true`, x+y: `{ mode: 'relative', crossingValue: 0, snapTolerancePx: 30, offscreen: 'border' }` |
-| Bot-right | Mobile, hide offscreen | `bordered: true`, x+y: `{ mode: 'relative', crossingValue: 0, snapTolerancePx: 30, offscreen: 'hide' }` |
-
-Each plot is independently pannable/zoomable so the user can drag to see snap and hide behaviors live. A small label below each plot names the config in use.
-
-#### Data
-
-Each plot uses its own `DataStore` seeded with 200 points: x uniform `[-5, 5]`, y uniform `[-5, 5]`. Domain set to `[-6, 6]` on both axes so the crossing value (0) is visible on load.
-
-#### New files
-
-- `examples/AxisShowcaseExample.jsx`
-- `examples/src/axis-showcase.js`
-- `public/axis-showcase.html`
-
-**Also:** add HubPage card, webpack entry + HtmlWebpackPlugin, README entry.
+### EX20 [COMPLETED] Axis Options Showcase
+**Completed:** 2026-04-04 | **Branch:** `feature/EX20`
+**Files:** `examples/AxisShowcaseExample.jsx`, `examples/src/axis-showcase.js`, `public/axis-showcase.html`; webpack entry + HtmlWebpackPlugin; HubPage card; README section.
+**Summary:** 2×3 grid of 6 independently pannable/zoomable plots — deterministic LCG 200-point scatter seeded once at module load (`SEED_DATA`). Covers all F34/F35 combos: bordered, no-border, mirrored edges, relative-stationary, mobile-snap, mobile-hide.
 
 ---
 
@@ -419,6 +392,7 @@ Each plot uses its own `DataStore` seeded with 200 points: x uniform `[-5, 5]`, 
 
 > Full history in [docs/plan-archive.md — Change Log](docs/plan-archive.md#change-log).
 
+- **2026-04-04 [Claude]**: EX20 completed (v9.7) — `AxisShowcaseExample.jsx` (2×3 CSS grid; 6 `PlotCell` components; deterministic LCG `makeData()` → 200-point `SEED_DATA`; each cell uses two raw `<canvas>` refs with `useEffect` init); webpack entry `axis-showcase.js`; HTML template; HubPage card; README section. Branch: `feature/EX20`.
 - **2026-04-04 [Claude]**: F35 completed (v9.6) — `AxisController` gains `mode`/`edges`/`crossingValue`/`snapTolerancePx`/`offscreen`/`labelSide` positioning options. `AxisRenderer` refactored: `_renderXTicks`/`_renderYTicks` replaced by `_renderXAxis`/`_renderYAxis` dispatchers; border mode loops over `edges[]` with outward-facing ticks and single grid pass; relative mode anchors axis line to a data coordinate with snap-to-edge, off-screen handling, mid-plot tick-flip at viewport midpoint, and configurable label side. Branch: `feature/ARCH-G-F34-F35`.
 - **2026-04-04 [Claude]**: F34 completed (v9.5) — `AxisRenderer._fillGutters()` fills four margin rects with container CSS background before tick rendering; `AxisRenderer.setBordered(bool)` public method; `PlotController` accepts `bordered` opt and calls `setBordered(true)` after `AxisRenderer` init; `PlotCanvas` forwards `bordered` prop; transparent/unset backgrounds are skipped. Branch: `feature/ARCH-G-F34-F35`.
 - **2026-04-04 [Claude]**: ARCH-G completed (v9.4) — `AxisController` refactored to config-only (no domain state, no EventEmitter); domain mutation methods (`setXDomain`/`setYDomain`/`getXDomain`/`getYDomain`/`zoomAroundX`/`zoomAroundY`/`panByPixels({dx,dy})`/`scaleDomainFromMidpointX`/`scaleDomainFromMidpointY`) added to `ViewportController`; `PlotController` wires viewport `'domainChanged'` event; `PlotCanvas` gains `xAxis`/`yAxis` props; all 7 example/doc files + 3 src library files updated from old API; lib build zero errors. Branch: `feature/ARCH-G-F34-F35`.

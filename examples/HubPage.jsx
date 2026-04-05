@@ -78,6 +78,11 @@ export default function HubPage() {
       title: 'Multi-Sensor Scatter (F22/EX7)',
       desc: '50 sensors × 10k points each (500k total). TraceGroup partitions bulk data by tag in O(n). 25-color OKLAB-derived palette cycles at sensor_25. Scrollable sidebar with per-sensor visibility checkboxes + color swatches. Show All / Hide All bulk controls. React owns zero arrays.',
     },
+    {
+      href: 'axis-showcase.html',
+      title: 'Axis Options Showcase (EX20)',
+      desc: '2×3 grid of independently pannable/zoomable plots covering all F34/F35 axis modes: border (default), no-border fill, mirrored edges, relative/stationary at zero, mobile (snaps to edge), and mobile/hide-when-offscreen. Each plot is seeded with the same 200-point deterministic scatter.',
+    },
   ];
 
   const styles = {

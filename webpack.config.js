@@ -20,6 +20,7 @@ module.exports = (env, argv) => {
       'bitmap':              './examples/src/bitmap.js',
       'bitmap-lod':          './examples/src/bitmap-lod.js',
       'data-loaders':        './examples/src/data-loaders.js',
+      'axis-showcase':       './examples/src/axis-showcase.js',
     },
     output: {
       path: path.resolve(__dirname, 'dist'),
@@ -122,6 +123,11 @@ module.exports = (env, argv) => {
         template: './public/data-loaders.html',
         filename: 'data-loaders.html',
         chunks:   ['data-loaders'],
+      }),
+      new HtmlWebpackPlugin({
+        template: './public/axis-showcase.html',
+        filename: 'axis-showcase.html',
+        chunks:   ['axis-showcase'],
       }),
       new webpack.ProvidePlugin({
         process: 'process/browser',
