@@ -87,7 +87,7 @@ const PANELS = [
     }),
   },
   {
-    title: 'Mobile axes (snaps to edges)',
+    title: 'Mobile axes crossing at (3,3) (snaps to edges)',
     sub:   'mode: "relative", crossingValue: 3, snapTolerancePx: 30, offscreen: "border"',
     ctrl: () => new PlotController({
       xAxis: new AxisController({ scaleType: 'linear', tickCount: 4, mode: 'relative', crossingValue: 3, snapTolerancePx: 30, offscreen: 'border' }),
