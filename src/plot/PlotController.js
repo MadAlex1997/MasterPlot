@@ -231,7 +231,7 @@ export class PlotController extends EventEmitter {
     webglCanvas.addEventListener('mousemove', this._onMouseMove);
     webglCanvas.addEventListener('mouseup',   this._onMouseUp);
     this._resizeObserver = new ResizeObserver(() => this._onResize());
-    this._resizeObserver.observe(this._webglCanvas);
+    this._resizeObserver.observe(this._webglCanvas.parentElement);
 
     // F23: spacebar → autoScale (skipped when pan/zoom is disabled)
     if (!this._disablePanZoom) {
@@ -817,9 +817,10 @@ export class PlotController extends EventEmitter {
   }
 
   _onResize() {
-    if (!this._webglCanvas) return;
-    const w = this._webglCanvas.offsetWidth;
-    const h = this._webglCanvas.offsetHeight;
+    const container = this._webglCanvas?.parentElement;
+    if (!container) return;
+    const w = container.offsetWidth;
+    const h = container.offsetHeight;
     if (w === 0 || h === 0) return;
 
     this._webglCanvas.width = w;
