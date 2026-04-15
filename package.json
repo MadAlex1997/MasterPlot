@@ -2,6 +2,7 @@
   "name": "masterplot",
   "version": "1.0.0",
   "description": "Production-grade scientific plotting engine with WebGL rendering",
+  "license": "MIT",
   "main": "lib/index.cjs.js",
   "module": "lib/index.esm.js",
   "exports": {
