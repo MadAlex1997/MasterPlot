@@ -14,7 +14,8 @@ Designed for real-time data, large datasets (tested to 10M+ points), and audio/s
 ### Core Engine
 - **WebGL rendering** via deck.gl `OrthographicView` — no maps, no geospatial assumptions
 - **Scatter plots** with instanced rendering (`ScatterLayer`) — GPU typed-array buffers, no per-point JS objects
-- **Line plots** (`LineLayer`) and arbitrary custom layers via a pluggable layer registry
+- **Line plots** (`LineLayer`) and **signal line plots** (`SignalStore`) for waveform/time-series data with rolling-window trim support
+- Arbitrary custom layers via a pluggable layer registry
 - **Pluggable layer registry** — `PlotController.registerDataLayer(id, buildFn)` replaces the default scatter layer with any deck.gl layer; `unregisterDataLayer` and `updateDataLayerProps` for runtime management; `disableDefaultDataLayer` constructor option to start empty
 - **Linear, log, and time axes** via d3-scale; canvas 2D overlay for tick labels and grid
 - **Axis positioning modes** — axes can sit at fixed canvas edges (border mode) or float at a data coordinate with optional edge-snapping (relative mode); axes can be mirrored (ticks on both sides)
@@ -724,6 +725,62 @@ tg.setTraceAttr('sensor_0', { color: [0,255,0,255] });
 2. Palette color: `palette[insertionIndex % palette.length]`
 3. `defaultAttrs`
 4. Library defaults: `{ opacity: 1.0, size: 4.0, color: [255,255,255,255] }`
+
+---
+
+## SignalStore
+
+Multi-signal line-plot layer backed by deck.gl `PathLayer`. Designed for waveform and time-series data where each signal is a continuous polyline. Plugs into `PlotController` via `registerDataLayer`, just like `TraceGroup`.
+
+```js
+import { SignalStore } from './src/plot/layers/SignalDataLayer.js';
+
+const signals = new SignalStore();
+const ctrl = new PlotController({ disableDefaultDataLayer: true });
+
+// Register signals before appending data
+signals.addSignal('ch0', [255, 100, 100, 255]);
+signals.addSignal('ch1', [100, 255, 100, 255]);
+
+ctrl.registerDataLayer('signals', signals.toLayerDef().build);
+
+// Append samples — x values assigned automatically from xBase + i
+signals.appendSignalData('ch0', ch0Samples, signals.xCounter);
+signals.appendSignalData('ch1', ch1Samples, signals.xCounter);
+signals.advanceXCounter(ch0Samples.length);
+
+// Fit domain to current data
+const { xDomain, yDomain } = signals.expandDomains();
+ctrl.viewport.setXDomain(xDomain);
+ctrl.viewport.setYDomain(yDomain);
+ctrl.markDirty();
+```
+
+### Rolling window (trim old data)
+
+```js
+// Keep only the last 10 seconds of samples (xCounter increments per sample)
+const windowSize = 10 * sampleRate;
+signals.trimBefore(signals.xCounter - windowSize);
+```
+
+### API
+
+| Method | Returns | Description |
+|---|---|---|
+| `addSignal(id, color)` | `void` | Register a named signal. `color` is `[R, G, B, A]` 0–255. |
+| `appendSignalData(id, yValues, xBase)` | `void` | Append y-values; x coordinates are `xBase + i`. Bumps signal version. |
+| `advanceXCounter(n)` | `void` | Advance the shared x counter by `n` after one round of appends. |
+| `trimBefore(xMin)` | `void` | Remove all path points where `x < xMin`. Binary-search per signal; versions bumped. |
+| `expandDomains()` | `{ xDomain, yDomain }` | Compute `[0, xMax]` / `[yMin-pad, yMax+pad]` extents from current data. |
+| `getSignal(id)` | `object \| undefined` | Direct access to signal internals `{ path, color, layerData, version }`. |
+| `getPointCount()` | `number` | Total path points across all registered signals. |
+| `reset()` | `void` | Clear all signal data and reset `xCounter` to 0. |
+| `toLayerDef()` | `{ id, build }` | Returns a layer def for `registerDataLayer`. |
+
+| Getter | Returns | Description |
+|---|---|---|
+| `xCounter` | `number` | Shared x position counter; increment with `advanceXCounter`. |
 
 ---
 
