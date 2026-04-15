@@ -159,7 +159,8 @@ function PlotControllerSection() {
           <tr><Td mono>yDomain</Td><Td type>number[]</Td><Td mono>[0, 100]</Td><Td>Initial Y domain [min, max]</Td></tr>
           <tr><Td mono>xLabel</Td><Td type>string</Td><Td mono>''</Td><Td>Label text painted beside the X axis</Td></tr>
           <tr><Td mono>yLabel</Td><Td type>string</Td><Td mono>''</Td><Td>Label text painted beside the Y axis</Td></tr>
-          <tr><Td mono>panMode</Td><Td type>'follow'|'drag'</Td><Td mono>'follow'</Td><Td>Initial pan mode</Td></tr>
+          <tr><Td mono>panMode</Td><Td type>'follow'|'drag'</Td><Td mono>'drag'</Td><Td>Initial pan mode</Td></tr>
+          <tr><Td mono>bordered</Td><Td type>boolean</Td><Td mono>true</Td><Td>Fill axis gutter areas with the container element's CSS backgroundColor before rendering ticks (F34). Disable for transparent/overlay layouts.</Td></tr>
           <tr><Td mono>autoExpand</Td><Td type>boolean</Td><Td mono>true</Td><Td>Expand domain automatically when new data exceeds current bounds</Td></tr>
           <tr><Td mono>autoScaleKey</Td><Td type>string|null</Td><Td mono>' '</Td><Td>Keyboard key that triggers autoScale(); <code style={inlineCode}>null</code> to disable the spacebar binding</Td></tr>
           <tr><Td mono>disableDefaultDataLayer</Td><Td type>boolean</Td><Td mono>false</Td><Td>Omit the built-in scatter layer; register custom layers via registerDataLayer() instead</Td></tr>
@@ -255,6 +256,13 @@ function AxisControllerSection() {
           <tr><Td mono>tickCount</Td><Td type>number</Td><Td mono>5</Td><Td>Approximate target tick count</Td></tr>
           <tr><Td mono>label</Td><Td type>string|null</Td><Td mono>null</Td><Td>Axis label text rendered next to the gutter</Td></tr>
           <tr><Td mono>tickFormat</Td><Td type>fn|null</Td><Td mono>null</Td><Td>Custom tick formatter <code style={inlineCode}>(value, index) =&gt; string</code>; defaults to SI/fixed auto-formatter</Td></tr>
+          <tr><Td mono colSpan={4} style={{paddingTop:'0.6em',fontStyle:'italic',color:'#888'}}>F35 — Axis positioning mode</Td></tr>
+          <tr><Td mono>mode</Td><Td type>'border'|'relative'</Td><Td mono>'border'</Td><Td>'border' — axis rendered at fixed canvas edges (default). 'relative' — axis line tracks a data coordinate and can snap/hide at edges.</Td></tr>
+          <tr><Td mono>edges</Td><Td type>string[]|null</Td><Td mono>null</Td><Td>Border mode only. Which edges to render the axis on, e.g. <code style={inlineCode}>['bottom','top']</code> for mirrored axes. null = renderer default (bottom for x, left for y).</Td></tr>
+          <tr><Td mono>crossingValue</Td><Td type>number</Td><Td mono>0</Td><Td>Relative mode only. Data coordinate where the axis line sits (e.g. 0 for an axis at y=0).</Td></tr>
+          <tr><Td mono>snapTolerancePx</Td><Td type>number</Td><Td mono>0</Td><Td>Relative mode only. Snap the axis to the nearest edge when within this many pixels of it. 0 = stationary (never snaps).</Td></tr>
+          <tr><Td mono>offscreen</Td><Td type>'border'|'hide'</Td><Td mono>'border'</Td><Td>Relative mode only. What to do when crossingValue is outside the visible domain: snap to nearest edge or hide entirely.</Td></tr>
+          <tr><Td mono>labelSide</Td><Td type>'auto'|'positive'|'negative'</Td><Td mono>'auto'</Td><Td>Relative mode only. Which side of the axis line to draw tick labels. 'auto' flips at the viewport midpoint.</Td></tr>
         </tbody>
       </table>
 
@@ -743,7 +751,7 @@ function LUTControllerSection() {
         <tbody>
           <tr><Td mono>setLUT(presetName)</Td><Td mono>void</Td><Td>Switch colormap. Bumps version, emits 'lutChanged'. See LUTController.presetNames for valid values.</Td></tr>
           <tr><Td mono>setLevels(min, max)</Td><Td mono>void</Td><Td>Set level window. Bumps version, emits 'levelChanged'.</Td></tr>
-          <tr><Td mono>autoLevel()</Td><Td mono>void</Td><Td>Set levels to globalMin / globalMax from the last setData() call. Emits 'levelChanged'.</Td></tr>
+          <tr><Td mono>autoLevel(loPct?, hiPct?)</Td><Td mono>void</Td><Td>Set levels to the loPct/hiPct percentiles of the histogram (defaults: 2 / 98). Emits 'levelChanged'.</Td></tr>
           <tr><Td mono>setData(flatArray, globalMin, globalMax)</Td><Td mono>void</Td><Td>Feed a flat numeric array (e.g. STFT power Float32Array). Computes a 256-bin histogram and emits 'dataChanged'. Also available as setSpectrogramData() alias.</Td></tr>
           <tr><Td mono>getLUTArray()</Td><Td type>Uint8Array</Td><Td>Returns the current 256×4 RGBA lookup table array.</Td></tr>
         </tbody>
