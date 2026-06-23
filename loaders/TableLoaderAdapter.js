@@ -25,6 +25,8 @@ import { CSVLoader } from '@loaders.gl/csv';
 import { ArrowLoader } from '@loaders.gl/arrow';
 import { ParquetLoader } from '@loaders.gl/parquet';
 import { ZstdCodec } from 'zstd-codec';
+import lz4js from 'lz4js';
+import snappy from "snappyjs";
 import {
   getTableLength,
   getTableRowAsObject,
@@ -102,7 +104,11 @@ export class TableLoaderAdapter extends EventEmitter {
     try {
       table = await parse(arrayBuffer, loader, {
         csv: { dynamicTyping: true },
-        modules: { 'zstd-codec': ZstdCodec },
+        modules: { 
+          'zstd-codec': ZstdCodec ,
+          'lz4js':lz4js,
+          'snappy':snappy
+        },
       });
     } catch (err) {
       throw new Error(`TableLoaderAdapter: parse failed — ${err.message}`);
