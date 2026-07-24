@@ -366,7 +366,8 @@ export default function ExampleApp() {
 
   const handleRectZoomChange = (e) => {
     const checked = e.target.checked;
-    plotRef.current?.getController()?.setRectZoomMode(checked);
+    // F38: rect zoom is enabled purely by assigning the middle button to 'rectZoom'
+    plotRef.current?.getController()?.setMouseButtons({ middle: checked ? 'rectZoom' : 'none' });
     setRectZoom(checked);
   };
 

@@ -54,6 +54,11 @@ import { PolygonLayer }       from '@deck.gl/layers';
  * @property {object}   props        — the static props from the layer def
  */
 
+// F38: configurable mouse button bindings — defaults match pre-F38 hardcoded behavior
+const DEFAULT_MOUSE_BUTTONS = { left: 'pan', middle: 'none', right: 'zoomDrag' };
+const BUTTON_NAME_TO_CODE   = { left: 0, middle: 1, right: 2 };
+const VALID_MOUSE_ACTIONS   = new Set(['pan', 'zoomDrag', 'rectZoom', 'none']);
+
 export class PlotController extends EventEmitter {
   /**
    * @param {object} opts
@@ -68,7 +73,10 @@ export class PlotController extends EventEmitter {
    * @param {boolean} [opts.disableDefaultDataLayer=false]
    * @param {boolean} [opts.disablePanZoom=false]  — disable wheel zoom, right-drag zoom, pan,
    *                                                  and axis-drag zoom; ROI interaction still works
-   * @param {boolean} [opts.rectZoomMode=false]    — F37: enable middle-click drag-to-zoom
+   * @param {object}  [opts.mouseButtons]          — F38: button→action map. Keys 'left'|'middle'|'right';
+   *                                                  values 'pan'|'zoomDrag'|'rectZoom'|'none'.
+   *                                                  Default: { left: 'pan', middle: 'none', right: 'zoomDrag' }.
+   *                                                  F37's rect-zoom is opt-in — assign 'rectZoom' to a button to enable it.
    */
   constructor(opts = {}) {
     super();
@@ -165,11 +173,15 @@ export class PlotController extends EventEmitter {
     this._axisDragAxis   = null;   // 'x' | 'y'
     this._axisDragStart  = null;   // { x, y, xDomain, yDomain }
 
-    // F37: rect zoom mode — middle-click drag draws a rectangle, zooms to it on release
-    this._rectZoomMode    = opts.rectZoomMode ?? false;
+    // F37: rect zoom — middle-click drag draws a rectangle, zooms to it on release.
+    // Enabled/disabled purely via F38's mouseButtons mapping (no separate flag).
     this._isRectZooming   = false;
     this._rectZoomStart   = null;  // { x, y } screen pixels
     this._rectZoomCurrent = null;  // { x, y } screen pixels
+
+    // F38: configurable mouse button bindings — this._buttonActions: { [buttonCode]: action }
+    this._buttonActions = null;
+    this._setMouseButtonMap(opts.mouseButtons);
 
     // F28: disable pan/zoom (used by LUTHistogramController's internal PlotController)
     this._disablePanZoom = opts.disablePanZoom ?? false;
@@ -328,15 +340,49 @@ export class PlotController extends EventEmitter {
     this._followPanSpeed = Math.max(0.001, Number(speed));
   }
 
-  /** F37: toggle middle-click drag-to-zoom. Cancels any in-progress drag when disabled. */
-  setRectZoomMode(enabled) {
-    this._rectZoomMode = !!enabled;
-    if (!this._rectZoomMode && this._isRectZooming) {
-      this._isRectZooming   = false;
-      this._rectZoomStart   = null;
-      this._rectZoomCurrent = null;
-      this._dirty = true;
+  /**
+   * F38: remap which mouse button drives which interaction.
+   * Assign 'rectZoom' to a button to enable F37's rect-zoom (opt-in; no
+   * button has it by default); assign 'none' to disable a button entirely.
+   * @param {object} [cfg] — partial override of { left, middle, right }; unspecified
+   *   buttons keep their default action. Unrecognized action names fall back to
+   *   the default for that button (with a console warning).
+   */
+  setMouseButtons(cfg) {
+    this._setMouseButtonMap(cfg);
+
+    // Cancel any in-progress drag — its originating button may no longer map
+    // to the action that started it.
+    this._isPanning       = false;
+    this._panStart        = null;
+    this._panCurrentPos   = null;
+    this._isRightDragging = false;
+    this._rightDragStart  = null;
+    this._isRectZooming   = false;
+    this._rectZoomStart   = null;
+    this._rectZoomCurrent = null;
+    this._isAxisDragging  = false;
+    this._axisDragAxis    = null;
+    this._axisDragStart   = null;
+    this._dirty = true;
+  }
+
+  /** F38: internal — build the buttonCode→action lookup table from a { left, middle, right } config. */
+  _setMouseButtonMap(cfg) {
+    const merged = { ...DEFAULT_MOUSE_BUTTONS, ...(cfg || {}) };
+    const map = {};
+    for (const [name, code] of Object.entries(BUTTON_NAME_TO_CODE)) {
+      let action = merged[name];
+      if (!VALID_MOUSE_ACTIONS.has(action)) {
+        console.warn(
+          `PlotController: unknown mouseButtons action "${action}" for "${name}"; ` +
+          `falling back to default "${DEFAULT_MOUSE_BUTTONS[name]}"`
+        );
+        action = DEFAULT_MOUSE_BUTTONS[name];
+      }
+      map[code] = action;
     }
+    this._buttonActions = map;
   }
 
   // ─── F23: Auto-scale ───────────────────────────────────────────────────────
@@ -690,22 +736,26 @@ export class PlotController extends EventEmitter {
   // ─── Internal: pan ────────────────────────────────────────────────────────
 
   _onMouseDown(e) {
-    // F6: route right-click before the left-click-only guard
-    if (e.button === 2) {
+    // F38: resolve the action bound to whichever button was pressed
+    const action = this._buttonActions[e.button];
+    if (action === undefined) return; // unmapped button (e.g. browser back/forward)
+
+    // F6: right-drag zoom
+    if (action === 'zoomDrag') {
       if (!this._disablePanZoom) this._handleRightDown(e);
       return;
     }
 
-    // F37: middle-click drag-to-zoom
-    if (e.button === 1) {
-      if (!this._disablePanZoom && this._rectZoomMode) {
+    // F37: rect zoom drag-to-zoom
+    if (action === 'rectZoom') {
+      if (!this._disablePanZoom) {
         e.preventDefault(); // block native middle-click autoscroll cursor
         this._handleRectZoomDown(e);
       }
       return;
     }
 
-    if (e.button !== 0) return;
+    if (action !== 'pan') return; // 'none' — no-op
 
     const pos = this._viewport.getCanvasPosition(e, this._webglCanvas);
 
@@ -735,19 +785,11 @@ export class PlotController extends EventEmitter {
 
     if (this._disablePanZoom) return; // ROI hit-test ran; no pan/zoom
 
-    this._isPanning = true;
-    this._panStart  = {
-      screenX:  pos.x,
-      screenY:  pos.y,
-      xDomain: this._viewport.getXDomain(),
-      yDomain: this._viewport.getYDomain(),
-    };
-    // F5: track current cursor position for velocity pan
-    this._panCurrentPos = { x: pos.x, y: pos.y };
+    this._handlePanDown(pos);
   }
 
   _onMouseMove(e) {
-    // F6: handle right-click drag zoom (independent of left-click pan)
+    // F6: handle right-click drag zoom (independent of pan)
     if (this._isRightDragging) { this._handleRightMove(e); }
 
     // F37: rect zoom drag — mutually exclusive with plot pan
@@ -759,7 +801,50 @@ export class PlotController extends EventEmitter {
     if (!this._isPanning || !this._panStart) return;
 
     const pos = this._viewport.getCanvasPosition(e, this._webglCanvas);
+    this._handlePanMove(pos);
+  }
 
+  _onMouseUp(e) {
+    // F38: resolve the action bound to whichever button was released
+    const action = this._buttonActions[e.button];
+
+    // F6: clear right-click drag zoom state
+    if (action === 'zoomDrag' && this._isRightDragging) {
+      this._isRightDragging = false;
+      this._rightDragStart  = null;
+    }
+    // F21: clear axis drag zoom state
+    if (this._isAxisDragging) {
+      this._isAxisDragging = false;
+      this._axisDragAxis   = null;
+      this._axisDragStart  = null;
+    }
+    // F37: commit rect zoom drag
+    if (action === 'rectZoom' && this._isRectZooming) {
+      this._handleRectZoomUp();
+    }
+    if (action === 'pan' && this._isPanning) {
+      this._isPanning     = false;
+      this._panStart      = null;
+      this._panCurrentPos = null;  // F5: stop velocity pan
+    }
+  }
+
+  // F4/F5: pan mousedown — start pan (drag or follow, per this._panMode)
+  _handlePanDown(pos) {
+    this._isPanning = true;
+    this._panStart  = {
+      screenX:  pos.x,
+      screenY:  pos.y,
+      xDomain: this._viewport.getXDomain(),
+      yDomain: this._viewport.getYDomain(),
+    };
+    // F5: track current cursor position for velocity pan
+    this._panCurrentPos = { x: pos.x, y: pos.y };
+  }
+
+  // F4/F5: pan mousemove — apply drag pan immediately, or track position for follow pan
+  _handlePanMove(pos) {
     if (this._panMode === 'drag') {
       // F4: drag pan — restore start domains then re-apply pixel delta (avoids float drift)
       const dx = pos.x - this._panStart.screenX;
@@ -771,29 +856,6 @@ export class PlotController extends EventEmitter {
     } else {
       // F5: follow pan — just track position; RAF velocity tick does the work
       this._panCurrentPos = { x: pos.x, y: pos.y };
-    }
-  }
-
-  _onMouseUp(e) {
-    // F6: clear right-click drag zoom state
-    if (e.button === 2 && this._isRightDragging) {
-      this._isRightDragging = false;
-      this._rightDragStart  = null;
-    }
-    // F21: clear axis drag zoom state
-    if (this._isAxisDragging) {
-      this._isAxisDragging = false;
-      this._axisDragAxis   = null;
-      this._axisDragStart  = null;
-    }
-    // F37: commit rect zoom drag
-    if (e.button === 1 && this._isRectZooming) {
-      this._handleRectZoomUp(e);
-    }
-    if (this._isPanning) {
-      this._isPanning     = false;
-      this._panStart      = null;
-      this._panCurrentPos = null;  // F5: stop velocity pan
     }
   }
 

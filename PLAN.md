@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 9.12
+**Plan Version:** 9.13
 **Last Updated:** 2026-07-24
-**Status:** Phase 7 + Phase 8 complete. F36 done. F37 (Phase 9) done. F38 pending (depends on F37).
+**Status:** Phase 7 + Phase 8 + Phase 9 complete. F36, F37, F38 all done. No pending features.
 
 ---
 
@@ -124,7 +124,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | EX20 | Axis Options Showcase | ✅ COMPLETED | feature/EX20 | 2026-04-04 |
 | F36 | ROI Interaction Control (movable/resizable lock + pickable) | ✅ COMPLETED | feature/F36 | 2026-07-24 |
 | F37 | Rect Zoom Mode (middle-click drag-to-zoom) | ✅ COMPLETED | feature/F37 | 2026-07-24 |
-| F38 | Configurable Mouse Button Bindings | 🔲 PENDING | feature/F38 | — |
+| F38 | Configurable Mouse Button Bindings | ✅ COMPLETED | feature/F38 | 2026-07-24 |
 
 ---
 
@@ -154,7 +154,7 @@ F36  (independent — no dependencies) ✅
 
 F37  (independent — no dependencies) ✅
 
-F38  (depends on F37 — remaps the button F37 hardcodes to middle-click)
+F38  (depends on F37 — remaps the button F37 hardcodes to middle-click) ✅
 ```
 
 ---
@@ -418,26 +418,15 @@ Full spec: [docs/plan-archive.md#f36](docs/plan-archive.md#f36)
 
 ### F37 [COMPLETED] Rect Zoom Mode (middle-click drag-to-zoom)
 **Completed:** 2026-07-24 | **Branch:** feature/F37
-Opt-in `rectZoomMode` constructor option / `setRectZoomMode()` runtime toggle on `PlotController`; middle-click drag draws a live `PolygonLayer` rectangle overlay (log-scale aware) between press and current cursor position, release zooms `viewport.setDomains()` to the exact data bounds; sub-3px drags no-op; wired into `ExampleApp.jsx` via a checkbox + HelpOverlay entry; README + ApiReferencePage updated.
+Opt-in rect-zoom action on `PlotController` (enabled via F38's `mouseButtons` mapping — no separate flag): dragging a button assigned `'rectZoom'` draws a live `PolygonLayer` rectangle overlay (log-scale aware) between press and current cursor position, release zooms `viewport.setDomains()` to the exact data bounds; sub-3px drags no-op; wired into `ExampleApp.jsx` via a checkbox + HelpOverlay entry; README + ApiReferencePage updated.
 Full spec: [docs/plan-archive.md#f37](docs/plan-archive.md#f37)
 
 ---
 
-### F38 [PENDING] Configurable Mouse Button Bindings
-**Branch:** `feature/F38`
-**Depends on:** F37 (remaps the button F37's rect-zoom currently hardcodes to middle-click)
-
-**Motivation:** `PlotController` currently hardcodes button semantics: left (`button===0`) → pan, right (`button===2`) → drag-zoom (F6), middle (`button===1`) → rect-zoom (F37). Some users' input devices or muscle memory want these swapped (e.g. middle-drag pan, right-drag rect-zoom). This replaces the hardcoded button checks with a configurable button→action map.
-
-**Design:**
-- New constructor option, e.g. `opts.mouseButtons = { left: 'pan', middle: 'rectZoom', right: 'zoomDrag' }` — defaults match current hardcoded behavior exactly (no behavior change for existing users who don't pass this option).
-- `_onMouseDown`/`_onMouseMove`/`_onMouseUp` replace the `e.button === N` checks with a lookup: `const action = this._buttonMap[e.button]`, then dispatch to the corresponding handler set.
-- **Refactor requirement:** pan's start/move/end logic is currently inlined directly in `_onMouseDown`/`_onMouseMove`/`_onMouseUp` (unlike F6's `_handleRightDown/Move` and F37's `_handleRectZoomDown/Move/Up`, which are already extracted). Pan needs the same extraction (`_handlePanDown/Move/Up`) so all three actions share a uniform dispatch shape.
-- Axis-drag zoom (F21) is triggered by cursor position over the axis gutter, not by button — stays as-is, orthogonal to this feature.
-- Validation: reject/warn on duplicate button assignments (two actions mapped to the same button) at construction time.
-- Runtime setter: `setMouseButtons(map)` mirroring `setPanMode`/`setRectZoomMode`.
-
-**Verification:** Default behavior unchanged (regression-check F4/F6/F37 still work with no `mouseButtons` option passed). Remapping e.g. `{ left: 'rectZoom', middle: 'pan' }` swaps the interaction correctly.
+### F38 [COMPLETED] Configurable Mouse Button Bindings
+**Completed:** 2026-07-24 | **Branch:** feature/F38
+`PlotController` gains `mouseButtons` constructor option + `setMouseButtons()` runtime setter — a `{ left, middle, right }` → `'pan'|'zoomDrag'|'rectZoom'|'none'` map (default `{ left: 'pan', middle: 'none', right: 'zoomDrag' }`) replacing hardcoded `e.button === N` checks in `_onMouseDown`/`_onMouseMove`/`_onMouseUp`; pan's inlined start/move logic extracted into `_handlePanDown`/`_handlePanMove` for parity with F6/F37's handlers; F37's separate `rectZoomMode` flag/`setRectZoomMode()` removed entirely — rect-zoom is now enabled solely by assigning `'rectZoom'` to a button. README + ApiReferencePage updated.
+Full spec: [docs/plan-archive.md#f38](docs/plan-archive.md#f38)
 
 ---
 
@@ -445,6 +434,7 @@ Full spec: [docs/plan-archive.md#f37](docs/plan-archive.md#f37)
 
 > Full history in [docs/plan-archive.md — Change Log](docs/plan-archive.md#change-log).
 
+- **2026-07-24 [Claude]**: F38 completed (v9.13) — `PlotController` gains `mouseButtons` constructor option + `setMouseButtons()`; `DEFAULT_MOUSE_BUTTONS = { left: 'pan', middle: 'none', right: 'zoomDrag' }`; `_setMouseButtonMap()` builds a buttonCode→action lookup with fallback-to-default + console warning on unrecognized action names; `_onMouseDown`/`_onMouseUp` replaced hardcoded `e.button === N` checks with `this._buttonActions[e.button]` lookups (fixing a latent bug where mouseup's button checks would have silently failed to clear drag state under remapping); pan's inlined logic extracted into `_handlePanDown(pos)`/`_handlePanMove(pos)`. Per user request, F37's separate `rectZoomMode` flag and `setRectZoomMode()` method were removed — rect-zoom is now purely opt-in via assigning `'rectZoom'` to a button (`ExampleApp.jsx`'s checkbox now calls `setMouseButtons({ middle: checked ? 'rectZoom' : 'none' })`). Verified manually: default behavior unchanged, button remap swaps interactions correctly, invalid action name warns and falls back. Build zero errors. Branch: `feature/F38`.
 - **2026-07-24 [Claude]**: F37 completed (v9.12) — `PlotController` gains `rectZoomMode` constructor option + `setRectZoomMode()`; middle-click drag draws a live rectangle overlay (`PolygonLayer`, log-scale aware via the same `toX`/`toY` helper pattern as `ROILayer`) between press and current cursor position; release computes `[min,max]` per axis from the two corners and calls `viewport.setDomains()` for an atomic zoom; sub-3px drags are a no-op; `_onMouseDown`/`_onMouseMove`/`_onMouseUp` gained button-1 branches mutually exclusive with pan/axis-drag. `ExampleApp.jsx` got a "Rect zoom (middle-drag)" checkbox + HelpOverlay entry. README + `ApiReferencePage.jsx` updated. Verified manually on both a linear-axis page and a temporary log-x-axis test page (deleted after verification). Build zero errors. Branch: `feature/F37`.
 - **2026-07-24 [Claude]**: F38 (Configurable Mouse Button Bindings) added as PENDING (v9.11) — replaces PlotController's hardcoded button→action assignment (left=pan, right=F6 drag-zoom, middle=F37 rect-zoom) with a configurable `opts.mouseButtons` map; requires extracting pan's currently-inlined start/move/end logic into `_handlePanDown/Move/Up` for parity with F6/F37's already-separated handlers. Depends on F37. Branch: `feature/F38`.
 - **2026-07-24 [Claude]**: Phase 9 (Rect Zoom Mode) added as PENDING (v9.10) — F37: opt-in middle-click drag-to-zoom; draws a corner-to-corner rectangle overlay while the middle button is held, zooms the viewport to the rectangle's data bounds via `viewport.setDomains()` on release. Independent — no dependencies. Branch: `feature/F37`.

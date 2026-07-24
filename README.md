@@ -22,7 +22,8 @@ Designed for real-time data, large datasets (tested to 10M+ points), and audio/s
 - **Bordered plot mode** — fills axis gutter areas with the container's CSS background color, useful for dark-background layouts
 - **Wheel zoom** (cursor-centered), **drag pan**, and **right-click drag zoom**
 - **Axis drag zoom** — drag directly on a tick-label gutter to zoom that axis independently from its midpoint
-- **Rect zoom mode** — opt-in; middle-click drag draws a rectangle corner-to-corner, zooms the viewport to its exact data bounds on release
+- **Rect zoom mode** — opt-in; drag draws a rectangle corner-to-corner, zooms the viewport to its exact data bounds on release
+- **Configurable mouse buttons** — remap which mouse button drives pan, right-drag zoom, or rect zoom via `mouseButtons` / `setMouseButtons()`
 - **Auto-scale** — spacebar fits both axes to full data extent; `setHomeDomain()` registers explicit reset bounds
 
 ### ROI System
@@ -181,7 +182,7 @@ Central controller. Extends `EventEmitter`. Owns the render loop, deck.gl instan
 | `xAxis` | `AxisController` | (auto) | Config-only x-axis descriptor (scale type, tick format, label, positioning mode) |
 | `yAxis` | `AxisController` | (auto) | Config-only y-axis descriptor |
 | `panMode` | `'follow'\|'drag'` | `'drag'` | Initial pan mode |
-| `rectZoomMode` | `boolean` | `false` | Enable middle-click drag-to-zoom (F37) |
+| `mouseButtons` | `object` | `{ left: 'pan', middle: 'none', right: 'zoomDrag' }` | Button→action map (F38). Values: `'pan'`, `'zoomDrag'` (F6), `'rectZoom'` (F37, opt-in), `'none'` |
 | `bordered` | `boolean` | `true` | Fill axis gutter areas with the container element's CSS `backgroundColor` before rendering ticks |
 | `autoExpand` | `boolean` | `true` | Expand domain automatically when new data exceeds current bounds |
 | `autoScaleKey` | `string\|null` | `' '` | Keyboard key that triggers `autoScale()`; `null` to disable the spacebar binding |
@@ -199,7 +200,7 @@ Central controller. Extends `EventEmitter`. Owns the render loop, deck.gl instan
 | `appendData(chunk)` | `void` | Append `{ x, y, size?, color?, metadata? }` typed arrays to DataStore. Expands domain if `autoExpand` is on. Emits `'dataAppended'`. |
 | `setAutoExpand(enabled)` | `void` | Toggle whether `appendData()` widens the visible domain to encompass new data. |
 | `setPanMode(mode)` | `void` | Switch between `'follow'` (velocity-based) and `'drag'` (cursor-locked) pan modes. |
-| `setRectZoomMode(enabled)` | `void` | Toggle middle-click drag-to-zoom. Cancels any in-progress drag when disabled. |
+| `setMouseButtons(cfg)` | `void` | Remap button→action bindings (F38) at runtime. Partial override of `{ left, middle, right }`; cancels any in-progress drag. Unrecognized action names fall back to the default with a console warning. |
 | `setFollowPanSpeed(speed)` | `void` | Set follow-pan velocity scalar. Recommended range 0.005–0.1. |
 | `autoScale()` | `void` | Fit both axes to full data extents (±5 % padding) or to the registered home domain. Emits `'autoScaled'`. |
 | `setHomeDomain(xDomain, yDomain)` | `void` | Register explicit home bounds used by `autoScale()`. Either argument may be `null` to fall back to data extents. |
@@ -328,15 +329,26 @@ Dragging inside the plot area still **pans** as before; only gutter drags zoom. 
 
 ### Rect Zoom Mode
 
-Opt-in — off by default. When enabled, holding the middle mouse button and dragging inside the plot area draws a live rectangle overlay from the press point to the current cursor position (any direction, corner-to-corner). Releasing zooms the viewport to exactly that rectangle's data bounds via `viewport.setDomains()`. Drags under ~3px are treated as a no-op click.
+Opt-in — no button has this action by default. When a button is assigned `'rectZoom'` (see [Configurable Mouse Buttons](#configurable-mouse-buttons) below), holding that button and dragging inside the plot area draws a live rectangle overlay from the press point to the current cursor position (any direction, corner-to-corner). Releasing zooms the viewport to exactly that rectangle's data bounds via `viewport.setDomains()`. Drags under ~3px are treated as a no-op click.
 
 ```js
-const ctrl = new PlotController({ rectZoomMode: true });
-// or toggle at runtime:
-ctrl.setRectZoomMode(true);
+const ctrl = new PlotController({ mouseButtons: { middle: 'rectZoom' } });
+// or remap at runtime:
+ctrl.setMouseButtons({ middle: 'rectZoom' });
 ```
 
-Mutually exclusive with left-drag pan and right-click drag zoom (different mouse buttons); does not interfere with ROI creation or the axis-drag-zoom gutters. Ignored when `disablePanZoom` is set. Emits `zoomChanged` with `{ mode: 'rect', xDomain, yDomain }`.
+Mutually exclusive with pan and right-click drag zoom (different mouse buttons); does not interfere with ROI creation or the axis-drag-zoom gutters. Ignored when `disablePanZoom` is set. Emits `zoomChanged` with `{ mode: 'rect', xDomain, yDomain }`.
+
+### Configurable Mouse Buttons
+
+`PlotController` maps each mouse button to one interaction action via `mouseButtons` (constructor option) or `setMouseButtons()` (runtime). Keys are `'left'`, `'middle'`, `'right'`; values are `'pan'`, `'zoomDrag'` (F6 right-drag-style zoom), `'rectZoom'` (F37, opt-in), or `'none'`. Default: `{ left: 'pan', middle: 'none', right: 'zoomDrag' }` — unspecified buttons keep their default action, and an unrecognized action name falls back to the default for that button with a console warning.
+
+```js
+// Swap so middle button pans and left button rect-zooms
+ctrl.setMouseButtons({ left: 'rectZoom', middle: 'pan' });
+```
+
+Axis-drag zoom (dragging a tick-label gutter) is triggered by cursor position, not button choice, and always follows whichever button is mapped to `'pan'`.
 
 ### Auto-Scale
 

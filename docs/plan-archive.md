@@ -4973,4 +4973,31 @@ new TableLoaderAdapter(dataStore, {
 
 **Verification:** Build (`npm run build`) passes with zero errors. Manually verified on a linear-axis example page (`ExampleApp.jsx`) and a temporary log-x-axis test page (deleted after verification): middle-click-drag draws a live rectangle overlay tracking the cursor in any drag direction, no browser autoscroll cursor appears, release zooms the viewport to the rectangle's exact data bounds (correct on both linear and log scales), sub-3px drags no-op, and disabling the checkbox restores default middle-click behavior. Left-drag pan, right-click drag zoom (F6), wheel zoom, and ROI creation all continue to work unaffected, both with the mode on and off.
 
+**Superseded by F38 (same day):** the `rectZoomMode` constructor option and `setRectZoomMode()` method described above were removed in F38 — rect-zoom enablement is now expressed purely through F38's `mouseButtons` mapping (assign `'rectZoom'` to a button to enable it; no button has it by default). All other F37 mechanics (overlay rendering, `viewport.setDomains()` zoom application, log-scale handling) are unchanged.
+
+---
+
+### F38 — Configurable Mouse Button Bindings
+
+**Branch:** `feature/F38`
+**Completed:** 2026-07-24
+**Depends on:** F37 (remaps the button F37's rect-zoom used to hardcode to middle-click; also removes F37's separate enable flag)
+
+**Problem:** `PlotController` hardcoded button semantics: left (`button===0`) → pan, right (`button===2`) → drag-zoom (F6), middle (`button===1`, gated by a separate `rectZoomMode` flag) → rect-zoom (F37). Some users want these swapped (e.g. middle-drag pan, right-drag rect-zoom) or want rect-zoom bound to a different button without a redundant on/off flag layered on top.
+
+**Fix:**
+- `src/plot/PlotController.js`:
+  - Module-level constants: `DEFAULT_MOUSE_BUTTONS = { left: 'pan', middle: 'none', right: 'zoomDrag' }`, `BUTTON_NAME_TO_CODE = { left: 0, middle: 1, right: 2 }`, `VALID_MOUSE_ACTIONS = new Set(['pan', 'zoomDrag', 'rectZoom', 'none'])`.
+  - New constructor option `opts.mouseButtons` (partial override of `{ left, middle, right }`) resolved by `_setMouseButtonMap(cfg)` into `this._buttonActions` — a `{ [buttonCode]: action }` lookup table. Unrecognized action names fall back to the default for that button with a `console.warn`.
+  - New runtime setter `setMouseButtons(cfg)` — rebuilds the map and cancels any in-progress pan/right-drag/rect-zoom/axis-drag (since the button that started a drag may no longer map to the action that's tracking it).
+  - `_onMouseDown`/`_onMouseUp` replaced hardcoded `e.button === N` checks with `const action = this._buttonActions[e.button]`, then dispatch on the action string (`'zoomDrag'` → `_handleRightDown`/existing right-drag clear; `'rectZoom'` → `_handleRectZoomDown`/`_handleRectZoomUp`; `'pan'` → the pan path, including the F21 axis-drag-gutter check, which now triggers for whichever button is mapped to `'pan'` rather than being hardcoded to left-click). Buttons with no mapping (`undefined` lookup, e.g. browser back/forward buttons) are ignored.
+  - **Correctness fix, not just refactor:** the old `_onMouseUp` used `e.button === 2 && this._isRightDragging` / `e.button === 1 && this._isRectZooming` to decide which drag state to clear. Under remapping this would have been wrong — e.g. if `zoomDrag` were remapped to the left button, releasing left would never satisfy `e.button === 2` and the right-drag state would never clear. Rewriting these guards to check `this._buttonActions[e.button] === 'zoomDrag'` (etc.) instead of the raw button number fixes this for both the new configurable case and is behaviorally identical to before when using the default mapping.
+  - Pan's previously-inlined mousedown/mousemove logic extracted into `_handlePanDown(pos)` and `_handlePanMove(pos)`, matching the shape F6 (`_handleRightDown/Move`) and F37 (`_handleRectZoomDown/Move/Up`) already used — all three actions now dispatch through symmetric handler triples.
+  - **F37 flag removal (per user request during review):** `rectZoomMode` state field, the `opts.rectZoomMode` constructor option, and the `setRectZoomMode()` method were deleted outright. Rect-zoom is enabled solely by assigning `'rectZoom'` to a button via `mouseButtons`/`setMouseButtons()` — no button has it by default (`DEFAULT_MOUSE_BUTTONS.middle === 'none'`), preserving F37's original "opt-in, off by default" behavior without a second parallel toggle. The `_onMouseDown` rect-zoom branch's gate simplified from `!this._disablePanZoom && this._rectZoomMode` to `!this._disablePanZoom`.
+- `examples/ExampleApp.jsx` — the existing "Rect zoom (middle-drag)" checkbox's handler changed from `getController().setRectZoomMode(checked)` to `getController().setMouseButtons({ middle: checked ? 'rectZoom' : 'none' })`; no UI changes otherwise (checkbox label/position unchanged).
+- `README.md` — `mouseButtons` option and `setMouseButtons()` method rows added (replacing the removed `rectZoomMode`/`setRectZoomMode` rows); new "Configurable Mouse Buttons" subsection; "Rect Zoom Mode" subsection updated to reference button-mapping instead of the removed flag; feature bullet added under Core Engine.
+- `examples/docs/ApiReferencePage.jsx` — matching `mouseButtons` option row and `setMouseButtons(cfg)` method row added (replacing the removed `rectZoomMode`/`setRectZoomMode` rows).
+
+**Verification:** Build (`npm run build`) passes with zero errors after both the initial implementation and the subsequent flag-removal changes. Manually verified on `ExampleApp.jsx`: with no `mouseButtons` option passed, default behavior is byte-for-byte unchanged from pre-F38 (left pans, right drag-zooms, middle does nothing until the rect-zoom checkbox is checked). Via a temporary `window.__mpCtrl` devtools hook (removed after testing): `setMouseButtons({ left: 'rectZoom', middle: 'pan', right: 'zoomDrag' })` correctly swapped left-drag to rect-zoom and middle-drag to pan, with right-drag zoom unaffected; restoring via `setMouseButtons({})` returned to defaults; `setMouseButtons({ left: 'bogus' })` logged a console warning and left left-click's pan behavior intact (fallback to default). The rect-zoom checkbox (now driving `setMouseButtons({ middle: ... })` instead of the removed `setRectZoomMode()`) was re-verified working identically to its F37 behavior.
+
 ---
