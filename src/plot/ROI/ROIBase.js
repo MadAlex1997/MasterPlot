@@ -44,6 +44,7 @@ export class ROIBase extends EventEmitter {
       movable:    true,
       resizable:  true,
       visible:    true,
+      pickable:   true,
       ...opts.flags,
     };
 

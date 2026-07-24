@@ -4923,3 +4923,29 @@ new TableLoaderAdapter(dataStore, {
 **Verification:** confirmed working. No example changes needed.
 
 ---
+
+### F36 — ROI Interaction Control (movable/resizable lock + pickable)
+
+**Branch:** `feature/F36`
+**Completed:** 2026-07-24
+**Depends on:** none — fully independent
+
+**Problem:** `ROIBase.flags` already declared `movable` and `resizable` (alongside `visible`, which *was* enforced), but nothing in `ROIController` ever read them — every ROI could be dragged and resized regardless of these flags. Separately, `ROILayer` hardcoded `pickable: true` on every ROI's fill `PolygonLayer`, so there was no way to make an individual ROI inert to clicks (e.g. a reference band that should sit visually behind interactive ROIs without stealing clicks/drags from them).
+
+**Key design decision:** MasterPlot's drag/resize/select interactions do not go through deck.gl's picking system — `ROIController` does its own geometric hit-testing (`_hitTest`) directly off canvas mouse coordinates, entirely independent of the `pickable` prop on the deck.gl layers. The hardcoded `pickable: true` in `ROILayer.js` only affected deck.gl's internal picking, used solely for `onROIClick`/`autoHighlight` on the fill layer. `flags.pickable` was implemented as the single user-facing "fully inert" toggle, gating **both** systems (deck.gl `pickable` prop **and** `ROIController._hitTest`), so a non-pickable ROI is consistently unclickable everywhere. `flags.movable`/`flags.resizable` remain a finer-grained "locked but still selectable/clickable" toggle — locked ROIs can still be selected/highlighted in a table, they just don't move.
+
+**Fix:**
+- `src/plot/ROI/ROIBase.js` — added `pickable: true` to the default `flags` object. No change to `serialize()` — `flags` was already serialized wholesale, so `movable`/`resizable`/`pickable` round-trip through `serializeAll()`/`deserializeAll()`/`updateFromExternal()` automatically.
+- `src/plot/ROI/ROIController.js`:
+  - `_hitTest` skips any ROI with `flags.pickable === false` (alongside the existing `flags.visible` check) — non-pickable ROIs can't be selected, dragged, or resized via canvas interaction, matching their deck.gl non-pickable state.
+  - `_onMouseDown` now selects the hit ROI unconditionally (locked ROIs remain clickable/selectable), but only enters drag state if the resolved handle type is allowed: MOVE-handle drags require `flags.movable !== false`; any other (resize) handle requires `flags.resizable !== false`.
+  - New `setFlags(id, flagsPatch)` method — merges a patch into `roi.flags` and emits `roisChanged`. Does not bump `version` or emit `roiFinalized` since flags are behavioural, not geometric.
+- `src/plot/layers/ROILayer.js` — both fill-layer constructions (`_buildLinearRegionLayers`, `_buildRectROILayers`) changed `pickable: true` → `pickable: roi.flags.pickable !== false`. `LineROI`'s line/handle sub-layers were already `pickable: false` unconditionally (their drag goes through the controller's own line-proximity hit-test, not deck.gl picking) — no change needed there beyond the `_hitTest` gating.
+- `examples/ExampleApp.jsx` — added "Locked" and "Pickable" checkbox columns to both ROI tables (EX6: LinearRegion table + RectROI subset table). "Locked" toggles `movable`+`resizable` together (single lock switch, matching common ROI-editor UX); "Pickable" toggles `flags.pickable` directly. Both call `roiController.setFlags()` then `refreshROITables()` directly (checkbox change doesn't go through `roisChanged`→table-refresh wiring, since that event also fires on every drag-frame and isn't subscribed to table refresh for performance reasons).
+- `examples/docs/RoiDeepDivePage.jsx` — new "7. Behaviour Flags" section: full flag-effect table + "Locked vs. non-pickable" callout distinguishing the two restriction levels.
+- `examples/docs/ApiReferencePage.jsx` — `setFlags()` row added to ROIController Methods table; `deleteROI()` row updated to note the `deletable` flag gate; `serializeAll()` return shape updated to include `flags`; new callout linking to the RoiDeepDivePage flags table.
+- `README.md` — new "Behaviour Flags" subsection under ROI System with the same flag table + usage snippet.
+
+**Verification:** Build (`npm run build`) passes with zero errors. Locking an ROI via the table checkbox leaves it selectable (row highlight + plot highlight sync) but drag/resize handles have no effect. Unchecking "Pickable" makes the ROI fully inert (no hover highlight, no click, no drag, `onROIClick` never fires) while remaining visible. Toggling flags does not bump `version` or emit `roiFinalized`. Existing ROIs without an explicit `pickable` flag continue to behave exactly as before (default `true`).
+
+---

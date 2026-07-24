@@ -797,6 +797,28 @@ signals.trimBefore(signals.xCounter - windowSize);
 | `D` | Delete selected ROI | — |
 | `Esc` | Cancel creation mode | — |
 
+### Behaviour Flags
+
+Every ROI carries a `flags` object consulted by `ROIController` hit-testing and `ROILayer` rendering. Flags are behavioural, not geometric — toggling them never bumps `version` or emits `roiFinalized`.
+
+| Flag | Default | Effect when `false` |
+|------|---------|----------------------|
+| `movable` | `true` | Dragging the ROI body has no effect; still selectable and (if `resizable`) still resizable |
+| `resizable` | `true` | Corner/edge resize handles have no effect; still movable (if `movable`) and selectable |
+| `visible` | `true` | Not rendered; excluded from hit-testing |
+| `pickable` | `true` | Fully inert to clicks — excluded from `ROIController` hit-testing (no select/drag/resize/hover) **and** the deck.gl fill layer's `pickable` prop is set `false` (no `onROIClick`/`autoHighlight`). Stays visible if `visible` is true |
+| `deletable` | `true` | `roiController.deleteROI(id)` (including the `D` keybind) is a no-op |
+
+```js
+// Lock an ROI in place but keep it clickable/selectable
+ctrl.roiController.setFlags(roi.id, { movable: false, resizable: false });
+
+// Make an ROI fully inert — visible but unclickable (e.g. a background reference band)
+ctrl.roiController.setFlags(roi.id, { pickable: false });
+```
+
+`setFlags(id, flagsPatch)` merges the patch into `roi.flags` and emits `roisChanged`.
+
 ### LineROI Modes
 
 | Mode | Description |

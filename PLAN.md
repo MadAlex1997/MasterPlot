@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 9.7
-**Last Updated:** 2026-04-04
-**Status:** Phase 7 complete. B9 + ARCH-G + F34 + F35 + EX20 all done. No pending features.
+**Plan Version:** 9.9
+**Last Updated:** 2026-07-24
+**Status:** Phase 7 + Phase 8 complete. F36 done. No pending features.
 
 ---
 
@@ -122,6 +122,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | F34  | Bordered Plot Mode | ✅ COMPLETED | feature/ARCH-G-F34-F35 | 2026-04-04 |
 | F35  | Axis Positioning Modes | ✅ COMPLETED | feature/ARCH-G-F34-F35 | 2026-04-04 |
 | EX20 | Axis Options Showcase | ✅ COMPLETED | feature/EX20 | 2026-04-04 |
+| F36 | ROI Interaction Control (movable/resizable lock + pickable) | ✅ COMPLETED | feature/F36 | 2026-07-24 |
 
 ---
 
@@ -145,7 +146,9 @@ B9  (independent — no dependencies) ✅
 
 ARCH-G → F34 → F35 ✅
 
-F35 → EX20
+F35 → EX20 ✅
+
+F36  (independent — no dependencies) ✅
 ```
 
 ---
@@ -388,10 +391,25 @@ Full spec: [docs/plan-archive.md#f35](docs/plan-archive.md#f35)
 
 ---
 
+## Phase 8 — ROI Interaction Control
+
+**Motivation:** `ROIBase.flags` declared `movable` and `resizable` but `ROIController` never read them; `ROILayer` hardcoded deck.gl `pickable: true` with no per-ROI override. This phase wired both up.
+
+---
+
+### F36 [COMPLETED] ROI Interaction Control (movable/resizable lock + pickable)
+**Completed:** 2026-07-24 | **Branch:** feature/F36
+Added `pickable: true` to `ROIBase` default flags; `ROIController._hitTest` now skips non-pickable ROIs, and `_onMouseDown` gates drag-start on `movable`/`resizable` per handle type (locked ROIs stay selectable, just un-draggable); new `ROIController.setFlags(id, patch)` helper (no version bump — flags are behavioural, not geometric); `ROILayer` fill-layer `pickable` prop now reads `roi.flags.pickable !== false`; `ExampleApp.jsx` ROI tables (EX6) got Locked/Pickable checkbox columns; docs updated (RoiDeepDivePage §7, ApiReferencePage, README).
+Full spec: [docs/plan-archive.md#f36](docs/plan-archive.md#f36)
+
+---
+
 ## Recent Changelog
 
 > Full history in [docs/plan-archive.md — Change Log](docs/plan-archive.md#change-log).
 
+- **2026-07-24 [Claude]**: F36 completed (v9.9) — `ROIBase` flags gain `pickable: true`; `ROIController._hitTest` skips `flags.pickable === false` ROIs; `_onMouseDown` gates drag-start on `flags.movable`/`flags.resizable` per handle type (MOVE vs resize) while still selecting locked ROIs; new `ROIController.setFlags(id, patch)` (emits `roisChanged`, no version bump); `ROILayer` fill layers use `roi.flags.pickable !== false`; `ExampleApp.jsx` ROI tables (EX6) gain Locked/Pickable checkboxes wired via `setFlags()` + direct `refreshROITables()`; RoiDeepDivePage §7 "Behaviour Flags", ApiReferencePage `setFlags()`/`deleteROI()`/`serializeAll()` rows + callout, README "Behaviour Flags" subsection all added. Build zero errors. Branch: `feature/F36`.
+- **2026-07-24 [Claude]**: Phase 8 (ROI Interaction Control) added as PENDING (v9.8) — F36: wires the already-declared but never-enforced `flags.movable`/`flags.resizable` into `ROIController` hit-test/drag-start; adds new `flags.pickable` gating both `ROILayer`'s deck.gl `pickable` prop and `ROIController._hitTest`; `ROIController.setFlags()` helper; ExampleApp ROI table gets Locked/Pickable checkboxes (EX6). Independent — no dependencies. Branch: `feature/F36`.
 - **2026-04-04 [Claude]**: EX20 completed (v9.7) — `AxisShowcaseExample.jsx` (2×3 CSS grid; 6 `PlotCell` components; deterministic LCG `makeData()` → 200-point `SEED_DATA`; each cell uses two raw `<canvas>` refs with `useEffect` init); webpack entry `axis-showcase.js`; HTML template; HubPage card; README section. Branch: `feature/EX20`.
 - **2026-04-04 [Claude]**: F35 completed (v9.6) — `AxisController` gains `mode`/`edges`/`crossingValue`/`snapTolerancePx`/`offscreen`/`labelSide` positioning options. `AxisRenderer` refactored: `_renderXTicks`/`_renderYTicks` replaced by `_renderXAxis`/`_renderYAxis` dispatchers; border mode loops over `edges[]` with outward-facing ticks and single grid pass; relative mode anchors axis line to a data coordinate with snap-to-edge, off-screen handling, mid-plot tick-flip at viewport midpoint, and configurable label side. Branch: `feature/ARCH-G-F34-F35`.
 - **2026-04-04 [Claude]**: F34 completed (v9.5) — `AxisRenderer._fillGutters()` fills four margin rects with container CSS background before tick rendering; `AxisRenderer.setBordered(bool)` public method; `PlotController` accepts `bordered` opt and calls `setBordered(true)` after `AxisRenderer` init; `PlotCanvas` forwards `bordered` prop; transparent/unset backgrounds are skipped. Branch: `feature/ARCH-G-F34-F35`.

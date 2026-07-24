@@ -377,14 +377,23 @@ function ROIControllerSection() {
           <tr><Td mono>getAllROIs()</Td><Td type>ROIBase[]</Td><Td>Returns all ROIs in insertion order.</Td></tr>
           <tr><Td mono>getROI(id)</Td><Td type>ROIBase|undefined</Td><Td>Look up a single ROI by string id.</Td></tr>
           <tr><Td mono>addROI(roi)</Td><Td mono>void</Td><Td>Add a ROI to the internal map. Does not emit events — call <code style={inlineCode}>roi.onCreate()</code> and emit 'roisChanged' manually afterwards.</Td></tr>
-          <tr><Td mono>deleteROI(id)</Td><Td mono>void</Td><Td>Delete ROI and all descendants recursively. Emits 'roiDeleted' then 'roisChanged'.</Td></tr>
-          <tr><Td mono>serializeAll()</Td><Td type>object[]</Td><Td>Returns <code style={inlineCode}>{'[{ id, type, version, updatedAt, domain, parentId, metadata }]'}</code> for all ROIs.</Td></tr>
+          <tr><Td mono>deleteROI(id)</Td><Td mono>void</Td><Td>Delete ROI and all descendants recursively. No-op if <code style={inlineCode}>flags.deletable === false</code>. Emits 'roiDeleted' then 'roisChanged'.</Td></tr>
+          <tr><Td mono>setFlags(id, flagsPatch)</Td><Td mono>void</Td><Td>Merge a patch into <code style={inlineCode}>roi.flags</code> (e.g. <code style={inlineCode}>{'{ movable: false, resizable: false }'}</code> to lock, <code style={inlineCode}>{'{ pickable: false }'}</code> to make click-inert). Does not bump version or emit 'roiFinalized' — flags are behavioural, not geometric. Emits 'roisChanged'.</Td></tr>
+          <tr><Td mono>serializeAll()</Td><Td type>object[]</Td><Td>Returns <code style={inlineCode}>{'[{ id, type, version, updatedAt, domain, parentId, metadata, flags }]'}</code> for all ROIs.</Td></tr>
           <tr><Td mono>deserializeAll(array)</Td><Td mono>void</Td><Td>Clear all existing ROIs and restore from a serialized array. Emits 'roisChanged' once.</Td></tr>
           <tr><Td mono>updateFromExternal(serializedROI)</Td><Td type>boolean</Td><Td>Version-gated update: rejects silently if <code style={inlineCode}>incoming.version {'<='} current.version</code>. Emits 'roiExternalUpdate' + 'roisChanged' on accept. Returns true if accepted.</Td></tr>
           <tr><Td mono>enterCreateMode(type)</Td><Td mono>void</Td><Td>Put controller in creation mode: 'linear' (2-click), 'rect' (2-click), 'vline' (1-click), 'hline' (1-click). Emits 'modeChanged'.</Td></tr>
           <tr><Td mono>cancelCreateMode()</Td><Td mono>void</Td><Td>Exit creation mode without placing a ROI. Emits 'modeChanged'.</Td></tr>
         </tbody>
       </table>
+
+      <div style={calloutStyle}>
+        <strong>Behaviour flags</strong> — every ROI has a <code style={inlineCode}>flags</code>{' '}
+        object (<code style={inlineCode}>movable</code>, <code style={inlineCode}>resizable</code>,{' '}
+        <code style={inlineCode}>visible</code>, <code style={inlineCode}>pickable</code>,{' '}
+        <code style={inlineCode}>deletable</code>) consulted by hit-testing and rendering; see{' '}
+        <a href="#roi-deep-dive" style={{ color: '#7df' }}>ROI Deep-Dive — Behaviour Flags</a> for the full effect table.
+      </div>
 
       <h4 style={h4Style}>Events</h4>
       <table style={tableStyle}>

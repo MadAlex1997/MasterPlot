@@ -65,7 +65,7 @@ export class ROILayer extends CompositeLayer {
       getLineColor:  [...color, 200],
       lineWidthMinPixels: 1,
       lineWidthUnits: 'pixels',
-      pickable:      true,
+      pickable:      roi.flags.pickable !== false,
       autoHighlight: true,
       onClick:       () => this.props.onROIClick && this.props.onROIClick(roi),
     });
@@ -169,7 +169,7 @@ export class ROILayer extends CompositeLayer {
       getLineColor:  [...color, 200],
       lineWidthMinPixels: 1,
       lineWidthUnits: 'pixels',
-      pickable:      true,
+      pickable:      roi.flags.pickable !== false,
       autoHighlight: true,
       onClick:       () => this.props.onROIClick && this.props.onROIClick(roi),
     }));

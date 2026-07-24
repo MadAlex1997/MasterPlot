@@ -739,6 +739,62 @@ export default function RoiDeepDivePage() {
         one will silently drop the update. This design prevents late-arriving network
         messages from overwriting fresher local edits.
       </div>
+
+      {/* ── 7. Behaviour Flags ─────────────────────────────────────────────── */}
+      <h3 style={h3Style}>7. Behaviour Flags</h3>
+
+      <p style={pStyle}>
+        Every ROI carries a <code>flags</code> object controlling how it responds to user
+        interaction. Flags are plain booleans — toggling them does not bump <code>version</code>
+        or emit <code>roiFinalized</code>, since they are behavioural state, not geometry.
+        Use <code>roiController.setFlags(id, patch)</code> to change them; it merges the patch
+        into <code>roi.flags</code> and emits <code>roisChanged</code>.
+      </p>
+
+      <table style={tableStyle}>
+        <thead>
+          <tr>
+            <th style={thStyle}>Flag</th>
+            <th style={thStyle}>Default</th>
+            <th style={thStyle}>Effect when <code>false</code></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style={tdMonoStyle}>movable</td>
+            <td style={tdStyle}><code>true</code></td>
+            <td style={tdStyle}>Dragging the ROI body (the MOVE handle) has no effect. The ROI remains selectable/clickable and resize handles (if <code>resizable</code>) still work.</td>
+          </tr>
+          <tr>
+            <td style={tdMonoStyle}>resizable</td>
+            <td style={tdStyle}><code>true</code></td>
+            <td style={tdStyle}>Corner/edge resize handles have no effect. The ROI can still be moved (if <code>movable</code>) and selected.</td>
+          </tr>
+          <tr>
+            <td style={tdMonoStyle}>visible</td>
+            <td style={tdStyle}><code>true</code></td>
+            <td style={tdStyle}>Not rendered by <code>ROILayer</code> and excluded from hit-testing entirely.</td>
+          </tr>
+          <tr>
+            <td style={tdMonoStyle}>pickable</td>
+            <td style={tdStyle}><code>true</code></td>
+            <td style={tdStyle}>ROI becomes fully inert to clicks — excluded from <code>ROIController._hitTest</code> (no select, no drag, no resize, no hover) <em>and</em> the deck.gl fill layer's <code>pickable</code> prop is set to <code>false</code> (no <code>onROIClick</code>, no <code>autoHighlight</code>). The ROI remains visible if <code>visible</code> is true — useful for a reference band that shouldn't intercept clicks meant for ROIs layered on top of it.</td>
+          </tr>
+          <tr>
+            <td style={tdMonoStyle}>deletable</td>
+            <td style={tdStyle}><code>true</code></td>
+            <td style={tdStyle}><code>roiController.deleteROI(id)</code> (including the 'D' keybind) is a no-op.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style={calloutStyle}>
+        <strong>Locked vs. non-pickable</strong> — these are different levels of restriction.
+        A locked ROI (<code>movable: false, resizable: false</code>) can still be clicked,
+        selected, and shown in a table/inspector — it just won't move. A non-pickable ROI
+        (<code>pickable: false</code>) is invisible to all click/hover/drag interaction while
+        still rendering, as if it were a static background decoration.
+      </div>
     </section>
   );
 }

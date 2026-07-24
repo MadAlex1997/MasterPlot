@@ -130,6 +130,19 @@ export class ROIController extends EventEmitter {
     this.emit('roisChanged', { rois: this.getAllROIs() });
   }
 
+  /**
+   * Merge a patch into an ROI's behaviour flags (movable/resizable/visible/pickable/...).
+   * Flags are not geometry — this does not bump version or emit roiFinalized.
+   * @param {string} id
+   * @param {object} flagsPatch
+   */
+  setFlags(id, flagsPatch) {
+    const roi = this._rois.get(id);
+    if (!roi) return;
+    Object.assign(roi.flags, flagsPatch);
+    this.emit('roisChanged', { rois: this.getAllROIs() });
+  }
+
   // ─── F14: Serialization API ──────────────────────────────────────────────────
 
   /**
@@ -312,16 +325,26 @@ export class ROIController extends EventEmitter {
     const hit = this._hitTest(screenX, screenY);
 
     if (hit) {
-      this._activeROI     = hit.roi;
-      this._dragging      = true;
-      this._dragROI       = hit.roi;
-      this._dragHandle    = hit.handle;
-      this._dragStartData = { dataX, dataY };
-      this._dragStartBounds = hit.roi.getBounds();
+      this._activeROI = hit.roi;
 
-      // Deselect all, select hit ROI
+      // Deselect all, select hit ROI (locked ROIs remain selectable/clickable)
       this._selectOnly(hit.roi);
       this.emit('roiSelected', { roi: hit.roi });
+
+      const isMoveHandle = hit.handle === HANDLES.MOVE
+        || hit.handle === LR_HANDLES.MOVE
+        || hit.handle === LINE_HANDLE.MOVE;
+      const blocked = isMoveHandle
+        ? hit.roi.flags.movable === false
+        : hit.roi.flags.resizable === false;
+
+      if (!blocked) {
+        this._dragging      = true;
+        this._dragROI       = hit.roi;
+        this._dragHandle    = hit.handle;
+        this._dragStartData = { dataX, dataY };
+        this._dragStartBounds = hit.roi.getBounds();
+      }
     } else {
       // Click on empty space → deselect
       this._deselectAll();
@@ -620,7 +643,7 @@ export class ROIController extends EventEmitter {
     const rois = [...this._rois.values()].reverse();
 
     for (const roi of rois) {
-      if (!roi.flags.visible) continue;
+      if (!roi.flags.visible || roi.flags.pickable === false) continue;
 
       if (roi.type === 'linearRegion') {
         const handle = roi.hitTest(screenX, screenY, this._viewport);

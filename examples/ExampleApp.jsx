@@ -175,6 +175,21 @@ export default function ExampleApp() {
     rc.on('roiDeselected', handleROIDeselectedOnPlot);
   }, [refreshROITables, handleROISelectedOnPlot, handleROIDeselectedOnPlot]);
 
+  // ── F36: lock (movable+resizable) / pickable toggles ────────────────────────
+  const handleToggleLock = (id, locked) => {
+    const rc = roiControllerRef.current;
+    if (!rc) return;
+    rc.setFlags(id, { movable: !locked, resizable: !locked });
+    refreshROITables();
+  };
+
+  const handleTogglePickable = (id, pickable) => {
+    const rc = roiControllerRef.current;
+    if (!rc) return;
+    rc.setFlags(id, { pickable });
+    refreshROITables();
+  };
+
   // ── EX1: select/deselect a linear region row ─────────────────────────────────
   const handleSelectLinear = (id) => {
     const newId = selectedLinearIdRef.current === id ? null : id;
@@ -584,12 +599,16 @@ export default function ExampleApp() {
                 <th style={thStyle}>Left</th>
                 <th style={thStyle}>Right</th>
                 <th style={thStyle}>Ver</th>
+                <th style={thStyle}>Locked</th>
+                <th style={thStyle}>Pickable</th>
               </tr>
             </thead>
             <tbody>
               {linearROIs.map(r => {
                 const isSelected     = r.id === selectedLinearId;
                 const isPlotSelected = r.id === plotSelectedLinearId;
+                const isLocked   = r.flags.movable === false || r.flags.resizable === false;
+                const isPickable = r.flags.pickable !== false;
                 return (
                   <tr
                     key={r.id}
@@ -613,6 +632,20 @@ export default function ExampleApp() {
                     </td>
                     <td style={{ padding: '2px 6px', color: '#666' }}>
                       {r.version}
+                    </td>
+                    <td style={{ padding: '2px 6px' }} onClick={e => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={isLocked}
+                        onChange={e => handleToggleLock(r.id, e.target.checked)}
+                      />
+                    </td>
+                    <td style={{ padding: '2px 6px' }} onClick={e => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={isPickable}
+                        onChange={e => handleTogglePickable(r.id, e.target.checked)}
+                      />
                     </td>
                   </tr>
                 );
@@ -642,11 +675,15 @@ export default function ExampleApp() {
                 <th style={thStyle}>Bottom</th>
                 <th style={thStyle}>Top</th>
                 <th style={thStyle}>Ver</th>
+                <th style={thStyle}>Locked</th>
+                <th style={thStyle}>Pickable</th>
               </tr>
             </thead>
             <tbody>
               {childRects.map(r => {
                 const isPlotSelected = r.id === plotSelectedRectId;
+                const isLocked   = r.flags.movable === false || r.flags.resizable === false;
+                const isPickable = r.flags.pickable !== false;
                 return (
                 <tr
                   key={r.id}
@@ -675,6 +712,20 @@ export default function ExampleApp() {
                   </td>
                   <td style={{ padding: '2px 6px', color: '#666' }}>
                     {r.version}
+                  </td>
+                  <td style={{ padding: '2px 6px' }} onClick={e => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={isLocked}
+                      onChange={e => handleToggleLock(r.id, e.target.checked)}
+                    />
+                  </td>
+                  <td style={{ padding: '2px 6px' }} onClick={e => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={isPickable}
+                      onChange={e => handleTogglePickable(r.id, e.target.checked)}
+                    />
                   </td>
                 </tr>
               );
