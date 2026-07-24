@@ -4949,3 +4949,28 @@ new TableLoaderAdapter(dataStore, {
 **Verification:** Build (`npm run build`) passes with zero errors. Locking an ROI via the table checkbox leaves it selectable (row highlight + plot highlight sync) but drag/resize handles have no effect. Unchecking "Pickable" makes the ROI fully inert (no hover highlight, no click, no drag, `onROIClick` never fires) while remaining visible. Toggling flags does not bump `version` or emit `roiFinalized`. Existing ROIs without an explicit `pickable` flag continue to behave exactly as before (default `true`).
 
 ---
+
+### F37 — Rect Zoom Mode (middle-click drag-to-zoom)
+
+**Branch:** `feature/F37`
+**Completed:** 2026-07-24
+**Depends on:** none — fully independent
+
+**Problem:** Zoom was only available via wheel (cursor-centered) or right-click-drag (axis-scaling, F6) — neither lets a user precisely select an arbitrary rectangular region and zoom directly to it.
+
+**Fix:**
+- `src/plot/PlotController.js`:
+  - New constructor option `opts.rectZoomMode` (default `false`) and state fields `_isRectZooming`, `_rectZoomStart`, `_rectZoomCurrent`.
+  - `setRectZoomMode(enabled)` — runtime toggle; cancels any in-progress drag when disabled.
+  - `_onMouseDown`: `e.button === 1` (middle) branch, gated on `_rectZoomMode && !_disablePanZoom`; calls `e.preventDefault()` to block the browser's native middle-click autoscroll cursor, then `_handleRectZoomDown(e)` (records start pixel position if inside the plot area).
+  - `_onMouseMove`: `_handleRectZoomMove(e)` updates the current drag pixel position; mutually exclusive with pan/axis-drag (early `return`).
+  - `_onMouseUp`: `_handleRectZoomUp()` on button-1 release — converts both corners from screen pixels to data space via `viewport.screenXToData`/`screenYToData`, computes `[min,max]` for each axis, and calls `viewport.setDomains(xDomain, yDomain)` for one atomic update. Drags under 3px are treated as a no-op click (no zoom).
+  - `_buildRectZoomLayer()` — builds a `PolygonLayer` (translucent white fill, bright outline, `pickable: false`) from the live drag rectangle, converting through `log10` when an axis is log-scaled (same pattern as `ROILayer`'s coordinate helpers). Returns `null` when not dragging.
+  - `_render()` pushes the rect-zoom overlay layer onto `deckLayers` last (topmost z-order), after the ROI layer / `PlotLayer` wrapper.
+- `examples/ExampleApp.jsx` — added a "Rect zoom (middle-drag)" checkbox next to the existing "Drag pan" toggle, wired to `getController().setRectZoomMode()`; added a "Mid-drag" row to the page's `HelpOverlay` keybind list.
+- `README.md` — new "Rect Zoom Mode" subsection under PlotController/AxisController interaction docs; `rectZoomMode` constructor option and `setRectZoomMode()` method rows added to their respective tables; feature bullet added under Core Engine.
+- `examples/docs/ApiReferencePage.jsx` — matching `rectZoomMode` option row and `setRectZoomMode(enabled)` method row added to the PlotController tables.
+
+**Verification:** Build (`npm run build`) passes with zero errors. Manually verified on a linear-axis example page (`ExampleApp.jsx`) and a temporary log-x-axis test page (deleted after verification): middle-click-drag draws a live rectangle overlay tracking the cursor in any drag direction, no browser autoscroll cursor appears, release zooms the viewport to the rectangle's exact data bounds (correct on both linear and log scales), sub-3px drags no-op, and disabling the checkbox restores default middle-click behavior. Left-drag pan, right-click drag zoom (F6), wheel zoom, and ROI creation all continue to work unaffected, both with the mode on and off.
+
+---

@@ -48,6 +48,7 @@ export default function ExampleApp() {
   const [liveAppend, setLiveAppend] = useState(true);
   const [autoExpand, setAutoExpand] = useState(true);
   const [dragPan, setDragPan] = useState(false);
+  const [rectZoom, setRectZoom] = useState(false);
   const [panSpeed, setPanSpeed] = useState(0.02);
   const [pointCount, setPointCount] = useState(INITIAL_POINT_COUNT);
 
@@ -363,6 +364,12 @@ export default function ExampleApp() {
     setDragPan(checked);
   };
 
+  const handleRectZoomChange = (e) => {
+    const checked = e.target.checked;
+    plotRef.current?.getController()?.setRectZoomMode(checked);
+    setRectZoom(checked);
+  };
+
   const handlePanSpeedChange = (e) => {
     const v = parseFloat(e.target.value);
     plotRef.current?.getController()?.setFollowPanSpeed(v);
@@ -521,6 +528,10 @@ export default function ExampleApp() {
           Drag pan
         </label>
         <label style={checkboxLabelStyle}>
+          <input type="checkbox" checked={rectZoom} onChange={handleRectZoomChange} />
+          Rect zoom (middle-drag)
+        </label>
+        <label style={checkboxLabelStyle}>
           Pan speed
           <input type="range" min="0.005" max="0.1" step="0.001"
             value={panSpeed} onChange={handlePanSpeedChange}
@@ -553,6 +564,7 @@ export default function ExampleApp() {
             { key: 'D',       description: 'Delete selected ROI' },
             { key: 'Esc',     description: 'Cancel ROI creation' },
             { key: 'Space',   description: 'Auto-scale (reset zoom to home domain)' },
+            { key: 'Mid-drag', description: 'Rect zoom (when "Rect zoom" checkbox is enabled)' },
           ]}
         />
       </div>

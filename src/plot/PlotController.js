@@ -34,6 +34,7 @@ import { ROIController }      from './ROI/ROIController.js';
 import { buildScatterLayer }  from './layers/ScatterLayer.js';
 import { ROILayer }           from './layers/ROILayer.js';
 import { PlotLayer }          from './layers/PlotLayer.js';
+import { PolygonLayer }       from '@deck.gl/layers';
 
 /**
  * @typedef {object} DataLayerDef
@@ -67,6 +68,7 @@ export class PlotController extends EventEmitter {
    * @param {boolean} [opts.disableDefaultDataLayer=false]
    * @param {boolean} [opts.disablePanZoom=false]  — disable wheel zoom, right-drag zoom, pan,
    *                                                  and axis-drag zoom; ROI interaction still works
+   * @param {boolean} [opts.rectZoomMode=false]    — F37: enable middle-click drag-to-zoom
    */
   constructor(opts = {}) {
     super();
@@ -162,6 +164,12 @@ export class PlotController extends EventEmitter {
     this._isAxisDragging = false;
     this._axisDragAxis   = null;   // 'x' | 'y'
     this._axisDragStart  = null;   // { x, y, xDomain, yDomain }
+
+    // F37: rect zoom mode — middle-click drag draws a rectangle, zooms to it on release
+    this._rectZoomMode    = opts.rectZoomMode ?? false;
+    this._isRectZooming   = false;
+    this._rectZoomStart   = null;  // { x, y } screen pixels
+    this._rectZoomCurrent = null;  // { x, y } screen pixels
 
     // F28: disable pan/zoom (used by LUTHistogramController's internal PlotController)
     this._disablePanZoom = opts.disablePanZoom ?? false;
@@ -318,6 +326,17 @@ export class PlotController extends EventEmitter {
   /** @param {number} speed  Tuning range: 0.005 – 0.1 */
   setFollowPanSpeed(speed) {
     this._followPanSpeed = Math.max(0.001, Number(speed));
+  }
+
+  /** F37: toggle middle-click drag-to-zoom. Cancels any in-progress drag when disabled. */
+  setRectZoomMode(enabled) {
+    this._rectZoomMode = !!enabled;
+    if (!this._rectZoomMode && this._isRectZooming) {
+      this._isRectZooming   = false;
+      this._rectZoomStart   = null;
+      this._rectZoomCurrent = null;
+      this._dirty = true;
+    }
   }
 
   // ─── F23: Auto-scale ───────────────────────────────────────────────────────
@@ -533,6 +552,10 @@ export class PlotController extends EventEmitter {
       ? [new PlotLayer({ id: 'plot-layer', dataLayers: layers, roiLayer })]
       : [...layers, roiLayer];
 
+    // F37: live rect-zoom drag rectangle, drawn on top of everything else
+    const rectZoomLayer = this._buildRectZoomLayer();
+    if (rectZoomLayer) deckLayers.push(rectZoomLayer);
+
     this._deck.setProps({
       viewState: this._buildViewState(),
       layers: deckLayers,
@@ -673,6 +696,15 @@ export class PlotController extends EventEmitter {
       return;
     }
 
+    // F37: middle-click drag-to-zoom
+    if (e.button === 1) {
+      if (!this._disablePanZoom && this._rectZoomMode) {
+        e.preventDefault(); // block native middle-click autoscroll cursor
+        this._handleRectZoomDown(e);
+      }
+      return;
+    }
+
     if (e.button !== 0) return;
 
     const pos = this._viewport.getCanvasPosition(e, this._webglCanvas);
@@ -718,6 +750,9 @@ export class PlotController extends EventEmitter {
     // F6: handle right-click drag zoom (independent of left-click pan)
     if (this._isRightDragging) { this._handleRightMove(e); }
 
+    // F37: rect zoom drag — mutually exclusive with plot pan
+    if (this._isRectZooming) { this._handleRectZoomMove(e); return; }
+
     // F21: axis drag zoom — mutually exclusive with plot pan
     if (this._isAxisDragging) { this._handleAxisDragMove(e); return; }
 
@@ -750,6 +785,10 @@ export class PlotController extends EventEmitter {
       this._isAxisDragging = false;
       this._axisDragAxis   = null;
       this._axisDragStart  = null;
+    }
+    // F37: commit rect zoom drag
+    if (e.button === 1 && this._isRectZooming) {
+      this._handleRectZoomUp(e);
     }
     if (this._isPanning) {
       this._isPanning     = false;
@@ -814,6 +853,80 @@ export class PlotController extends EventEmitter {
 
     this._dirty = true;
     this.emit('zoomChanged', { factor: zoomFactor, axis });
+  }
+
+  // F37: middle-click mousedown — start rect zoom drag if inside plot area
+  _handleRectZoomDown(e) {
+    const pos = this._viewport.getCanvasPosition(e, this._webglCanvas);
+    if (!this._viewport.isInPlotArea(pos.x, pos.y)) return;
+    this._isRectZooming   = true;
+    this._rectZoomStart   = { x: pos.x, y: pos.y };
+    this._rectZoomCurrent = { x: pos.x, y: pos.y };
+    this._dirty = true;
+  }
+
+  // F37: middle-click drag — update the live rectangle overlay
+  _handleRectZoomMove(e) {
+    if (!this._rectZoomStart) return;
+    const pos = this._viewport.getCanvasPosition(e, this._webglCanvas);
+    this._rectZoomCurrent = { x: pos.x, y: pos.y };
+    this._dirty = true;
+  }
+
+  // F37: middle-click release — zoom to the drawn rectangle's data bounds
+  _handleRectZoomUp() {
+    const start = this._rectZoomStart;
+    const end   = this._rectZoomCurrent;
+    this._isRectZooming   = false;
+    this._rectZoomStart   = null;
+    this._rectZoomCurrent = null;
+    this._dirty = true;
+
+    if (!start || !end) return;
+
+    const DRAG_THRESHOLD_PX = 3; // sub-threshold drags are treated as a no-op click
+    if (Math.hypot(end.x - start.x, end.y - start.y) < DRAG_THRESHOLD_PX) return;
+
+    const xA = this._viewport.screenXToData(start.x);
+    const xB = this._viewport.screenXToData(end.x);
+    const yA = this._viewport.screenYToData(start.y);
+    const yB = this._viewport.screenYToData(end.y);
+
+    const xDomain = [Math.min(xA, xB), Math.max(xA, xB)];
+    const yDomain = [Math.min(yA, yB), Math.max(yA, yB)];
+
+    this._viewport.setDomains(xDomain, yDomain);
+    this.emit('zoomChanged', { mode: 'rect', xDomain, yDomain });
+  }
+
+  // F37: build the live drag rectangle overlay layer (null when not dragging)
+  _buildRectZoomLayer() {
+    if (!this._isRectZooming || !this._rectZoomStart || !this._rectZoomCurrent) return null;
+
+    const xIsLog = this._xAxis.scaleType === 'log';
+    const yIsLog = this._yAxis.scaleType === 'log';
+    const toX = v => xIsLog ? Math.log10(Math.max(v, 1e-10)) : v;
+    const toY = v => yIsLog ? Math.log10(Math.max(v, 1e-10)) : v;
+
+    const xA = this._viewport.screenXToData(this._rectZoomStart.x);
+    const xB = this._viewport.screenXToData(this._rectZoomCurrent.x);
+    const yA = this._viewport.screenYToData(this._rectZoomStart.y);
+    const yB = this._viewport.screenYToData(this._rectZoomCurrent.y);
+
+    const dx1 = toX(Math.min(xA, xB)), dx2 = toX(Math.max(xA, xB));
+    const dy1 = toY(Math.min(yA, yB)), dy2 = toY(Math.max(yA, yB));
+    const polygon = [[dx1, dy1], [dx2, dy1], [dx2, dy2], [dx1, dy2]];
+
+    return new PolygonLayer({
+      id:                 'rect-zoom-overlay',
+      data:               [{ polygon }],
+      getPolygon:         d => d.polygon,
+      getFillColor:       [255, 255, 255, 40],
+      getLineColor:       [255, 255, 255, 220],
+      lineWidthMinPixels: 1,
+      lineWidthUnits:     'pixels',
+      pickable:           false,
+    });
   }
 
   _onResize() {

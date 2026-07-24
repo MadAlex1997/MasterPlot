@@ -160,6 +160,7 @@ function PlotControllerSection() {
           <tr><Td mono>xLabel</Td><Td type>string</Td><Td mono>''</Td><Td>Label text painted beside the X axis</Td></tr>
           <tr><Td mono>yLabel</Td><Td type>string</Td><Td mono>''</Td><Td>Label text painted beside the Y axis</Td></tr>
           <tr><Td mono>panMode</Td><Td type>'follow'|'drag'</Td><Td mono>'drag'</Td><Td>Initial pan mode</Td></tr>
+          <tr><Td mono>rectZoomMode</Td><Td type>boolean</Td><Td mono>false</Td><Td>Enable middle-click drag-to-zoom (F37) — draws a rectangle overlay and zooms to its data bounds on release</Td></tr>
           <tr><Td mono>bordered</Td><Td type>boolean</Td><Td mono>true</Td><Td>Fill axis gutter areas with the container element's CSS backgroundColor before rendering ticks (F34). Disable for transparent/overlay layouts.</Td></tr>
           <tr><Td mono>autoExpand</Td><Td type>boolean</Td><Td mono>true</Td><Td>Expand domain automatically when new data exceeds current bounds</Td></tr>
           <tr><Td mono>autoScaleKey</Td><Td type>string|null</Td><Td mono>' '</Td><Td>Keyboard key that triggers autoScale(); <code style={inlineCode}>null</code> to disable the spacebar binding</Td></tr>
@@ -179,6 +180,7 @@ function PlotControllerSection() {
           <tr><Td mono>appendData(chunk)</Td><Td mono>void</Td><Td>Append <code style={inlineCode}>{'{ x, y, size?, color?, metadata? }'}</code> typed arrays to DataStore. Expands domain if autoExpand is on. Emits 'dataAppended'.</Td></tr>
           <tr><Td mono>setAutoExpand(enabled)</Td><Td mono>void</Td><Td>Toggle whether appendData() widens the visible domain to encompass new data.</Td></tr>
           <tr><Td mono>setPanMode(mode)</Td><Td mono>void</Td><Td>Switch between 'follow' (velocity-based, cursor chases) and 'drag' (cursor-locked) pan modes.</Td></tr>
+          <tr><Td mono>setRectZoomMode(enabled)</Td><Td mono>void</Td><Td>Toggle middle-click drag-to-zoom (F37). Cancels any in-progress drag when disabled.</Td></tr>
           <tr><Td mono>setFollowPanSpeed(speed)</Td><Td mono>void</Td><Td>Set follow-pan velocity scalar. Recommended range 0.005–0.1; values below 0.001 are clamped.</Td></tr>
           <tr><Td mono>autoScale()</Td><Td mono>void</Td><Td>Fit both axes to full data extents (±5 % padding) or to the registered home domain if both x and y are set. Emits 'autoScaled'.</Td></tr>
           <tr><Td mono>setHomeDomain(xDomain, yDomain)</Td><Td mono>void</Td><Td>Register explicit home bounds used by autoScale(). Either argument may be <code style={inlineCode}>null</code> to fall back to data extents for that axis.</Td></tr>
