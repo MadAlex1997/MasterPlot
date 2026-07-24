@@ -408,10 +408,31 @@ export class PlotController extends EventEmitter {
         if (data.y[i] < yMin) yMin = data.y[i];
         if (data.y[i] > yMax) yMax = data.y[i];
       }
-      const xPad = (xMax - xMin) * 0.05 || 0.05;
-      const yPad = (yMax - yMin) * 0.05 || 0.05;
-      xDomain = [xMin - xPad, xMax + xPad];
-      yDomain = [yMin - yPad, yMax + yPad];
+
+      const xIsLog = this._xAxis.scaleType === 'log';
+      const yIsLog = this._yAxis.scaleType === 'log';
+
+      // For log axes, pad in log10 space so 5% reads as equal visual padding
+      // and the resulting domain always stays strictly positive.
+      if (xIsLog) {
+        const lo = Math.log10(Math.max(xMin, 1e-10));
+        const hi = Math.log10(Math.max(xMax, 1e-10));
+        const pad = (hi - lo) * 0.05 || 0.05;
+        xDomain = [10 ** (lo - pad), 10 ** (hi + pad)];
+      } else {
+        const xPad = (xMax - xMin) * 0.05 || 0.05;
+        xDomain = [xMin - xPad, xMax + xPad];
+      }
+
+      if (yIsLog) {
+        const lo = Math.log10(Math.max(yMin, 1e-10));
+        const hi = Math.log10(Math.max(yMax, 1e-10));
+        const pad = (hi - lo) * 0.05 || 0.05;
+        yDomain = [10 ** (lo - pad), 10 ** (hi + pad)];
+      } else {
+        const yPad = (yMax - yMin) * 0.05 || 0.05;
+        yDomain = [yMin - yPad, yMax + yPad];
+      }
     }
     this._viewport.setDomains(xDomain, yDomain);
     this._dirty = true;
