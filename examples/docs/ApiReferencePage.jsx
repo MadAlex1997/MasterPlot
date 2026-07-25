@@ -153,13 +153,13 @@ function PlotControllerSection() {
       <table style={tableStyle}>
         <thead><tr><Th>Option</Th><Th>Type</Th><Th>Default</Th><Th>Description</Th></tr></thead>
         <tbody>
-          <tr><Td mono>xScaleType</Td><Td type>'linear'|'log'|'time'</Td><Td mono>'linear'</Td><Td>d3 scale type for the X axis</Td></tr>
-          <tr><Td mono>yScaleType</Td><Td type>'linear'|'log'|'time'</Td><Td mono>'linear'</Td><Td>d3 scale type for the Y axis</Td></tr>
-          <tr><Td mono>xDomain</Td><Td type>number[]</Td><Td mono>[0, 1]</Td><Td>Initial X domain [min, max]</Td></tr>
-          <tr><Td mono>yDomain</Td><Td type>number[]</Td><Td mono>[0, 100]</Td><Td>Initial Y domain [min, max]</Td></tr>
+          <tr><Td mono>xScaleType</Td><Td type>'linear'|'log'|'time'</Td><Td mono>'linear'</Td><Td>d3 scale type for the X axis. Unrecognized value warns and falls back to 'linear' (REL7).</Td></tr>
+          <tr><Td mono>yScaleType</Td><Td type>'linear'|'log'|'time'</Td><Td mono>'linear'</Td><Td>d3 scale type for the Y axis. Unrecognized value warns and falls back to 'linear' (REL7).</Td></tr>
+          <tr><Td mono>xDomain</Td><Td type>number[]</Td><Td mono>[0, 1]</Td><Td>Initial X domain [min, max]. Malformed value (not a 2-element finite-number array with min !== max) warns and falls back to [0, 1] (REL7).</Td></tr>
+          <tr><Td mono>yDomain</Td><Td type>number[]</Td><Td mono>[0, 100]</Td><Td>Initial Y domain [min, max]. Same validation as xDomain; falls back to [0, 100] (REL7).</Td></tr>
           <tr><Td mono>xLabel</Td><Td type>string</Td><Td mono>''</Td><Td>Label text painted beside the X axis</Td></tr>
           <tr><Td mono>yLabel</Td><Td type>string</Td><Td mono>''</Td><Td>Label text painted beside the Y axis</Td></tr>
-          <tr><Td mono>panMode</Td><Td type>'follow'|'drag'</Td><Td mono>'drag'</Td><Td>Initial pan mode</Td></tr>
+          <tr><Td mono>panMode</Td><Td type>'follow'|'drag'</Td><Td mono>'drag'</Td><Td>Initial pan mode. Unrecognized value warns and falls back to 'drag' (REL7).</Td></tr>
           <tr><Td mono>mouseButtons</Td><Td type>object</Td><Td mono>{'{ left: \'pan\', middle: \'none\', right: \'zoomDrag\' }'}</Td><Td>Button→action map (F38). Values: 'pan', 'zoomDrag' (F6), 'rectZoom' (F37, opt-in), 'none'</Td></tr>
           <tr><Td mono>bordered</Td><Td type>boolean</Td><Td mono>true</Td><Td>Fill axis gutter areas with the container element's CSS backgroundColor before rendering ticks (F34). Disable for transparent/overlay layouts.</Td></tr>
           <tr><Td mono>autoExpand</Td><Td type>boolean</Td><Td mono>true</Td><Td>Expand domain automatically when new data exceeds current bounds</Td></tr>
@@ -177,9 +177,9 @@ function PlotControllerSection() {
         <tbody>
           <tr><Td mono>init(webglCanvas, axisCanvas)</Td><Td mono>void</Td><Td>Initialize deck.gl, AxisRenderer, ROIController, event listeners, and start the RAF loop. Must be called once both canvases are in the DOM.</Td></tr>
           <tr><Td mono>destroy()</Td><Td mono>void</Td><Td>Remove all DOM and window listeners, cancel the RAF loop, and finalize deck.gl. Destroys owned DataStore/DataView; leaves externally-injected ones alive.</Td></tr>
-          <tr><Td mono>appendData(chunk)</Td><Td mono>void</Td><Td>Append <code style={inlineCode}>{'{ x, y, size?, color?, metadata? }'}</code> typed arrays to DataStore. Expands domain if autoExpand is on. Emits 'dataAppended'.</Td></tr>
+          <tr><Td mono>appendData(chunk)</Td><Td mono>void</Td><Td>Append <code style={inlineCode}>{'{ x, y, size?, color?, metadata? }'}</code> typed arrays to DataStore. Expands domain if autoExpand is on. Emits 'dataAppended'. Throws if x/y are missing/mismatched-length or size/color don't match (REL7).</Td></tr>
           <tr><Td mono>setAutoExpand(enabled)</Td><Td mono>void</Td><Td>Toggle whether appendData() widens the visible domain to encompass new data.</Td></tr>
-          <tr><Td mono>setPanMode(mode)</Td><Td mono>void</Td><Td>Switch between 'follow' (velocity-based, cursor chases) and 'drag' (cursor-locked) pan modes.</Td></tr>
+          <tr><Td mono>setPanMode(mode)</Td><Td mono>void</Td><Td>Switch between 'follow' (velocity-based, cursor chases) and 'drag' (cursor-locked) pan modes. Unrecognized value warns and falls back to 'drag' (REL7).</Td></tr>
           <tr><Td mono>setMouseButtons(cfg)</Td><Td mono>void</Td><Td>Remap button→action bindings (F38) at runtime. Partial override of {'{ left, middle, right }'}; cancels any in-progress drag. Unrecognized action names fall back to the default with a console warning.</Td></tr>
           <tr><Td mono>setFollowPanSpeed(speed)</Td><Td mono>void</Td><Td>Set follow-pan velocity scalar. Recommended range 0.005–0.1; values below 0.001 are clamped.</Td></tr>
           <tr><Td mono>autoScale()</Td><Td mono>void</Td><Td>Fit both axes to full data extents (±5 % padding) or to the registered home domain if both x and y are set. Emits 'autoScaled'.</Td></tr>
@@ -383,7 +383,7 @@ function ROIControllerSection() {
           <tr><Td mono>setFlags(id, flagsPatch)</Td><Td mono>void</Td><Td>Merge a patch into <code style={inlineCode}>roi.flags</code> (e.g. <code style={inlineCode}>{'{ movable: false, resizable: false }'}</code> to lock, <code style={inlineCode}>{'{ pickable: false }'}</code> to make click-inert). Does not bump version or emit 'roiFinalized' — flags are behavioural, not geometric. Emits 'roisChanged'.</Td></tr>
           <tr><Td mono>serializeAll()</Td><Td type>object[]</Td><Td>Returns <code style={inlineCode}>{'[{ id, type, version, updatedAt, domain, parentId, metadata, flags }]'}</code> for all ROIs.</Td></tr>
           <tr><Td mono>deserializeAll(array)</Td><Td mono>void</Td><Td>Clear all existing ROIs and restore from a serialized array. Emits 'roisChanged' once.</Td></tr>
-          <tr><Td mono>updateFromExternal(serializedROI)</Td><Td type>boolean</Td><Td>Version-gated update: rejects silently if <code style={inlineCode}>incoming.version {'<='} current.version</code>. Emits 'roiExternalUpdate' + 'roisChanged' on accept. Returns true if accepted.</Td></tr>
+          <tr><Td mono>updateFromExternal(serializedROI)</Td><Td type>boolean</Td><Td>Version-gated update: rejects silently if <code style={inlineCode}>incoming.version {'<='} current.version</code>; rejects with a <code style={inlineCode}>console.warn</code> naming the offending field for a shape-invalid payload (missing/wrong-type id/type/version/domain — REL7). Emits 'roiExternalUpdate' + 'roisChanged' on accept. Returns true if accepted.</Td></tr>
           <tr><Td mono>enterCreateMode(type)</Td><Td mono>void</Td><Td>Put controller in creation mode: 'linear' (2-click), 'rect' (2-click), 'vline' (1-click), 'hline' (1-click). Emits 'modeChanged'.</Td></tr>
           <tr><Td mono>cancelCreateMode()</Td><Td mono>void</Td><Td>Exit creation mode without placing a ROI. Emits 'modeChanged'.</Td></tr>
         </tbody>
@@ -460,7 +460,7 @@ function DataStoreSection() {
         <tbody>
           <tr><Td mono>{'enableRolling({ maxPoints?, maxAgeMs? })'}</Td><Td mono>void</Td><Td>Activate ring-buffer mode. Must be called before any appendData(). At least one limit must be finite. Allocates a <code style={inlineCode}>Float64Array</code> timestamp buffer.</Td></tr>
           <tr><Td mono>expireIfNeeded()</Td><Td mono>void</Td><Td>Advance tailIndex to evict points exceeding maxPoints or maxAgeMs. Emits 'dataExpired' if any were removed. Called automatically by PlotController each RAF tick.</Td></tr>
-          <tr><Td mono>appendData(chunk)</Td><Td mono>void</Td><Td>Append <code style={inlineCode}>{'{ x, y, size?, color?, metadata? }'}</code>. Non-rolling: doubling-growth via _grow(). Rolling: writes into ring at headIndex. Emits 'dirty'.</Td></tr>
+          <tr><Td mono>appendData(chunk)</Td><Td mono>void</Td><Td>Append <code style={inlineCode}>{'{ x, y, size?, color?, metadata? }'}</code>. Non-rolling: doubling-growth via _grow(). Rolling: writes into ring at headIndex. Emits 'dirty'. Throws naming the field if x/y are missing/not array-like/mismatched-length, or size/color don't match x's length (REL7).</Td></tr>
           <tr><Td mono>getGPUAttributes()</Td><Td type>object</Td><Td>Returns <code style={inlineCode}>{'{ x, y, size, color }'}</code> typed arrays. Non-rolling: zero-copy subarrays. Rolling: ordered copy handling wrap-around.</Td></tr>
           <tr><Td mono>getLogicalData()</Td><Td type>object</Td><Td>Same shape as getGPUAttributes() but always returns correctly-ordered data safe for CPU-side use (domain recalc, histogram, filtering).</Td></tr>
           <tr><Td mono>getPointCount()</Td><Td type>number</Td><Td>Live point count (excludes evicted points in rolling mode).</Td></tr>

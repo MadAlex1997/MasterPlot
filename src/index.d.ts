@@ -257,6 +257,7 @@ export class DataStore extends EventEmitter {
   expireIfNeeded(): void;
   getLogicalData(): GPUAttributes;
 
+  /** @throws if chunk.x/chunk.y are missing/not array-like, lengths mismatch, or size/color don't match. */
   appendData(chunk: DataChunk): void;
   getGPUAttributes(): GPUAttributes;
   getPointCount(): number;
@@ -573,6 +574,7 @@ export class ROIController extends EventEmitter {
 
   serializeAll(): SerializedROI[];
   deserializeAll(array: SerializedROI[]): void;
+  /** Returns false (and warns) for a stale version or a shape-invalid serializedROI. */
   updateFromExternal(serializedROI: SerializedROI): boolean;
 
   enterCreateMode(type: 'linear' | 'rect' | 'vline' | 'hline'): void;
@@ -990,17 +992,17 @@ export interface PlotControllerOptions {
   /** Shared AxisController config instance. If omitted, one is built from xScaleType/xLabel. */
   xAxis?: AxisController;
   yAxis?: AxisController;
-  /** Only used when xAxis is not supplied. @default 'linear' */
+  /** Only used when xAxis is not supplied. Unrecognized values warn and fall back to 'linear' (REL7). @default 'linear' */
   xScaleType?: ScaleType;
-  /** Only used when yAxis is not supplied. @default 'linear' */
+  /** Only used when yAxis is not supplied. Unrecognized values warn and fall back to 'linear' (REL7). @default 'linear' */
   yScaleType?: ScaleType;
   /** Only applied if the shared/created xAxis has no label yet. */
   xLabel?: string;
   yLabel?: string;
 
-  /** @default [0, 1] */
+  /** Malformed values (not a 2-element finite-number array with min !== max) warn and fall back (REL7). @default [0, 1] */
   xDomain?: Domain;
-  /** @default [0, 100] */
+  /** Malformed values warn and fall back, same rule as xDomain (REL7). @default [0, 100] */
   yDomain?: Domain;
 
   /** F17: inject an external DataStore; if omitted, an owned one is created. */
@@ -1022,7 +1024,7 @@ export interface PlotControllerOptions {
   hideXAxis?: boolean;
   /** F34. @default true */
   bordered?: boolean;
-  /** Non-'drag' values normalize to 'follow'. @default 'drag' */
+  /** Unrecognized values warn and fall back to 'drag' (REL7). @default 'drag' */
   panMode?: 'drag' | 'follow';
   /** Key that triggers autoScale(). null/'' disables the listener. @default ' ' */
   autoScaleKey?: string | null;
@@ -1273,7 +1275,9 @@ export interface BufferStruct {
 
 /**
  * Base contract for external data sources. Subclass and override replaceData()/
- * appendData() — the base implementations throw.
+ * appendData() — the base implementations throw. The constructor validates
+ * that both are overridden (registration time), so a subclass missing one
+ * throws immediately rather than on first use.
  */
 export class ExternalDataAdapter {
   constructor(dataStore: DataStore);
@@ -1284,7 +1288,10 @@ export class ExternalDataAdapter {
 /**
  * Base contract for external ROI persistence/sync. Subclass and override
  * load()/save()/subscribe() — the base implementations throw. attach()/detach()
- * are concrete and wire the overridden methods to a ROIController.
+ * are concrete and wire the overridden methods to a ROIController. The
+ * constructor validates that load()/save()/subscribe() are all overridden
+ * (registration time), so a subclass missing one throws immediately rather
+ * than on first use.
  */
 export class ExternalROIAdapter {
   constructor(roiController: ROIController);

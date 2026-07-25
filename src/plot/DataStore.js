@@ -21,6 +21,11 @@ import { EventEmitter } from 'events';
 const INITIAL_CAPACITY = 65536;   // 64k points to start
 const GROWTH_FACTOR    = 1.5;     // grow 50% when full
 
+/** REL7: array-like check accepting both typed arrays and plain number[]. */
+function _isArrayLike(v) {
+  return Array.isArray(v) || ArrayBuffer.isView(v);
+}
+
 export class DataStore extends EventEmitter {
   constructor(initialCapacity = INITIAL_CAPACITY) {
     super();
@@ -166,8 +171,12 @@ export class DataStore extends EventEmitter {
    * @param {Float32Array|number[]} [chunk.size]    — defaults to 4.0
    * @param {Uint8Array|number[]}   [chunk.color]   — RGBA per point (4 values each)
    * @param {object[]}              [chunk.metadata] — one JS object per point
+   * @throws {Error} REL7: if chunk.x/chunk.y are missing/not array-like, their
+   *   lengths mismatch, or chunk.size/chunk.color don't match chunk.x's length.
    */
   appendData(chunk) {
+    this._validateChunk(chunk);
+
     const incoming = chunk.x.length;
     if (incoming === 0) return;
 
@@ -218,6 +227,50 @@ export class DataStore extends EventEmitter {
   }
 
   // ─── Internal ───────────────────────────────────────────────────────────────
+
+  /**
+   * REL7: validate an incoming appendData() chunk at the boundary, before any
+   * buffer writes happen. Throws with a message naming the offending field —
+   * malformed input here would otherwise silently write NaN into GPU buffers
+   * or throw a cryptic "Cannot read property 'length' of undefined" deep
+   * inside _appendLinear/_appendRolling.
+   */
+  _validateChunk(chunk) {
+    if (!chunk || typeof chunk !== 'object') {
+      throw new Error('DataStore.appendData: chunk must be an object with "x" and "y" arrays');
+    }
+    if (!_isArrayLike(chunk.x)) {
+      throw new Error('DataStore.appendData: chunk.x must be an array or typed array');
+    }
+    if (!_isArrayLike(chunk.y)) {
+      throw new Error('DataStore.appendData: chunk.y must be an array or typed array');
+    }
+    if (chunk.x.length !== chunk.y.length) {
+      throw new Error(
+        `DataStore.appendData: chunk.x.length (${chunk.x.length}) must equal chunk.y.length (${chunk.y.length})`
+      );
+    }
+    if (chunk.size !== undefined) {
+      if (!_isArrayLike(chunk.size)) {
+        throw new Error('DataStore.appendData: chunk.size must be an array or typed array');
+      }
+      if (chunk.size.length !== chunk.x.length) {
+        throw new Error(
+          `DataStore.appendData: chunk.size.length (${chunk.size.length}) must equal chunk.x.length (${chunk.x.length})`
+        );
+      }
+    }
+    if (chunk.color !== undefined) {
+      if (!_isArrayLike(chunk.color)) {
+        throw new Error('DataStore.appendData: chunk.color must be an array or typed array');
+      }
+      if (chunk.color.length !== chunk.x.length * 4) {
+        throw new Error(
+          `DataStore.appendData: chunk.color.length (${chunk.color.length}) must equal chunk.x.length * 4 (${chunk.x.length * 4})`
+        );
+      }
+    }
+  }
 
   /**
    * Append path for rolling ring buffer mode.

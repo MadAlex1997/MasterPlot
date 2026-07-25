@@ -59,17 +59,65 @@ const DEFAULT_MOUSE_BUTTONS = { left: 'pan', middle: 'none', right: 'zoomDrag' }
 const BUTTON_NAME_TO_CODE   = { left: 0, middle: 1, right: 2 };
 const VALID_MOUSE_ACTIONS   = new Set(['pan', 'zoomDrag', 'rectZoom', 'none']);
 
+// REL7: constructor option validation — extends F38's warn+fallback precedent
+// to the rest of the public constructor surface.
+const VALID_SCALE_TYPES = new Set(['linear', 'log', 'time']);
+const VALID_PAN_MODES   = new Set(['drag', 'follow']);
+
+/** REL7: validate a [min, max] domain option; warn + fall back on malformed input. */
+function _validateDomain(domain, name, fallback) {
+  if (domain === undefined) return fallback;
+  const ok = Array.isArray(domain) && domain.length === 2
+    && Number.isFinite(domain[0]) && Number.isFinite(domain[1])
+    && domain[0] !== domain[1];
+  if (!ok) {
+    console.warn(
+      `PlotController: invalid "${name}" option (expected [min, max] finite numbers with min !== max, ` +
+      `got ${JSON.stringify(domain)}); falling back to ${JSON.stringify(fallback)}`
+    );
+    return fallback;
+  }
+  return domain;
+}
+
+/** REL7: validate a scaleType option ('linear'|'log'|'time'); warn + fall back to 'linear'. */
+function _validateScaleType(scaleType, name) {
+  if (scaleType === undefined) return undefined;
+  if (!VALID_SCALE_TYPES.has(scaleType)) {
+    console.warn(
+      `PlotController: unknown "${name}" value ${JSON.stringify(scaleType)}; falling back to "linear"`
+    );
+    return 'linear';
+  }
+  return scaleType;
+}
+
+/** REL7: validate a panMode option ('drag'|'follow'); warn + fall back to 'drag'. */
+function _validatePanMode(panMode) {
+  if (panMode === undefined) return 'drag';
+  if (!VALID_PAN_MODES.has(panMode)) {
+    console.warn(
+      `PlotController: unknown "panMode" value ${JSON.stringify(panMode)}; falling back to "drag"`
+    );
+    return 'drag';
+  }
+  return panMode;
+}
+
 export class PlotController extends EventEmitter {
   /**
    * @param {object} opts
    * @param {AxisController} [opts.xAxis]       — shared config object; created from scaleType if absent
    * @param {AxisController} [opts.yAxis]       — shared config object; created from scaleType if absent
-   * @param {string}  [opts.xScaleType='linear'] — used only when opts.xAxis is not supplied
-   * @param {string}  [opts.yScaleType='linear'] — used only when opts.yAxis is not supplied
+   * @param {string}  [opts.xScaleType='linear'] — used only when opts.xAxis is not supplied.
+   *                                                 REL7: unrecognized value warns and falls back to 'linear'.
+   * @param {string}  [opts.yScaleType='linear'] — used only when opts.yAxis is not supplied.
+   *                                                 REL7: unrecognized value warns and falls back to 'linear'.
    * @param {string}  [opts.xLabel]             — convenience; sets xAxis.label when not sharing
    * @param {string}  [opts.yLabel]             — convenience; sets yAxis.label when not sharing
-   * @param {number[]} [opts.xDomain=[0,1]]
-   * @param {number[]} [opts.yDomain=[0,100]]
+   * @param {number[]} [opts.xDomain=[0,1]]     — REL7: malformed (not a 2-element finite-number array
+   *                                                 with min !== max) warns and falls back to [0,1].
+   * @param {number[]} [opts.yDomain=[0,100]]   — REL7: same validation as xDomain; falls back to [0,100].
    * @param {boolean} [opts.disableDefaultDataLayer=false]
    * @param {boolean} [opts.disablePanZoom=false]  — disable wheel zoom, right-drag zoom, pan,
    *                                                  and axis-drag zoom; ROI interaction still works
@@ -110,11 +158,11 @@ export class PlotController extends EventEmitter {
 
     // ARCH-G: AxisController is config-only.  Accept a shared instance or create a default.
     this._xAxis = opts.xAxis || new AxisController({
-      scaleType: opts.xScaleType || 'linear',
+      scaleType: _validateScaleType(opts.xScaleType, 'xScaleType') || 'linear',
       label:     opts.xLabel     || null,
     });
     this._yAxis = opts.yAxis || new AxisController({
-      scaleType: opts.yScaleType || 'linear',
+      scaleType: _validateScaleType(opts.yScaleType, 'yScaleType') || 'linear',
       label:     opts.yLabel     || null,
     });
 
@@ -124,8 +172,8 @@ export class PlotController extends EventEmitter {
     if (opts.yLabel && !this._yAxis.label) this._yAxis.label = opts.yLabel;
 
     // Wire axis config into viewport; set initial domains (silently, no event yet)
-    this._viewport._xDomain = opts.xDomain || [0, 1];
-    this._viewport._yDomain = opts.yDomain || [0, 100];
+    this._viewport._xDomain = _validateDomain(opts.xDomain, 'xDomain', [0, 1]);
+    this._viewport._yDomain = _validateDomain(opts.yDomain, 'yDomain', [0, 100]);
     this._viewport.setAxisConfig(this._xAxis, this._yAxis);
 
     this._roiController = new ROIController(this._viewport);
@@ -155,7 +203,7 @@ export class PlotController extends EventEmitter {
     this._panStart     = null;  // { screenX, screenY, xDomain, yDomain }
 
     // F4: pan mode toggle
-    this._panMode = opts.panMode || 'drag';
+    this._panMode = _validatePanMode(opts.panMode);
 
     // F7: follow pan speed — runtime-tunable (default matches original hardcoded value)
     this._followPanSpeed = 0.02;
@@ -332,7 +380,7 @@ export class PlotController extends EventEmitter {
 
   /** @param {'follow'|'drag'} mode */
   setPanMode(mode) {
-    this._panMode = (mode === 'drag') ? 'drag' : 'follow';
+    this._panMode = _validatePanMode(mode);
   }
 
   /** @param {number} speed  Tuning range: 0.005 – 0.1 */

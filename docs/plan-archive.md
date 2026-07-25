@@ -5267,3 +5267,86 @@ MasterPlot had never shipped a user-facing changelog — the only historical rec
 - README Stability section renders correctly as a markdown table; no code changes required (documentation-only feature).
 
 ---
+
+## REL7 [COMPLETED] Public API Input Validation
+
+**Branch:** `feature/REL7-REL8`
+**Completed:** 2026-07-25
+**Depends on:** none (independent)
+
+### Problem
+
+Constructor options and adapter contracts were almost entirely unvalidated — malformed input produced cryptic downstream errors (undefined property access, NaN into GPU buffers, `Cannot read property 'length' of undefined` deep inside `_appendLinear`) instead of an actionable message at the boundary. F38's `mouseButtons` validation (warn + fallback on an unrecognized action name) was the one precedent; this extends the same warn+fallback pattern to constructor options with sensible defaults, and adds fail-fast throws where no sensible fallback exists (missing required buffers, adapters missing required overrides).
+
+### Changes made
+
+**`src/plot/PlotController.js`:**
+- New module-level validators `_validateDomain`, `_validateScaleType`, `_validatePanMode` (alongside the existing F38 `_setMouseButtonMap`/`VALID_MOUSE_ACTIONS` pattern).
+- `xDomain`/`yDomain` constructor options: must be a 2-element finite-number array with `min !== max`; malformed input warns and falls back to `[0,1]`/`[0,100]`.
+- `xScaleType`/`yScaleType` (only used when `xAxis`/`yAxis` isn't shared): must be `'linear'|'log'|'time'`; unrecognized value warns and falls back to `'linear'`.
+- `panMode` constructor option and `setPanMode()`: must be `'drag'|'follow'`; unrecognized value warns and falls back to `'drag'` (previously `setPanMode()` silently normalized anything non-`'drag'` to `'follow'` with no warning — this is a small behavior change but no call site in the repo passes anything but `'drag'`/`'follow'`).
+
+**`src/plot/DataStore.js`:**
+- New `_validateChunk(chunk)`, called at the top of `appendData()` before any buffer writes. Throws (naming the offending field) if: `chunk` isn't an object; `chunk.x`/`chunk.y` are missing or not array-like (`Array.isArray` or `ArrayBuffer.isView`); `chunk.x.length !== chunk.y.length`; `chunk.size`/`chunk.color` (when present) don't match `chunk.x.length` / `chunk.x.length * 4`. This is the "real external/user input" case (per REL7's scope note) — a missing `x`/`y` has no sensible fallback, so it throws rather than warns.
+
+**`src/integration/ExternalDataAdapter.js` / `ExternalROIAdapter.js`:**
+- Constructors now validate, at registration time (construction), that all required methods (`replaceData`/`appendData` for data adapters; `load`/`save`/`subscribe` for ROI adapters) are actually overridden by the subclass — checked via `this[method] !== BaseClass.prototype[method]`, which works correctly under `super()` because subclass prototype methods exist before the base constructor body runs. Throws immediately naming the missing method, rather than deferring to the base class's existing "must be implemented by subclass" throw on first *use*. Direct instantiation of the base classes (no subclass) now also throws immediately, since both methods still point at the throwing base implementations.
+
+**`src/plot/ROI/ROIController.js`:**
+- New module-level `_validateSerializedROI(s)` (returns `null` if valid, else a string naming the offending field) and `VALID_ROI_TYPES` set (`'linearRegion'|'rect'|'lineROI'`, matching `_roiFromSerialized`'s supported types).
+- `updateFromExternal()` runs shape validation first: non-object payload, missing/non-string `id`, unrecognized `type`, non-finite `version`, missing/malformed `domain.x` (linearRegion/rect) or `domain.y` (rect only). `lineROI` accepts either an explicit `position` or a `domain` (matching `_roiFromSerialized`'s recovery logic). On failure: `console.warn` naming the field, return `false` — consistent with the existing silent-reject-on-stale-version pattern, just no longer silent. Existing ROI state is left untouched on rejection (validation runs before the `existing` lookup/mutation).
+
+**`src/index.d.ts`:** added `@throws`/behavior notes on `DataStore.appendData`, `ROIController.updateFromExternal`, `ExternalDataAdapter`, `ExternalROIAdapter`, and the `PlotControllerOptions` fields touched above. No type signatures changed — this is a documentation-only `.d.ts` update since validation is a runtime behavior, not a type-level one.
+
+**Tests** (new, all in `test/`): `plot/PlotController.test.js` (constructor-only — no `init()`/`destroy()`, since those need a real WebGL canvas jsdom doesn't provide), `plot/DataStore.test.js` additions, `plot/ROI/ROIBase.test.js` additions, `integration/ExternalDataAdapter.test.js`, `integration/ExternalROIAdapter.test.js`. 30 new test cases; full suite 136/136 passing.
+
+### Verification
+
+- `npm test` — 136/136 passing (9 files, up from 104/104 across 6 files).
+- `npm run lint` — 0 errors (2 pre-existing `react-hooks/exhaustive-deps` warnings, unrelated to this change).
+- `npm run typecheck` — clean.
+- Manual probe confirmed all four warn+fallback paths fire with the expected message and fallback value (`xDomain`/`yDomain`/`xScaleType`/`yScaleType`/`panMode`), then removed the probe test.
+
+---
+
+## REL8 [COMPLETED] Peer Dependency Range Audit
+
+**Branch:** `feature/REL7-REL8`
+**Completed:** 2026-07-25
+**Depends on:** none (independent)
+
+### Problem
+
+All `peerDependencies` in `package.json` were open-ended lower bounds (`>=9`, `>=18`, `>=3`/`>=4`, `>=0.1.5`). A future breaking major of deck.gl/luma.gl/React/d3 wouldn't be caught by the peer range — npm would let it install silently and the failure would surface as a confusing runtime error instead of an install-time peer warning.
+
+### Changes made
+
+**`package.json` `peerDependencies`:** added a tested upper bound to every entry, based on the versions actually present in this repo's own `node_modules` (verified via `require(...).version` per package, not guessed):
+
+| Peer | Old range | New range | Verified against |
+|---|---|---|---|
+| `@deck.gl/core`, `@deck.gl/layers` | `>=9` | `>=9 <10` | 9.2.11 |
+| `@luma.gl/core` | `>=9` | `>=9 <10` | 9.2.6 |
+| `react`, `react-dom` | `>=18` | `>=18 <20` | 19.2.4 |
+| `d3-scale` | `>=4` | `>=4 <5` | 4.0.2 |
+| `d3-format` | `>=3` | `>=3 <4` | 3.1.2 |
+| `d3-time-format` | `>=4` | `>=4 <5` | 4.1.0 |
+| `events` | `>=3` | `>=3 <4` | 3.3.0 |
+| `@loaders.gl/*` (6 packages, optional) | `>=4.3.4` | `>=4.3.4 <5` | 4.3.4 |
+| `zstd-codec` (optional) | `>=0.1.5` | `>=0.1.5 <0.2.0` | 0.1.5 |
+
+`zstd-codec` is capped at the next *minor* (`<0.2.0`), not major, since it's a pre-1.0 package where semver conventionally treats minor bumps as potentially breaking.
+
+`react`/`react-dom` are capped at `<20` (not `<19`) even though the peer floor is `>=18` — the installed/tested version is 19.2.4, so the range reflects "verified up to React 19," not "only React 18."
+
+**`package-lock.json`:** regenerated via `npm install --package-lock-only` to pick up the new peer ranges in the root package's lockfile entry (no dependency tree changes — this only touches the `peerDependencies` object recorded for the root package).
+
+**`README.md`:** new "Peer Dependencies" subsection under "Installation & Running", before "TypeScript" — explains the tested-upper-bound policy (widened deliberately after verification, never automatically) and reproduces the version table above.
+
+### Verification
+
+- `npm install --package-lock-only` completed with no errors; `git diff package-lock.json` shows only the intended `peerDependencies` range change on the root package entry.
+- `npm run build`, `npm test` (136/136), `npm run lint` (0 errors), `npm run typecheck` all pass after the range change — confirms the currently-installed peer versions (deck.gl 9.2.11, React 19.2.4, etc.) still satisfy the new upper-bounded ranges.
+- Installing a peer one major above a tested range (e.g. a hypothetical `react@20`) would now produce an `ERESOLVE`/peer warning under npm 7+'s peer resolution, instead of silently succeeding — not independently re-verified against a real React 20 release (doesn't exist yet), but the range mechanics are the same npm semver-range behavior already exercised by the existing lower-bound-only ranges.
+
+---

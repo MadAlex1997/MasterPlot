@@ -25,6 +25,43 @@ import { LinearRegion, LR_HANDLES } from './LinearRegion.js';
 import { LineROI, LINE_HANDLE } from './LineROI.js';
 import { ConstraintEngine } from './ConstraintEngine.js';
 
+// REL7: recognized ROI type discriminators, per _roiFromSerialized()
+const VALID_ROI_TYPES = new Set(['linearRegion', 'rect', 'lineROI']);
+
+/**
+ * REL7: validate a serializedROI object shape before it reaches
+ * version-gating/apply logic. Returns null if valid, or a string describing
+ * the offending field otherwise.
+ */
+function _validateSerializedROI(s) {
+  if (!s || typeof s !== 'object') return '"serializedROI" must be an object';
+  if (typeof s.id !== 'string' || s.id.length === 0) return '"id" must be a non-empty string';
+  if (!VALID_ROI_TYPES.has(s.type)) {
+    return `"type" must be one of ${[...VALID_ROI_TYPES].join(', ')} (got ${JSON.stringify(s.type)})`;
+  }
+  if (typeof s.version !== 'number' || !Number.isFinite(s.version)) {
+    return '"version" must be a finite number';
+  }
+
+  const validRange = (r) => Array.isArray(r) && r.length === 2 && r.every(Number.isFinite);
+
+  if (s.type === 'linearRegion' || s.type === 'rect') {
+    if (!s.domain || !validRange(s.domain.x)) {
+      return '"domain.x" must be a 2-element array of finite numbers';
+    }
+  }
+  if (s.type === 'rect') {
+    if (!validRange(s.domain.y)) {
+      return '"domain.y" must be a 2-element array of finite numbers';
+    }
+  }
+  if (s.type === 'lineROI' && s.position === undefined && !s.domain) {
+    return 'lineROI requires either "position" or "domain"';
+  }
+
+  return null;
+}
+
 export class ROIController extends EventEmitter {
   /**
    * @param {ViewportController} viewport
@@ -182,9 +219,16 @@ export class ROIController extends EventEmitter {
    * Rejects silently if incoming.version <= current.version.
    *
    * @param {{ id, type, version, updatedAt, domain, metadata }} serializedROI
-   * @returns {boolean} true if accepted, false if rejected
+   * @returns {boolean} true if accepted, false if rejected (stale version or,
+   *   per REL7, malformed shape — a warning names the offending field)
    */
   updateFromExternal(serializedROI) {
+    const shapeError = _validateSerializedROI(serializedROI);
+    if (shapeError) {
+      console.warn(`ROIController.updateFromExternal: rejected — ${shapeError}`);
+      return false;
+    }
+
     const existing = this._rois.get(serializedROI.id);
 
     // Reject stale or equal version

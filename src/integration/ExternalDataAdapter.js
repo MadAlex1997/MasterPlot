@@ -47,6 +47,21 @@ export class ExternalDataAdapter {
       throw new Error('ExternalDataAdapter: dataStore is required');
     }
     this._dataStore = dataStore;
+
+    // REL7: validate the adapter's method signatures at registration time
+    // (construction) rather than letting a missing override surface as a
+    // "must be implemented by subclass" throw the first time it's called.
+    for (const method of ['replaceData', 'appendData']) {
+      if (typeof this[method] !== 'function') {
+        throw new Error(`ExternalDataAdapter: subclass must define method "${method}"`);
+      }
+      if (this[method] === ExternalDataAdapter.prototype[method]) {
+        throw new Error(
+          `ExternalDataAdapter: subclass must override "${method}()" — the base implementation ` +
+          'only throws'
+        );
+      }
+    }
   }
 
   /**

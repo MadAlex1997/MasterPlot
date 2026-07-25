@@ -69,6 +69,21 @@ export class ExternalROIAdapter {
       throw new Error('ExternalROIAdapter: roiController is required');
     }
     this._roiController = roiController;
+
+    // REL7: validate the adapter's method signatures at registration time
+    // (construction) rather than letting a missing override surface as a
+    // "must be implemented by subclass" throw the first time it's called.
+    for (const method of ['load', 'save', 'subscribe']) {
+      if (typeof this[method] !== 'function') {
+        throw new Error(`ExternalROIAdapter: subclass must define method "${method}"`);
+      }
+      if (this[method] === ExternalROIAdapter.prototype[method]) {
+        throw new Error(
+          `ExternalROIAdapter: subclass must override "${method}()" — the base implementation ` +
+          'only throws'
+        );
+      }
+    }
   }
 
   /**

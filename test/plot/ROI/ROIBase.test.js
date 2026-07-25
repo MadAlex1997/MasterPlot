@@ -202,3 +202,92 @@ describe('ROIController.updateFromExternal — version gating (F14)', () => {
     expect(region.x2).toBe(15);
   });
 });
+
+describe('ROIController.updateFromExternal — shape validation (REL7)', () => {
+  it('rejects and warns on a non-object payload', () => {
+    const controller = new ROIController(null);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    expect(controller.updateFromExternal(null)).toBe(false);
+    expect(controller.updateFromExternal('nope')).toBe(false);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('rejects and warns naming "id" when id is missing or not a string', () => {
+    const controller = new ROIController(null);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const accepted = controller.updateFromExternal({
+      type: 'rect', version: 1, domain: { x: [0, 1], y: [0, 1] },
+    });
+
+    expect(accepted).toBe(false);
+    expect(warn.mock.calls[0][0]).toMatch(/"id"/);
+    warn.mockRestore();
+  });
+
+  it('rejects and warns naming "version" when version is not a finite number', () => {
+    const controller = new ROIController(null);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const accepted = controller.updateFromExternal({
+      id: 'r1', type: 'rect', version: 'not-a-number', domain: { x: [0, 1], y: [0, 1] },
+    });
+
+    expect(accepted).toBe(false);
+    expect(warn.mock.calls[0][0]).toMatch(/"version"/);
+    warn.mockRestore();
+  });
+
+  it('rejects and warns naming "domain.x" when a rect/linearRegion payload has no valid domain.x', () => {
+    const controller = new ROIController(null);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const accepted = controller.updateFromExternal({
+      id: 'r1', type: 'rect', version: 1, domain: { y: [0, 1] },
+    });
+
+    expect(accepted).toBe(false);
+    expect(warn.mock.calls[0][0]).toMatch(/"domain\.x"/);
+    warn.mockRestore();
+  });
+
+  it('rejects and warns naming "domain.y" when a rect payload is missing domain.y', () => {
+    const controller = new ROIController(null);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const accepted = controller.updateFromExternal({
+      id: 'r1', type: 'rect', version: 1, domain: { x: [0, 1] },
+    });
+
+    expect(accepted).toBe(false);
+    expect(warn.mock.calls[0][0]).toMatch(/"domain\.y"/);
+    warn.mockRestore();
+  });
+
+  it('accepts a lineROI payload with an explicit "position" and no domain', () => {
+    const controller = new ROIController(null);
+
+    const accepted = controller.updateFromExternal({
+      id: 'line1', type: 'lineROI', version: 1, position: 5, orientation: 'vertical',
+    });
+
+    expect(accepted).toBe(true);
+    expect(controller.getROI('line1')).toBeDefined();
+  });
+
+  it('does not mutate the existing ROI when a shape-invalid update is rejected', () => {
+    const controller = new ROIController(null);
+    const roi = new RectROI({ id: 'r1', x1: 0, x2: 1, y1: 0, y2: 1 });
+    roi.version = 3;
+    controller.addROI(roi);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    controller.updateFromExternal({ id: 'r1', type: 'rect', version: 4 }); // missing domain
+
+    expect(roi.getBounds()).toEqual({ x1: 0, x2: 1, y1: 0, y2: 1 });
+    expect(roi.version).toBe(3);
+    warn.mockRestore();
+  });
+});

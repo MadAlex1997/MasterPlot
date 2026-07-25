@@ -13,8 +13,9 @@ Pre-1.0 development had no compatibility guarantees and is summarized below as a
 
 ## [Unreleased]
 
-Release-hardening work in progress ahead of the first publish (input validation on public
-APIs, peer-dependency range audit). No user-facing feature changes.
+Release-hardening work is complete. The only remaining step ahead of the first publish is
+cutting and publishing `1.0.0` itself, which requires explicit maintainer go-ahead. No
+user-facing feature changes.
 
 ## [1.0.0] - 2026-07-25
 
@@ -87,7 +88,8 @@ Initial public release.
 
 **Release engineering**
 - Vitest test suite covering `ViewportController`, `ConstraintEngine`, ROI versioning,
-  `DataStore`, `PlotDataView`, and `AxisController`
+  `DataStore`, `PlotDataView`, `AxisController`, `PlotController` construction, and the
+  external integration adapters
 - Hand-written TypeScript declarations for all three entry points (`masterplot`,
   `masterplot/ui`, `masterplot/loaders`) with a `tsc`-checked smoke test
 - GitHub Actions CI quality gate (build → lint → test → typecheck) on every PR and push
@@ -95,3 +97,10 @@ Initial public release.
 - npm package metadata (`sideEffects: false`, `engines`, `repository`/`homepage`/`bugs`)
   and isolation of the `loaders.gl` dependency tree into optional peer dependencies so a
   plain install never pulls it in
+- Input validation at every public-API boundary — `PlotController` constructor options,
+  `DataStore.appendData()`, `ExternalDataAdapter`/`ExternalROIAdapter` subclass method
+  overrides, and `ROIController.updateFromExternal()` — warn-and-fall-back or throw with a
+  message naming the offending field, instead of a cryptic downstream failure
+- `peerDependencies` ranges have a tested upper bound (e.g. `>=9 <10` for deck.gl/luma.gl)
+  rather than an open-ended lower bound, so a future breaking peer major surfaces as an
+  install-time warning instead of installing silently

@@ -60,6 +60,57 @@ describe('DataStore — non-rolling append + GPU attributes', () => {
   });
 });
 
+describe('DataStore — appendData chunk validation (REL7)', () => {
+  it('throws naming "chunk" when passed a non-object', () => {
+    const store = new DataStore(1024);
+    expect(() => store.appendData(null)).toThrow(/chunk must be an object/);
+    expect(() => store.appendData('nope')).toThrow(/chunk must be an object/);
+  });
+
+  it('throws naming "chunk.x" when x is missing or not array-like', () => {
+    const store = new DataStore(1024);
+    expect(() => store.appendData({ y: new Float32Array([1]) })).toThrow(/chunk\.x/);
+    expect(() => store.appendData({ x: 5, y: new Float32Array([1]) })).toThrow(/chunk\.x/);
+  });
+
+  it('throws naming "chunk.y" when y is missing or not array-like', () => {
+    const store = new DataStore(1024);
+    expect(() => store.appendData({ x: new Float32Array([1]) })).toThrow(/chunk\.y/);
+  });
+
+  it('throws when chunk.x and chunk.y lengths mismatch', () => {
+    const store = new DataStore(1024);
+    expect(() => store.appendData({
+      x: new Float32Array([1, 2]),
+      y: new Float32Array([1]),
+    })).toThrow(/chunk\.x\.length.*chunk\.y\.length/);
+  });
+
+  it('throws when chunk.size length does not match chunk.x length', () => {
+    const store = new DataStore(1024);
+    expect(() => store.appendData({
+      x: new Float32Array([1, 2]),
+      y: new Float32Array([1, 2]),
+      size: new Float32Array([1]),
+    })).toThrow(/chunk\.size/);
+  });
+
+  it('throws when chunk.color length does not match chunk.x.length * 4', () => {
+    const store = new DataStore(1024);
+    expect(() => store.appendData({
+      x: new Float32Array([1, 2]),
+      y: new Float32Array([1, 2]),
+      color: new Uint8Array([255, 255, 255, 255]), // only 1 point's worth
+    })).toThrow(/chunk\.color/);
+  });
+
+  it('accepts plain number[] arrays (not just typed arrays)', () => {
+    const store = new DataStore(1024);
+    expect(() => store.appendData({ x: [1, 2], y: [3, 4] })).not.toThrow();
+    expect(store.getPointCount()).toBe(2);
+  });
+});
+
 describe('DataStore — _grow() 1.5x policy (non-rolling)', () => {
   it('grows capacity by ceil(1.5x) exactly enough times to fit an over-sized single append', () => {
     const store = new DataStore(4);

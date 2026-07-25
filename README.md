@@ -1253,6 +1253,22 @@ npm run typecheck   # tsc --noEmit against test-types/smoke.tsx
 npm run lint         # eslint (src/, ui/, loaders/, test/) — correctness rules only
 ```
 
+### Peer Dependencies
+
+`peerDependencies` in `package.json` are ranged with a tested upper bound (`>=<tested major> <next major>`), not an open-ended lower bound — installing a peer one major above the tested range produces an `ERESOLVE`/peer warning instead of silently succeeding against an unverified API. Ranges are widened deliberately, only after the new major is verified against this repo's test suite and examples — never automatically.
+
+| Peer | Range | Verified against |
+|---|---|---|
+| `@deck.gl/core`, `@deck.gl/layers` | `>=9 <10` | 9.2.11 |
+| `@luma.gl/core` | `>=9 <10` | 9.2.6 |
+| `react`, `react-dom` | `>=18 <20` | 19.2.4 |
+| `d3-scale` | `>=4 <5` | 4.0.2 |
+| `d3-format` | `>=3 <4` | 3.1.2 |
+| `d3-time-format` | `>=4 <5` | 4.1.0 |
+| `events` | `>=3 <4` | 3.3.0 |
+| `@loaders.gl/*` (optional) | `>=4.3.4 <5` | 4.3.4 |
+| `zstd-codec` (optional) | `>=0.1.5 <0.2.0` | 0.1.5 |
+
 ### TypeScript
 
 MasterPlot ships hand-written `.d.ts` declarations for all three entry points (`masterplot`, `masterplot/ui`, `masterplot/loaders`) — no `@types/masterplot` package needed. `import { PlotController } from 'masterplot'` gets full autocomplete and type-checking out of the box. Declarations live next to their source (`src/index.d.ts`, `ui/index.d.ts`, `loaders/index.d.ts`) and are wired up via the `types` condition on each `exports` subpath in `package.json`. `test-types/smoke.tsx` is a throwaway fixture (not published) exercising a representative slice of the API — run `npm run typecheck` to catch declaration drift against the real source.
