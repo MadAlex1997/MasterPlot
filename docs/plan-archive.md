@@ -5,6 +5,44 @@ All active/pending work is in [PLAN.md](../PLAN.md).
 
 ---
 
+## REL1 [COMPLETED] Dependency Footprint Audit & loaders.gl Isolation
+
+**Branch:** `feature/REL1`
+**Completed:** 2026-07-24
+**Depends on:** none (independent)
+
+### Problem
+
+`package.json` listed `@loaders.gl/arrow`, `@loaders.gl/core`, `@loaders.gl/csv`, `@loaders.gl/netcdf`, `@loaders.gl/parquet`, `@loaders.gl/schema`, `zstd-codec`, `lz4js`, `snappyjs`, and six Node browser-polyfills (`buffer`, `crypto-browserify`, `path-browserify`, `process`, `stream-browserify`, `vm-browserify`) under `dependencies`, not `peerDependencies`/`optionalDependencies`. Every consumer of the main `masterplot` import — even one who never imports `masterplot/loaders` — pulled in this entire tree on `npm install`.
+
+### Investigation
+
+Traced actual imports rather than guessing at what could be moved:
+- `@loaders.gl/{arrow,core,csv,netcdf,parquet,schema}` and `zstd-codec` are imported only by `loaders/TableLoaderAdapter.js` / `loaders/RasterLoaderAdapter.js`, and were already `external` in `rollup.config.mjs`'s loaders bundle (never inlined into `lib/loaders.*.js`) — confirming they're true peers of the `masterplot/loaders` subpath only, never touched by `src/`.
+- `lz4js` and `snappyjs` are imported by `TableLoaderAdapter.js` too, but were **not** in rollup's external list for the loaders bundle, so they were already being inlined into `lib/loaders.{cjs,esm}.js` at build time. Consumers never need them installed at all — only the repo's own build does.
+- `buffer`/`crypto-browserify`/`path-browserify`/`process`/`stream-browserify`/`vm-browserify` are never imported by any `src/`/`ui/`/`loaders/` code directly (confirmed via grep for `from 'buffer'` etc. — zero hits). They exist solely as `webpack.config.js` `resolve.fallback` targets for the **demo site's own bundle**, which needs to polyfill Node builtins referenced by `@loaders.gl/parquet`'s transitive dependency chain (e.g. `int53`, `node-int64`). None of the six polyfills are a dependency of the published library at all.
+- `fft.js` / `fft-windowing` were left untouched — confirmed used by `src/audio/AudioController.js`, part of the main entry point, needed by every consumer regardless of `loaders/` usage.
+
+### Changes made
+
+**`package.json`:**
+- `@loaders.gl/{arrow,core,csv,netcdf,parquet,schema}` + `zstd-codec` → moved from `dependencies` to `peerDependencies` (semver range unchanged) with a matching `peerDependenciesMeta: { optional: true }` entry for each; also added to `devDependencies` at the same pinned version so the repo's own `build:lib` / `build:demo` / future tests keep working without depending on npm's peer-auto-install behavior for optional peers
+- `lz4js` + `snappyjs` → moved from `dependencies` to `devDependencies` only (build-time-only; rollup inlines them into the shipped bundle, so listing them as a runtime `dependency` was pure install-weight for every consumer with no runtime purpose)
+- `buffer`, `crypto-browserify`, `path-browserify`, `process`, `stream-browserify`, `vm-browserify` → moved from `dependencies` to `devDependencies` (demo-build-only; not part of the published library surface at all)
+
+**`README.md`** — "Data Loaders" section rewritten: replaced the old blanket `npm install @loaders.gl/core @loaders.gl/csv @loaders.gl/arrow @loaders.gl/netcdf --legacy-peer-deps` line (the `--legacy-peer-deps` flag was a workaround for these previously being regular `dependencies` that could conflict) with per-adapter install commands (Table vs. Raster vs. Parquet-specific), plus a note that `lz4js`/`snappyjs` ship inlined and don't need separate installation.
+
+No `rollup.config.mjs` changes were needed — `rollup-plugin-peer-deps-external` auto-externalizes anything in `peerDependencies`, and the existing `PEER_EXTERNALS` regex (`/^@loaders\.gl\//`) plus the explicit `makeSubExternal('zstd-codec')` call already covered the newly-peer-scoped packages.
+
+### Verification
+
+- `npm install` — fresh lockfile resolves cleanly (246 insertions / 50 deletions in `package-lock.json`, reflecting the dependency-type changes)
+- `npm run build:lib` — rollup build clean; confirmed via grep that `lib/loaders.esm.js` still has `@loaders.gl/*`/`zstd-codec` as bare `import` statements (external, not bundled) and that `lz4js`/`snappyjs` do **not** appear as bare imports (i.e. still inlined, as before)
+- `npm run build:demo` — webpack build clean; only the two pre-existing, unrelated asset-size warnings (audio sample file size) remain
+- `npm pack --dry-run` — 57 files, 570.1 kB packed / 2.4 MB unpacked, no unexpected inclusions/omissions
+
+---
+
 ## EX20 [COMPLETED] Axis Options Showcase
 
 **Branch:** `feature/EX20`

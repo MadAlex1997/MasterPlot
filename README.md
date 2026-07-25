@@ -998,11 +998,20 @@ roiAdp.detach();
 
 ## Data Loaders
 
-Optional adapter utilities in `loaders/` for loading common scientific file formats directly into MasterPlot data structures.
+Optional adapter utilities in `loaders/` for loading common scientific file formats directly into MasterPlot data structures. These pull in `@loaders.gl/*` and, for Parquet, `zstd-codec` — listed as **optional peer dependencies**, so a plain `npm install masterplot` never installs them. Install only what you use:
 
 ```
-npm install @loaders.gl/core @loaders.gl/csv @loaders.gl/arrow @loaders.gl/netcdf --legacy-peer-deps
+# TableLoaderAdapter (CSV/Arrow)
+npm install @loaders.gl/core @loaders.gl/csv @loaders.gl/arrow
+
+# + Parquet support
+npm install @loaders.gl/parquet @loaders.gl/schema zstd-codec
+
+# RasterLoaderAdapter (NetCDF)
+npm install @loaders.gl/core @loaders.gl/netcdf
 ```
+
+`lz4js` and `snappyjs` (Parquet compression codecs) are bundled into `masterplot/loaders` directly — you don't need to install them yourself.
 
 ### TableLoaderAdapter
 

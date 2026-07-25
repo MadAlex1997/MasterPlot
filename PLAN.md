@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 9.13
+**Plan Version:** 9.14
 **Last Updated:** 2026-07-24
-**Status:** Phase 7 + Phase 8 + Phase 9 complete. F36, F37, F38 all done. No pending features.
+**Status:** Phase 7 + Phase 8 + Phase 9 complete. Phase 10 (1.0.0 Release Hardening) added — REL1–REL9 pending. No pending feature work; all pending work is release-hardening (tests, types, CI, packaging).
 
 ---
 
@@ -125,6 +125,15 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | F36 | ROI Interaction Control (movable/resizable lock + pickable) | ✅ COMPLETED | feature/F36 | 2026-07-24 |
 | F37 | Rect Zoom Mode (middle-click drag-to-zoom) | ✅ COMPLETED | feature/F37 | 2026-07-24 |
 | F38 | Configurable Mouse Button Bindings | ✅ COMPLETED | feature/F38 | 2026-07-24 |
+| REL1 | Dependency Footprint Audit & loaders.gl Isolation | ✅ COMPLETED | feature/REL1 | 2026-07-24 |
+| REL2 | npm Package Metadata & Publish Readiness | 🔲 PENDING | — | — |
+| REL3 | Test Infrastructure & Core Coverage | 🔲 PENDING | — | — |
+| REL4 | TypeScript Declarations | 🔲 PENDING | — | — |
+| REL5 | CI Quality Gate (lint + typecheck + test) | 🔲 PENDING | — | — |
+| REL6 | CHANGELOG + Semver Policy + Drop "Experimental" Framing | 🔲 PENDING | — | — |
+| REL7 | Public API Input Validation | 🔲 PENDING | — | — |
+| REL8 | Peer Dependency Range Audit | 🔲 PENDING | — | — |
+| REL9 | Cut & Publish v1.0.0 | 🔲 PENDING | — | — |
 
 ---
 
@@ -155,6 +164,24 @@ F36  (independent — no dependencies) ✅
 F37  (independent — no dependencies) ✅
 
 F38  (depends on F37 — remaps the button F37 hardcodes to middle-click) ✅
+
+REL1  (independent — no dependencies)
+
+REL2  (depends on REL1 — files/dependencies must be final before locking package metadata)
+
+REL3a → REL3b  (independent of other REL items)
+
+REL4  (independent — no dependencies)
+
+REL5  (depends on REL3a for `npm test`, REL4 for `tsc --noEmit`)
+
+REL6  (depends on REL3, REL4 — claims made in README/CHANGELOG must be true when written)
+
+REL7  (independent — no dependencies)
+
+REL8  (independent — no dependencies)
+
+REL9  (depends on REL1–REL8 — final release gate, requires explicit user go-ahead before `npm publish`)
 ```
 
 ---
@@ -430,10 +457,151 @@ Full spec: [docs/plan-archive.md#f38](docs/plan-archive.md#f38)
 
 ---
 
+## Phase 10 — 1.0.0 Release Hardening
+
+**Motivation:** Phases 4–9 left MasterPlot feature-complete, but it has never been published and does not yet meet the bar of a "real" 1.0.0 library release: zero automated tests, no TypeScript declarations, no CI quality gate (only a demo-deploy workflow), incomplete npm package metadata, a dependency graph that forces every consumer to install the full loaders.gl + Node-polyfill tree regardless of whether they touch `masterplot/loaders`, and a README that still opens with "Experimental — expect breaking changes and rough edges." This phase is hardening only — no new user-facing features.
+
+---
+
+### REL1 [COMPLETED] Dependency Footprint Audit & loaders.gl Isolation
+**Completed:** 2026-07-24 | **Branch:** feature/REL1
+`@loaders.gl/*` + `zstd-codec` moved from `dependencies` to optional `peerDependencies` (never bundled — true peers of `masterplot/loaders` only); `lz4js`/`snappyjs` moved to `devDependencies` (already inlined into the shipped loaders bundle by rollup, never needed by consumers); the 6 Node polyfills moved to `devDependencies` (demo-build-only, never imported by library code); README "Data Loaders" install instructions updated to match.
+Full spec: [docs/plan-archive.md#rel1](docs/plan-archive.md#rel1)
+
+---
+
+### REL2 [PENDING] npm Package Metadata & Publish Readiness
+**Branch:** `feature/REL2`
+**Depends on:** REL1
+
+**Changes to `package.json`:**
+- Add `repository`, `homepage`, `bugs`, `author`, `keywords`
+- Add `engines.node` (browser support matrix goes in README, not `engines`)
+- Add `"sideEffects": false` (or an explicit exceptions array) after auditing `src/index.js` and everything it re-exports for top-level side effects — required for correct ESM tree-shaking
+- Consolidate `.npmignore` vs. the `files` allowlist (the `files` field already whitelists `lib/`, `src/`, `ui/`, `loaders/`, making `.npmignore` largely redundant) — pick one source of truth
+- Remove the committed `masterplot-*.tgz` local-pack artifacts from the repo root; add `*.tgz` to `.gitignore` (today only `masterplot-1.0.0.tgz` is ignored by exact name)
+
+**Verification:** `npm pack --dry-run` and `npm publish --dry-run` output contains exactly the intended files and runs clean.
+
+---
+
+### REL3 [PENDING] Test Infrastructure & Core Coverage
+**Branch:** `feature/REL3`
+**Depends on:** none (independent; land after REL1 if that PR touches build config)
+
+#### REL3a — Test Infrastructure
+- Add Vitest (fits the existing Babel/ESM/no-TS toolchain without a separate transform config) + `@testing-library/react` for the React-facing pieces (`PlotCanvas`, `usePopupChannel`)
+- `npm test` + `npm run test:watch` scripts
+- Headless WebGL is out of scope — most controller logic (domain math, ROI constraints, ring-buffer eviction) has zero WebGL dependency and is directly testable through the public API with deck.gl calls stubbed
+
+#### REL3b — Core Coverage
+Priority order — highest-risk, least-obvious-from-reading-the-code logic first:
+1. **`ViewportController`** — pan/zoom domain math, especially the y-axis inverted-range sign convention (`AGENT.md` documents this exact bug class as having bitten agents before)
+2. **`ROI/ConstraintEngine.js`** — parent/child bound clamping, cascading updates, multi-level nesting
+3. **`ROI/ROIBase.js` versioning** — `bumpVersion()`, `updateFromExternal()` version-gating (reject `incoming.version <= current.version`)
+4. **`DataStore`** — ring buffer eviction (`enableRolling`, `expireIfNeeded`), `_grow()` 1.5× policy, `getLogicalData()` correctness across the wrap boundary
+5. **`PlotDataView`** — dirty-flag propagation (dirty on `roiFinalized`/`roiExternalUpdate`, NOT on `roiUpdated`), `filterByDomain`/`filterByROI`, `histogram()`
+6. **`AxisController`** — scale/tick generation for linear/log/time, `formatTick`
+
+**Verification:** `npm test` passes in CI; each module above has tests covering the edge cases already called out in README/AGENT.md as non-obvious.
+
+---
+
+### REL4 [PENDING] TypeScript Declarations
+**Branch:** `feature/REL4`
+**Depends on:** none (independent)
+
+prompt.md has always required the design be "TypeScript-ready" even though the implementation is plain JS. No `.d.ts` files exist, so TypeScript consumers get `any` across the entire public surface today.
+
+**Changes:**
+- Hand-written `.d.ts` files covering every export from `src/index.js`, `ui/index.js`, `loaders/index.js` (hand-written over JSDoc→`tsc` extraction, since JSDoc coverage in the codebase is minimal today)
+- Add `"types"` to `package.json` and a `types` condition to each `exports` subpath
+- Add a throwaway `.ts` smoke-test fixture (not shipped) that imports the public API; run `tsc --noEmit` against it in CI so declaration drift is caught automatically
+
+**Verification:** A fresh TS project importing from `masterplot` gets full autocomplete/type-checking with zero `any` leakage at the top level.
+
+---
+
+### REL5 [PENDING] CI Quality Gate (lint + typecheck + test)
+**Branch:** `feature/REL5`
+**Depends on:** REL3a, REL4
+
+**Problem:** `.github/workflows/deploy.yml` only builds and deploys the demo site on push to `main` — nothing runs on pull requests, so a broken build/test can merge.
+
+**Changes:**
+- Add ESLint (flat config), rules focused on correctness (no-unused-vars, no-undef, react-hooks rules for `ui/`/`components/`) rather than style
+- New `.github/workflows/ci.yml` on `pull_request` + `push: main`: `npm ci` → `npm run build` → `npm run lint` → `npm test` → `tsc --noEmit`
+- `deploy.yml` stays as-is — deploy is a separate concern from the quality gate
+
+**Verification:** A PR with a deliberately broken test/lint/type error fails CI; a clean PR passes.
+
+---
+
+### REL6 [PENDING] CHANGELOG + Semver Policy + Drop "Experimental" Framing
+**Branch:** `feature/REL6`
+**Depends on:** REL3, REL4
+
+**Changes:**
+- `CHANGELOG.md` (Keep a Changelog format), seeded from the PLAN.md Feature Status Index / archive — this is the first user-facing changelog; PLAN.md's changelog stays as the agent/dev-facing log
+- README: remove the `> **Experimental**` banner; replace with a short "Stability" section stating the actual semver policy (what `src/` covers vs. what `ui/`/`loaders/` convenience packages may move faster than)
+- State plainly that 1.0.0 is the first release where breaking changes require a major bump — pre-1.0 history had no compatibility constraint, so this needs to be explicit, not assumed
+
+**Verification:** README no longer says "Experimental"; `CHANGELOG.md` exists and is dated.
+
+---
+
+### REL7 [PENDING] Public API Input Validation
+**Branch:** `feature/REL7`
+**Depends on:** none (independent)
+
+**Problem:** Constructor options and adapter contracts are almost entirely unvalidated — malformed input produces cryptic downstream errors (undefined property access, NaN into GPU buffers) instead of an actionable message at the boundary. F38's `mouseButtons` validation (warn + fallback on an unrecognized action name) is the one place this pattern already exists — extend it to the rest of the public surface.
+
+**Scope (boundary-only — this is real external/user input, not the "don't validate what can't happen" case):**
+- `PlotController` constructor options
+- `DataStore.appendData()` — shape/type check on the incoming buffer struct
+- `ExternalDataAdapter` / `ExternalROIAdapter` — validate adapter method signatures at registration time, not first use
+- `ROIController.updateFromExternal()` — validate serialized ROI shape before version-gating
+
+**Verification:** A malformed constructor option or adapter throws or warns (matching F38's precedent) with a message naming the offending field.
+
+---
+
+### REL8 [PENDING] Peer Dependency Range Audit
+**Branch:** `feature/REL8`
+**Depends on:** none (independent)
+
+**Problem:** All `peerDependencies` are open-ended lower bounds (`>=9`, `>=18`, `>=3`/`>=4`). A future breaking major of deck.gl/luma.gl/React won't be caught by the peer range — npm will let it install silently.
+
+**Changes:**
+- Pin the tested upper bound per peer (e.g. `"@deck.gl/core": ">=9 <10"`) based on versions currently verified in this repo
+- Document the tested version matrix in README
+- Widen deliberately (not automatically) only after a new peer major is verified to work
+
+**Verification:** Installing a peer one major above the tested range produces an `ERESOLVE`/peer warning instead of silently succeeding.
+
+---
+
+### REL9 [PENDING] Cut & Publish v1.0.0
+**Branch:** `feature/REL9`
+**Depends on:** REL1–REL8 (all)
+
+Final gate — no code changes beyond version metadata and release notes.
+
+- Clean `npm run build` + `npm test` + `npm run lint` + `tsc --noEmit` on `main`
+- `npm pack --dry-run` review confirming REL1/REL2 changes took effect
+- `npm publish` — **requires explicit user go-ahead**, this is an irreversible public action
+- `git tag v1.0.0` + GitHub release notes generated from `CHANGELOG.md`
+
+**Verification:** `npm install masterplot` from the public registry works end-to-end for a minimal `PlotController` + scatter example in a scratch project.
+
+---
+
 ## Recent Changelog
 
 > Full history in [docs/plan-archive.md — Change Log](docs/plan-archive.md#change-log).
 
+- **2026-07-24 [Claude]**: REL1 completed (v9.15) — `package.json`: `@loaders.gl/{arrow,core,csv,netcdf,parquet,schema}` + `zstd-codec` moved `dependencies` → `peerDependencies` (optional via `peerDependenciesMeta`) + duplicated into `devDependencies` for local build/test; `lz4js`/`snappyjs` moved to `devDependencies` (confirmed already inlined into `lib/loaders.*.js` by rollup — never a runtime need for consumers); the 6 Node polyfills (`buffer`/`crypto-browserify`/`path-browserify`/`process`/`stream-browserify`/`vm-browserify`) moved to `devDependencies` (confirmed zero direct imports anywhere in `src`/`ui`/`loaders` — they're `webpack.config.js` demo-build fallbacks only). `fft.js`/`fft-windowing` confirmed used by `AudioController` (main entry) and left in `dependencies`. README "Data Loaders" section rewritten with per-adapter install commands, dropping the old `--legacy-peer-deps` workaround. Verified: `npm install`, `npm run build:lib` (grep-confirmed `@loaders.gl/*`/`zstd-codec` still external imports, `lz4js`/`snappyjs` still inlined), `npm run build:demo`, `npm pack --dry-run` all clean. No `rollup.config.mjs` changes needed. Branch: `feature/REL1`.
+- **2026-07-24 [Claude]**: Phase 10 (1.0.0 Release Hardening) added as PENDING (v9.14) — library-as-product audit found zero automated tests, no TypeScript declarations, no CI test/lint gate (only a demo-deploy workflow), incomplete npm package metadata (`sideEffects`, `repository`/`homepage`/`bugs`/`keywords`/`engines`, `.npmignore`/`files` duplication), loaders.gl + 6 Node-polyfill packages listed under `dependencies` instead of scoped to the `masterplot/loaders` subpath (bloats install for every consumer), open-ended peer-dependency ranges, no CHANGELOG.md, and a README still marked "Experimental." Nine tasks added: REL1 (loaders.gl dependency isolation), REL2 (npm metadata/publish readiness), REL3 (test infra + core coverage of ViewportController/ConstraintEngine/ROI versioning/DataStore ring buffer/PlotDataView dirty propagation/AxisController), REL4 (hand-written `.d.ts` for the full public API), REL5 (CI quality gate: lint+typecheck+test on PRs), REL6 (CHANGELOG + semver policy + drop "Experimental" framing), REL7 (public API input validation, extending F38's mouseButtons-validation precedent), REL8 (peer dependency upper-bound audit), REL9 (final publish gate — requires explicit user go-ahead for `npm publish`). Investigated an unmerged `feature/UI1-B10-EX21` branch (VirtualPlotList/TextLayer ROI labels/seismography migration, 2026-04-05, not referenced anywhere in PLAN.md or main) — per user instruction this is intentionally left out of scope for this phase. Mandatory order: REL1 → REL2; REL3a → REL3b independent; REL4 independent; REL5 depends on REL3a+REL4; REL6 depends on REL3+REL4; REL7/REL8 independent; REL9 depends on all. No branch yet — planning only, no code changes in this commit.
 - **2026-07-24 [Claude]**: F38 completed (v9.13) — `PlotController` gains `mouseButtons` constructor option + `setMouseButtons()`; `DEFAULT_MOUSE_BUTTONS = { left: 'pan', middle: 'none', right: 'zoomDrag' }`; `_setMouseButtonMap()` builds a buttonCode→action lookup with fallback-to-default + console warning on unrecognized action names; `_onMouseDown`/`_onMouseUp` replaced hardcoded `e.button === N` checks with `this._buttonActions[e.button]` lookups (fixing a latent bug where mouseup's button checks would have silently failed to clear drag state under remapping); pan's inlined logic extracted into `_handlePanDown(pos)`/`_handlePanMove(pos)`. Per user request, F37's separate `rectZoomMode` flag and `setRectZoomMode()` method were removed — rect-zoom is now purely opt-in via assigning `'rectZoom'` to a button (`ExampleApp.jsx`'s checkbox now calls `setMouseButtons({ middle: checked ? 'rectZoom' : 'none' })`). Verified manually: default behavior unchanged, button remap swaps interactions correctly, invalid action name warns and falls back. Build zero errors. Branch: `feature/F38`.
 - **2026-07-24 [Claude]**: F37 completed (v9.12) — `PlotController` gains `rectZoomMode` constructor option + `setRectZoomMode()`; middle-click drag draws a live rectangle overlay (`PolygonLayer`, log-scale aware via the same `toX`/`toY` helper pattern as `ROILayer`) between press and current cursor position; release computes `[min,max]` per axis from the two corners and calls `viewport.setDomains()` for an atomic zoom; sub-3px drags are a no-op; `_onMouseDown`/`_onMouseMove`/`_onMouseUp` gained button-1 branches mutually exclusive with pan/axis-drag. `ExampleApp.jsx` got a "Rect zoom (middle-drag)" checkbox + HelpOverlay entry. README + `ApiReferencePage.jsx` updated. Verified manually on both a linear-axis page and a temporary log-x-axis test page (deleted after verification). Build zero errors. Branch: `feature/F37`.
 - **2026-07-24 [Claude]**: F38 (Configurable Mouse Button Bindings) added as PENDING (v9.11) — replaces PlotController's hardcoded button→action assignment (left=pan, right=F6 drag-zoom, middle=F37 rect-zoom) with a configurable `opts.mouseButtons` map; requires extracting pan's currently-inlined start/move/end logic into `_handlePanDown/Move/Up` for parity with F6/F37's already-separated handlers. Depends on F37. Branch: `feature/F38`.
