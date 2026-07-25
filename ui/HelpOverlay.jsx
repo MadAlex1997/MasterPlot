@@ -13,21 +13,22 @@
  *     re-opens the overlay regardless of localStorage state.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 
 export default function HelpOverlay({ title, controls, storageKey }) {
-  const [open, setOpen] = useState(false);
-
-  // Auto-show on first visit
-  useEffect(() => {
+  // Lazy initializer: compute first-visit state during the initial render
+  // (not in a post-mount effect) so there's no closed-then-reopens flash.
+  const [open, setOpen] = useState(() => {
     try {
-      if (!localStorage.getItem(storageKey)) setOpen(true);
-    } catch (_) { /* localStorage blocked */ }
-  }, [storageKey]);
+      return !localStorage.getItem(storageKey);
+    } catch {
+      return false; // localStorage blocked
+    }
+  });
 
   const handleClose = useCallback(() => {
     setOpen(false);
-    try { localStorage.setItem(storageKey, '1'); } catch (_) {}
+    try { localStorage.setItem(storageKey, '1'); } catch { /* localStorage blocked */ }
   }, [storageKey]);
 
   const handleOpen = useCallback(() => setOpen(true), []);

@@ -1236,11 +1236,16 @@ npm run build    # production bundle in dist/
 npm test         # run the Vitest suite (test/**/*.test.js)
 npm run test:watch
 npm run typecheck   # tsc --noEmit against test-types/smoke.tsx
+npm run lint         # eslint (src/, ui/, loaders/, test/) — correctness rules only
 ```
 
 ### TypeScript
 
 MasterPlot ships hand-written `.d.ts` declarations for all three entry points (`masterplot`, `masterplot/ui`, `masterplot/loaders`) — no `@types/masterplot` package needed. `import { PlotController } from 'masterplot'` gets full autocomplete and type-checking out of the box. Declarations live next to their source (`src/index.d.ts`, `ui/index.d.ts`, `loaders/index.d.ts`) and are wired up via the `types` condition on each `exports` subpath in `package.json`. `test-types/smoke.tsx` is a throwaway fixture (not published) exercising a representative slice of the API — run `npm run typecheck` to catch declaration drift against the real source.
+
+### CI
+
+Every pull request and push to `main` runs a quality gate (`.github/workflows/ci.yml`): `npm run build` → `npm run lint` → `npm test` → `npm run typecheck`. The lint pass (ESLint flat config, `eslint.config.mjs`) is scoped to `src/`, `ui/`, `loaders/`, and `test/` — the shipped library and its tests, not the `examples/` demo pages — and focuses on correctness (`no-unused-vars`, `no-undef`, and `eslint-plugin-react-hooks`'s rules for `ui/` and `src/components/`) rather than code style. Deployment (`.github/workflows/deploy.yml`) remains a separate, `main`-only concern.
 
 ---
 

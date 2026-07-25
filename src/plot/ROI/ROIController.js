@@ -420,7 +420,7 @@ export class ROIController extends EventEmitter {
     }
   }
 
-  _onMouseUp(e) {
+  _onMouseUp(_e) {
     if (this._dragging) {
       const roi = this._dragROI;
       this._dragging      = false;
@@ -468,7 +468,7 @@ export class ROIController extends EventEmitter {
 
   // ─── Creation helpers ─────────────────────────────────────────────────────────
 
-  _handleLinearCreationClick(dataX, dataY) {
+  _handleLinearCreationClick(dataX, _dataY) {
     if (this._creationStep === 0) {
       this._creationData  = { x1: dataX };
       this._creationStep  = 1;

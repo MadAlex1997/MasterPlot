@@ -16,7 +16,7 @@
  *   - UI overlay text (mode indicator, point count badge)
  */
 
-import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef } from 'react';
+import { useRef, useEffect, useState, useImperativeHandle, forwardRef } from 'react';
 import { PlotController } from '../plot/PlotController.js';
 
 const PlotCanvas = forwardRef(function PlotCanvas(props, ref) {

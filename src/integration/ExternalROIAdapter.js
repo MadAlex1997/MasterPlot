@@ -91,7 +91,7 @@ export class ExternalROIAdapter {
    * @param {{ id, type, version, updatedAt, domain, metadata }} serializedROI
    * @returns {Promise<void>}
    */
-  async save(serializedROI) {
+  async save(_serializedROI) {
     throw new Error(
       'ExternalROIAdapter.save() must be implemented by subclass. ' +
       'Persist the serializedROI object to your storage backend.'
@@ -105,7 +105,7 @@ export class ExternalROIAdapter {
    * @param {function({ id, type, version, updatedAt, domain, metadata }): void} callback
    * @returns {function(): void} unsubscribe — call to stop receiving updates
    */
-  subscribe(callback) {
+  subscribe(_callback) {
     throw new Error(
       'ExternalROIAdapter.subscribe() must be implemented by subclass. ' +
       'Register the callback with your external source and return an unsubscribe function.'

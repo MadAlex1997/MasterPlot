@@ -63,7 +63,8 @@
     "build": "npm run build:lib && npm run build:demo",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit -p test-types"
+    "typecheck": "tsc --noEmit -p test-types",
+    "lint": "eslint ."
   },
   "peerDependencies": {
     "@deck.gl/core": ">=9",
@@ -114,6 +115,7 @@
     "@babel/core": "^7.23.0",
     "@babel/preset-env": "^7.23.0",
     "@babel/preset-react": "^7.22.15",
+    "@eslint/js": "^9.39.5",
     "@loaders.gl/arrow": "^4.3.4",
     "@loaders.gl/core": "^4.3.4",
     "@loaders.gl/csv": "^4.3.4",
@@ -131,6 +133,9 @@
     "copy-webpack-plugin": "^14.0.0",
     "crypto-browserify": "^3.3.0",
     "css-loader": "^6.8.1",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^15.15.0",
     "html-webpack-plugin": "^5.5.3",
     "jsdom": "^29.1.1",
     "lz4js": "^0.2.0",

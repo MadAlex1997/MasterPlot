@@ -59,7 +59,7 @@ export class ExternalDataAdapter {
    * @param {Float32Array} [bufferStruct.size]
    * @param {Uint8Array}   [bufferStruct.color]
    */
-  replaceData(bufferStruct) {
+  replaceData(_bufferStruct) {
     throw new Error(
       'ExternalDataAdapter.replaceData() must be implemented by subclass. ' +
       'Call this._dataStore.clear() then this._dataStore.appendData(bufferStruct).'
@@ -75,7 +75,7 @@ export class ExternalDataAdapter {
    * @param {Float32Array} [bufferStruct.size]
    * @param {Uint8Array}   [bufferStruct.color]
    */
-  appendData(bufferStruct) {
+  appendData(_bufferStruct) {
     throw new Error(
       'ExternalDataAdapter.appendData() must be implemented by subclass. ' +
       'Call this._dataStore.appendData(bufferStruct).'

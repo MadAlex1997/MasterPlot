@@ -176,6 +176,68 @@ Several real API quirks surfaced during this research that shaped the declaratio
 
 ---
 
+## REL5 [COMPLETED] CI Quality Gate (lint + typecheck + test)
+
+**Branch:** `feature/REL5`
+**Completed:** 2026-07-24
+**Depends on:** REL3a, REL4
+
+### Problem
+
+`.github/workflows/deploy.yml` only builds and deploys the demo site on push to `main` — nothing ran on pull requests, so a broken build, a failing test, or a real lint error could merge unnoticed. There was also no ESLint setup at all in the repo before this.
+
+### Scoping decision: examples/ excluded from the lint gate
+
+Running ESLint's recommended config against the entire repository for the first time surfaced 134 problems. Over 60 of them were concentrated in `examples/` and `examples/docs/` — mostly dead code in demo/doc-page files (unused `import React from 'react'` under the automatic JSX runtime across nearly every example entry point, several doc-page `*Section` components defined but never rendered, a couple of genuinely unused local variables). None of it was in the actual shipped library.
+
+Given prompt.md's own directory-ownership rules (rule 5a) already draw a hard line between `src/`/`ui/`/`loaders/` ("library code only" / "library React API") and `examples/` ("example page components and their entry points"), and given that cleaning up 20+ example/doc files' dead code was not what this task asked for, the lint gate was scoped to `src/**`, `ui/**`, `loaders/**`, `test/**`, and the root build-config files only. `examples/**` is in the `ignores` list. This can be revisited later as a separate, explicitly-scoped cleanup if desired — it isn't a technical limitation, just a deliberate boundary matching the codebase's existing architecture.
+
+### Changes made
+
+**`eslint.config.mjs`** (flat config; new devDependencies `eslint@^9`, `@eslint/js@^9`, `eslint-plugin-react-hooks@^7`, `globals@^15` — chosen over ESLint 10 because eslint 9's Node engine requirement, `^18.18.0 || ^20.9.0 || >=21.1.0`, is compatible with the package's own `engines.node: ">=18"` from REL2, while ESLint 10 requires Node ≥20.19/22.13/24):
+- `js.configs.recommended` as the base (gives `no-unused-vars`, `no-undef`, and the rest of ESLint's correctness set — no stylistic rules included).
+- Browser globals (`globals.browser`) for `src/`/`ui/`/`loaders/`/`test/`; Node globals for `webpack.config.js` (CommonJS) and `rollup.config.mjs`/`vitest.config.mjs`/`eslint.config.mjs` itself (ESM).
+- `no-unused-vars` configured with `argsIgnorePattern: '^_'` so intentionally-unused handler/interface-stub parameters can signal intent with a leading underscore instead of being flagged.
+- `eslint-plugin-react-hooks`'s recommended rules, scoped via `files: ['ui/**/*.jsx', 'src/components/**/*.jsx']` — exactly the library's React surface per the plan (the `ui/` convenience package + `PlotCanvas.jsx`), not the example pages.
+- Renamed from the conventional `eslint.config.js` to `eslint.config.mjs` specifically to avoid a Node `MODULE_TYPELESS_PACKAGE_JSON` warning without adding `"type": "module"` to `package.json` — that would have silently changed how `webpack.config.js`'s CommonJS `require()` calls are interpreted, an unrelated and much riskier change.
+
+**Real fixes applied within the linted scope** (all 14 findings were fixed at the source, not suppressed):
+- Removed 4 unused `import React from 'react'` statements (`src/components/PlotCanvas.jsx`, `ui/FilterPanel.jsx`, `ui/HelpOverlay.jsx`, `ui/LUTPanel.jsx`) — genuinely dead under this project's `@babel/preset-react` `runtime: 'automatic'` config, confirmed via the build still passing after removal.
+- `src/plot/LUTHistogramController.js`: `_rebuildBars(bins, edges, globalMin, globalMax)` never used the last two params in its body — removed them from the method signature and both call sites (`init()` and `_onDataChanged()`) rather than just prefixing with `_`, since they were truly dead, not intentionally-unused-for-consistency.
+- `src/plot/ROI/ROIController.js`: `_onMouseUp(e)` → `_onMouseUp(_e)` (the event object is genuinely never read in the body); `_handleLinearCreationClick(dataX, dataY)` → `(dataX, _dataY)` (a `LinearRegion` only has an x-extent, so the y click coordinate is structurally irrelevant here — kept for call-site signature parity with the sibling `_handleRectCreationClick(dataX, dataY)`, which does use both).
+- `src/integration/ExternalDataAdapter.js` / `ExternalROIAdapter.js`: renamed the unused params on the four abstract-stub methods (`replaceData`, `appendData`, `save`, `subscribe` — all of which just `throw new Error(...)` by design, to be overridden by subclasses) to `_bufferStruct`/`_serializedROI`/`_callback`.
+- `src/audio/AudioController.js` / `PlaybackController.js`: `catch (_) {}` → `catch { /* already stopped */ }` in both `_stopSource()` methods — the bare-catch (no binding) ES2019 syntax removes the unused-variable finding without needing `caughtErrorsIgnorePattern` config, and the comment documents *why* the error is intentionally swallowed.
+- `ui/HelpOverlay.jsx`: `eslint-plugin-react-hooks`'s newer `set-state-in-effect` rule flagged the original pattern — a `useEffect` that read `localStorage` and conditionally called `setOpen(true)` on mount. Rewrote as a `useState(() => { try { return !localStorage.getItem(storageKey); } catch { return false; } })` lazy initializer instead of a post-mount effect. This isn't just a lint-satisfying rewrite: it also fixes a real (if minor) UX issue the old code had — the overlay used to always paint closed on the first frame and then flip open on mount if the key was absent, causing a one-frame flash; the lazy initializer computes the correct `open` state before the first paint.
+
+**`.github/workflows/ci.yml`** (new):
+```yaml
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  quality-gate:
+    steps:
+      - checkout
+      - setup-node (v20, npm cache)
+      - npm ci
+      - npm run build
+      - npm run lint
+      - npm test
+      - npm run typecheck
+```
+`npm run typecheck` (`tsc --noEmit -p test-types`) substitutes for a bare `tsc --noEmit` from the original plan wording, since the smoke-test project needs its own `tsconfig.json` (`test-types/tsconfig.json`, from REL4) to resolve correctly. `deploy.yml` was not modified — it remains the separate, `main`-only, pages-deploy concern.
+
+### Verification
+
+- `npm run lint` (`eslint .`) — 0 errors, 2 pre-existing `react-hooks/exhaustive-deps` **warnings** (both are deliberate mount-once effects in `PlotCanvas.jsx`/`LUTPanel.jsx`; warnings don't fail the exit code, only errors do) — exit code 0.
+- Confirmed the gate actually gates, not just that the happy path is clean: temporarily appended an unused variable to `src/plot/DataStore.js`, ran `npm run lint`, confirmed exit code 1 with the expected `no-unused-vars` error, then reverted and re-ran to confirm exit code 0 again. (Mirrors the same “inject an error, confirm it's caught, then revert” sanity check used for `tsc` in REL4.)
+- `npm ci` (a real run, not `--dry-run`) — succeeds cleanly against the current `package-lock.json`.
+- Ran the exact CI sequence locally end-to-end: `npm run build` → `npm run lint` → `npm test` (104 tests passing) → `npm run typecheck` — all green.
+- `npm run build` — zero errors; only the two pre-existing, unrelated asset-size warnings.
+
+---
+
 ## EX20 [COMPLETED] Axis Options Showcase
 
 **Branch:** `feature/EX20`

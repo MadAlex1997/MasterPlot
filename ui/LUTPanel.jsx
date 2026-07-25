@@ -23,7 +23,7 @@
  *   height         {string|number}           — panel height CSS value (default '100%')
  */
 
-import React, { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { LUTController } from '../src/plot/layers/LUTController.js';
 
 const GRAD_W = 12; // LUT gradient strip width in px

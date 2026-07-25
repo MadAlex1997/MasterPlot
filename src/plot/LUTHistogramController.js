@@ -120,9 +120,9 @@ export class LUTHistogramController {
     roiCtrl.on('roiFinalized', this._onROIUpdated);
 
     // If LUT already has data, build initial bars
-    const { histogramBins, histogramEdges, globalMin, globalMax } = this._lutController.state;
+    const { histogramBins, histogramEdges } = this._lutController.state;
     if (histogramBins) {
-      this._rebuildBars(histogramBins, histogramEdges, globalMin, globalMax);
+      this._rebuildBars(histogramBins, histogramEdges);
     }
   }
 
@@ -141,7 +141,7 @@ export class LUTHistogramController {
 
   /** LUTController emitted 'dataChanged' — rebuild bars and update axes. */
   _onDataChanged({ bins, edges, globalMin, globalMax }) {
-    this._rebuildBars(bins, edges, globalMin, globalMax);
+    this._rebuildBars(bins, edges);
 
     // Update y-domain to match new data range
     this._plotController.viewport.setYDomain([globalMin, globalMax]);
@@ -192,7 +192,7 @@ export class LUTHistogramController {
    * Each bar is a horizontal rectangle:
    *   x: 0 → count,  y: edgeLow → edgeHigh
    */
-  _rebuildBars(bins, edges, globalMin, globalMax) {
+  _rebuildBars(bins, edges) {
     let maxCount = 1;
     for (let i = 0; i < bins.length; i++) {
       if (bins[i] > maxCount) maxCount = bins[i];

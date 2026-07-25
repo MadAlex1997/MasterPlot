@@ -103,7 +103,7 @@ export class PlaybackController extends EventEmitter {
   _stopSource() {
     if (this._source) {
       this._source._userStopped = true;
-      try { this._source.stop(); } catch (_) {}
+      try { this._source.stop(); } catch { /* already stopped */ }
       this._source.disconnect();
       this._source = null;
     }
