@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 9.14
+**Plan Version:** 9.16
 **Last Updated:** 2026-07-24
-**Status:** Phase 7 + Phase 8 + Phase 9 complete. Phase 10 (1.0.0 Release Hardening) added — REL1–REL9 pending. No pending feature work; all pending work is release-hardening (tests, types, CI, packaging).
+**Status:** Phase 7 + Phase 8 + Phase 9 complete. Phase 10 (1.0.0 Release Hardening) in progress — REL1, REL2 complete; REL3–REL9 pending. No pending feature work; all pending work is release-hardening (tests, types, CI, packaging).
 
 ---
 
@@ -126,7 +126,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | F37 | Rect Zoom Mode (middle-click drag-to-zoom) | ✅ COMPLETED | feature/F37 | 2026-07-24 |
 | F38 | Configurable Mouse Button Bindings | ✅ COMPLETED | feature/F38 | 2026-07-24 |
 | REL1 | Dependency Footprint Audit & loaders.gl Isolation | ✅ COMPLETED | feature/REL1 | 2026-07-24 |
-| REL2 | npm Package Metadata & Publish Readiness | 🔲 PENDING | — | — |
+| REL2 | npm Package Metadata & Publish Readiness | ✅ COMPLETED | feature/REL2 | 2026-07-24 |
 | REL3 | Test Infrastructure & Core Coverage | 🔲 PENDING | — | — |
 | REL4 | TypeScript Declarations | 🔲 PENDING | — | — |
 | REL5 | CI Quality Gate (lint + typecheck + test) | 🔲 PENDING | — | — |
@@ -470,18 +470,10 @@ Full spec: [docs/plan-archive.md#rel1](docs/plan-archive.md#rel1)
 
 ---
 
-### REL2 [PENDING] npm Package Metadata & Publish Readiness
-**Branch:** `feature/REL2`
-**Depends on:** REL1
-
-**Changes to `package.json`:**
-- Add `repository`, `homepage`, `bugs`, `author`, `keywords`
-- Add `engines.node` (browser support matrix goes in README, not `engines`)
-- Add `"sideEffects": false` (or an explicit exceptions array) after auditing `src/index.js` and everything it re-exports for top-level side effects — required for correct ESM tree-shaking
-- Consolidate `.npmignore` vs. the `files` allowlist (the `files` field already whitelists `lib/`, `src/`, `ui/`, `loaders/`, making `.npmignore` largely redundant) — pick one source of truth
-- Remove the committed `masterplot-*.tgz` local-pack artifacts from the repo root; add `*.tgz` to `.gitignore` (today only `masterplot-1.0.0.tgz` is ignored by exact name)
-
-**Verification:** `npm pack --dry-run` and `npm publish --dry-run` output contains exactly the intended files and runs clean.
+### REL2 [COMPLETED] npm Package Metadata & Publish Readiness
+**Completed:** 2026-07-24 | **Branch:** feature/REL2
+`package.json` gained `author`/`homepage`/`repository`/`bugs`/`keywords`/`engines.node: ">=18"`/`"sideEffects": false` (audit found zero module-scope side effects across `src/`, `ui/`, `loaders/`); `.npmignore` deleted (proven byte-for-byte redundant against the `files` allowlist via dry-run diff); untracked `masterplot-*.tgz` local-pack artifacts removed from repo root, `.gitignore` generalized to `*.tgz`.
+Full spec: [docs/plan-archive.md#rel2](docs/plan-archive.md#rel2)
 
 ---
 
@@ -600,6 +592,7 @@ Final gate — no code changes beyond version metadata and release notes.
 
 > Full history in [docs/plan-archive.md — Change Log](docs/plan-archive.md#change-log).
 
+- **2026-07-24 [Claude]**: REL2 completed (v9.16) — `package.json` gained `author`/`homepage`/`repository`/`bugs`/`keywords`/`engines.node: ">=18"` (driven by `rollup@4`'s minimum) and `"sideEffects": false`, the last only after a subagent audit of every file reachable from `src/index.js` plus a manual check of `ui/index.js` and `loaders/index.js`'s exports found zero module-scope side effects (all `addEventListener`/`setInterval`/`console.*`/`new` calls live inside class methods, not at import time). `.npmignore` deleted after an `npm pack --dry-run` diff (with/without the file) showed byte-identical tarball output — it had been fully superseded by the `files` allowlist since that field was added in an earlier phase. `masterplot-1.0.0.tgz`/`masterplot-1.0.1.tgz` removed from the repo root (both were untracked, never actually committed despite the plan's assumption); `.gitignore`'s exact-filename entry generalized to `*.tgz`. Verified: `npm pack --dry-run` (57 files, unchanged content set, no `.tgz` written to disk), `npm publish --dry-run` (clean, fails only on the expected not-logged-in dry-run notice), `npm run build` (zero errors, only the two pre-existing unrelated asset-size warnings). Branch: `feature/REL2`.
 - **2026-07-24 [Claude]**: REL1 completed (v9.15) — `package.json`: `@loaders.gl/{arrow,core,csv,netcdf,parquet,schema}` + `zstd-codec` moved `dependencies` → `peerDependencies` (optional via `peerDependenciesMeta`) + duplicated into `devDependencies` for local build/test; `lz4js`/`snappyjs` moved to `devDependencies` (confirmed already inlined into `lib/loaders.*.js` by rollup — never a runtime need for consumers); the 6 Node polyfills (`buffer`/`crypto-browserify`/`path-browserify`/`process`/`stream-browserify`/`vm-browserify`) moved to `devDependencies` (confirmed zero direct imports anywhere in `src`/`ui`/`loaders` — they're `webpack.config.js` demo-build fallbacks only). `fft.js`/`fft-windowing` confirmed used by `AudioController` (main entry) and left in `dependencies`. README "Data Loaders" section rewritten with per-adapter install commands, dropping the old `--legacy-peer-deps` workaround. Verified: `npm install`, `npm run build:lib` (grep-confirmed `@loaders.gl/*`/`zstd-codec` still external imports, `lz4js`/`snappyjs` still inlined), `npm run build:demo`, `npm pack --dry-run` all clean. No `rollup.config.mjs` changes needed. Branch: `feature/REL1`.
 - **2026-07-24 [Claude]**: Phase 10 (1.0.0 Release Hardening) added as PENDING (v9.14) — library-as-product audit found zero automated tests, no TypeScript declarations, no CI test/lint gate (only a demo-deploy workflow), incomplete npm package metadata (`sideEffects`, `repository`/`homepage`/`bugs`/`keywords`/`engines`, `.npmignore`/`files` duplication), loaders.gl + 6 Node-polyfill packages listed under `dependencies` instead of scoped to the `masterplot/loaders` subpath (bloats install for every consumer), open-ended peer-dependency ranges, no CHANGELOG.md, and a README still marked "Experimental." Nine tasks added: REL1 (loaders.gl dependency isolation), REL2 (npm metadata/publish readiness), REL3 (test infra + core coverage of ViewportController/ConstraintEngine/ROI versioning/DataStore ring buffer/PlotDataView dirty propagation/AxisController), REL4 (hand-written `.d.ts` for the full public API), REL5 (CI quality gate: lint+typecheck+test on PRs), REL6 (CHANGELOG + semver policy + drop "Experimental" framing), REL7 (public API input validation, extending F38's mouseButtons-validation precedent), REL8 (peer dependency upper-bound audit), REL9 (final publish gate — requires explicit user go-ahead for `npm publish`). Investigated an unmerged `feature/UI1-B10-EX21` branch (VirtualPlotList/TextLayer ROI labels/seismography migration, 2026-04-05, not referenced anywhere in PLAN.md or main) — per user instruction this is intentionally left out of scope for this phase. Mandatory order: REL1 → REL2; REL3a → REL3b independent; REL4 independent; REL5 depends on REL3a+REL4; REL6 depends on REL3+REL4; REL7/REL8 independent; REL9 depends on all. No branch yet — planning only, no code changes in this commit.
 - **2026-07-24 [Claude]**: F38 completed (v9.13) — `PlotController` gains `mouseButtons` constructor option + `setMouseButtons()`; `DEFAULT_MOUSE_BUTTONS = { left: 'pan', middle: 'none', right: 'zoomDrag' }`; `_setMouseButtonMap()` builds a buttonCode→action lookup with fallback-to-default + console warning on unrecognized action names; `_onMouseDown`/`_onMouseUp` replaced hardcoded `e.button === N` checks with `this._buttonActions[e.button]` lookups (fixing a latent bug where mouseup's button checks would have silently failed to clear drag state under remapping); pan's inlined logic extracted into `_handlePanDown(pos)`/`_handlePanMove(pos)`. Per user request, F37's separate `rectZoomMode` flag and `setRectZoomMode()` method were removed — rect-zoom is now purely opt-in via assigning `'rectZoom'` to a button (`ExampleApp.jsx`'s checkbox now calls `setMouseButtons({ middle: checked ? 'rectZoom' : 'none' })`). Verified manually: default behavior unchanged, button remap swaps interactions correctly, invalid action name warns and falls back. Build zero errors. Branch: `feature/F38`.

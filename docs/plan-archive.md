@@ -43,6 +43,35 @@ No `rollup.config.mjs` changes were needed — `rollup-plugin-peer-deps-external
 
 ---
 
+## REL2 [COMPLETED] npm Package Metadata & Publish Readiness
+
+**Branch:** `feature/REL2`
+**Completed:** 2026-07-24
+**Depends on:** REL1
+
+### Changes made
+
+**`package.json`:**
+- Added `author` ("Alexander Carey"), `homepage` (the GitHub Pages docs/demo site, `https://madalex1997.github.io/MasterPlot/`), `repository` (`git+https://github.com/MadAlex1997/MasterPlot.git`), `bugs` (GitHub issues URL), and `keywords` (webgl, deck.gl, plotting, charting, visualization, scientific-computing, scatter-plot, roi, react, canvas, gpu)
+- Added `engines.node: ">=18"` — driven by `rollup@4` (a devDependency) requiring Node 18+; the browser support matrix for the built library itself stays out of `engines` and lives in the README as prompt.md specifies
+- Added `"sideEffects": false` after auditing every file reachable from `src/index.js` plus the two secondary entry points `ui/index.js` and `loaders/index.js` — a dedicated subagent pass and a manual grep over `ui/*.jsx` and `loaders/*.js` both found zero module-scope side effects (every `addEventListener`/`setInterval`/`console.*`/`new` call found lives inside a class method or function body, only executing when a controller/adapter is instantiated at runtime, never at import time). No exceptions array was needed.
+
+**`.npmignore` vs. `files` allowlist:**
+- Diffed `npm pack --dry-run` output with and without `.npmignore` present — byte-for-byte identical tarball contents either way, confirming `.npmignore` had zero actual effect once the `files` field (`lib/`, `src/`, `ui/`, `loaders/`) was added in an earlier phase. Deleted `.npmignore` entirely rather than trimming it, since an allowlist (`files`) is a strictly safer single source of truth than a blocklist that was already provably redundant.
+
+**Local pack artifacts:**
+- Removed `masterplot-1.0.0.tgz` and `masterplot-1.0.1.tgz` from the repo root — both were untracked working-tree files (never actually committed to git history, despite the plan's assumption), so no `git rm` / history rewrite was needed, just deletion.
+- `.gitignore`'s exact-filename `masterplot-1.0.0.tgz` line replaced with a generic `*.tgz` pattern so future `npm pack` runs don't require a manual `.gitignore` edit per version bump.
+
+### Verification
+
+- `node -e "require('./package.json')"` — JSON stays valid after edits
+- `npm pack --dry-run` — 57 files, same content set as before, no `.tgz` written to the working tree
+- `npm publish --dry-run` — clean (fails only on the expected "not logged in" dry-run notice)
+- `npm run build` (`build:lib` + `build:demo`) — zero errors; the only two warnings are the pre-existing, unrelated audio-sample and entrypoint asset-size warnings that predate this change
+
+---
+
 ## EX20 [COMPLETED] Axis Options Showcase
 
 **Branch:** `feature/EX20`

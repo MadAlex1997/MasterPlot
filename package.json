@@ -3,6 +3,32 @@
   "version": "1.0.0",
   "description": "Production-grade scientific plotting engine with WebGL rendering",
   "license": "MIT",
+  "author": "Alexander Carey",
+  "homepage": "https://madalex1997.github.io/MasterPlot/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MadAlex1997/MasterPlot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MadAlex1997/MasterPlot/issues"
+  },
+  "keywords": [
+    "webgl",
+    "deck.gl",
+    "plotting",
+    "charting",
+    "visualization",
+    "scientific-computing",
+    "scatter-plot",
+    "roi",
+    "react",
+    "canvas",
+    "gpu"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "sideEffects": false,
   "main": "lib/index.cjs.js",
   "module": "lib/index.esm.js",
   "exports": {
