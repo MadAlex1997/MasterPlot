@@ -53,7 +53,8 @@
     "lib/",
     "src/",
     "ui/",
-    "loaders/"
+    "loaders/",
+    "AGENTS_USAGE.md"
   ],
   "scripts": {
     "start": "webpack serve --mode development --open",
