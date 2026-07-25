@@ -5,7 +5,21 @@
 A high-performance scientific plotting engine built on React, deck.gl (WebGL), and d3-scale.
 Designed for real-time data, large datasets (tested to 10M+ points), and audio/signal analysis workflows.
 
-> **Experimental** — expect breaking changes and rough edges.
+---
+
+## Stability
+
+MasterPlot is versioned with [semver](https://semver.org/), starting at `1.0.0` — the first
+published release. Pre-1.0 development had no compatibility guarantees; from `1.0.0` onward,
+a breaking change to any public API requires a major version bump.
+
+| Surface | Package entry point | Stability |
+|---|---|---|
+| **Core engine** (`src/`) | `masterplot` | Semver-stable. `PlotController`, `ViewportController`, `DataStore`, `PlotDataView`, the ROI system, layers, and `AudioController` are the supported public API. |
+| **UI extensions** (`ui/`) | `masterplot/ui` | Convenience wrappers (`LUTPanel`, `FilterPanel`, `HelpOverlay`) over core-engine events. May iterate faster than the core engine; each is designed to be easy to replace with your own component if its API doesn't fit. |
+| **Data loaders** (`loaders/`) | `masterplot/loaders` | Convenience adapters over third-party parsers (`@loaders.gl/*`). Tracks upstream format-library churn and may move faster than the core engine. |
+
+See [CHANGELOG.md](CHANGELOG.md) for the version history.
 
 ---
 

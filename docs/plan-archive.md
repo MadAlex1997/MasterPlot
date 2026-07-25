@@ -5234,3 +5234,36 @@ new TableLoaderAdapter(dataStore, {
 **Verification:** Build (`npm run build`) passes with zero errors after both the initial implementation and the subsequent flag-removal changes. Manually verified on `ExampleApp.jsx`: with no `mouseButtons` option passed, default behavior is byte-for-byte unchanged from pre-F38 (left pans, right drag-zooms, middle does nothing until the rect-zoom checkbox is checked). Via a temporary `window.__mpCtrl` devtools hook (removed after testing): `setMouseButtons({ left: 'rectZoom', middle: 'pan', right: 'zoomDrag' })` correctly swapped left-drag to rect-zoom and middle-drag to pan, with right-drag zoom unaffected; restoring via `setMouseButtons({})` returned to defaults; `setMouseButtons({ left: 'bogus' })` logged a console warning and left left-click's pan behavior intact (fallback to default). The rect-zoom checkbox (now driving `setMouseButtons({ middle: ... })` instead of the removed `setRectZoomMode()`) was re-verified working identically to its F37 behavior.
 
 ---
+
+## REL6 [COMPLETED] CHANGELOG + Semver Policy + Drop "Experimental" Framing
+
+**Branch:** `feature/REL6`
+**Completed:** 2026-07-25
+**Depends on:** REL3, REL4
+
+### Problem
+
+MasterPlot had never shipped a user-facing changelog — the only historical record was PLAN.md's agent-facing "Recent Changelog" (implementation-detail commentary, not release notes) and `docs/plan-archive.md` (full specs). The README still opened with `> **Experimental** — expect breaking changes and rough edges`, which is inconsistent with cutting an actual `1.0.0` and stating a semver policy (REL9). There was also no explicit statement of what semver covers — `src/` (core engine) vs. `ui/`/`loaders/` (convenience packages that pull in their own dependency churn, per REL1).
+
+### Changes made
+
+**`CHANGELOG.md`** (new file, Keep a Changelog format):
+- Header explains the format, links to the Stability section of the README, and notes that pre-1.0 history had no compatibility guarantees, so it's summarized as a single dated `1.0.0` entry rather than reconstructed as a fictitious per-commit/per-minor-version history.
+- `## [Unreleased]` — placeholder for the remaining REL7 (input validation) / REL8 (peer range audit) hardening work still pending before the actual `npm publish` (REL9).
+- `## [1.0.0] - 2026-07-25` — one `### Added` list grouped by subsystem (Core rendering & interaction, ROI system, Data pipeline, Bitmap/LUT & viewport-driven LOD, Audio & signal analysis, Data loaders, Utilities, Release engineering), written as user-facing capability descriptions rather than implementation diffs. Seeded from the Feature Status Index in PLAN.md and the README's existing Features section rather than re-deriving from `docs/plan-archive.md`'s 245 per-feature spec sections, since the changelog's job is "what can you do with this library," not "how was it built."
+
+**`README.md`:**
+- Removed the `> **Experimental**` banner entirely.
+- Added a new `## Stability` section immediately after the intro line, before `## Features`: a short semver statement (1.0.0 is the first version where a breaking change requires a major bump; pre-1.0 had no such constraint) plus a 3-row table mapping each package entry point to its stability tier — `masterplot` (src/, semver-stable), `masterplot/ui` (convenience wrappers, may iterate faster, designed to be easy to replace), `masterplot/loaders` (convenience adapters over `@loaders.gl/*`, tracks upstream churn). Links to `CHANGELOG.md`.
+
+**`PLAN.md`:**
+- Feature Status Index row updated to ✅ COMPLETED.
+- Full spec block replaced with the compact summary template; this section is that full spec, archived per rule 7.
+
+### Verification
+
+- `grep -rn "Experimental" --include="*.md" --include="*.jsx" --include="*.js"` (excluding `node_modules` and `docs/plan-archive.md`'s own historical mentions) returns zero hits outside PLAN.md's own historical changelog/motivation prose (which correctly describes past state, not current state).
+- `CHANGELOG.md` exists, follows Keep a Changelog structure, and its `1.0.0` entry carries an explicit date.
+- README Stability section renders correctly as a markdown table; no code changes required (documentation-only feature).
+
+---
