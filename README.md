@@ -1233,6 +1233,8 @@ public/
 npm install
 npm start        # webpack dev server on http://localhost:3000
 npm run build    # production bundle in dist/
+npm test         # run the Vitest suite (test/**/*.test.js)
+npm run test:watch
 ```
 
 ---

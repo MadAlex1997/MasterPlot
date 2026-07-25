@@ -72,6 +72,55 @@ No `rollup.config.mjs` changes were needed — `rollup-plugin-peer-deps-external
 
 ---
 
+## REL3 [COMPLETED] Test Infrastructure & Core Coverage
+
+**Branch:** `feature/REL3`
+**Completed:** 2026-07-24
+**Depends on:** none (independent)
+
+### REL3a — Test Infrastructure
+
+Added `vitest`, `jsdom`, and `@testing-library/react` as devDependencies. Vitest was chosen (per prompt.md's original REL3 spec) because it fits the existing Babel-free, ESM-native toolchain without a separate transform config — its built-in esbuild transform handles the plain `.js`/`.jsx` source directly. `@testing-library/react` was added for future React-facing component tests (`PlotCanvas`, `usePopupChannel`) per the plan, though no such tests were written in this pass — REL3b's priority list covers only the six non-DOM controller/store modules.
+
+`vitest.config.mjs` (repo root, `.mjs` to match the existing `rollup.config.mjs` ESM-file convention since `package.json` has no `"type": "module"`):
+```js
+import { defineConfig } from 'vitest/config';
+export default defineConfig({
+  test: { environment: 'jsdom', include: ['test/**/*.test.js'] },
+});
+```
+`environment: 'jsdom'` was chosen globally (rather than per-file `@vitest-environment` pragmas) so `@testing-library/react` works out of the box for any future test file without extra configuration; none of the current six modules touch `window`/`document` at all (confirmed during the REL2 `sideEffects` audit), so running them under jsdom instead of node has no behavioral effect, only a small environment-setup cost.
+
+`package.json` scripts: `"test": "vitest run"`, `"test:watch": "vitest"`.
+
+Headless WebGL was explicitly out of scope, per the plan — all six REL3b modules are pure JS/data-structure logic with zero deck.gl/WebGL dependency, directly testable through their public API.
+
+### REL3b — Core Coverage
+
+104 tests across 6 files under `test/`, one per module, in the priority order the plan specified:
+
+**`test/plot/ViewportController.test.js`** (22 tests) — domain get/set (including the degenerate `min===max` no-op and copy-not-reference semantics of `getXDomain()`/`getYDomain()`), `setDomains()` atomicity (single event for both axes), linear and log-scale `zoomAroundX`/`zoomAroundY`/`zoomAround` (focal-point-ratio preservation, verified both by direct calculation and by re-deriving the ratio invariant algebraically), `scaleDomainFromMidpointX/Y`, and the full `panByPixels` sign-convention matrix cross-referenced against the exact rule documented in prompt.md's "Y-axis Coordinate Convention" section (`x: pxSpan>0 → panByPixels(+n) decreases domain`; `y: pxSpan<0 → panByPixels(+n) increases domain`, the double-negation case). Also covers `dataXToScreen`/`screenXToData` round-tripping, `isInPlotArea`, and `getDeckViewState`.
+
+Notable: the first draft of the pan tests assumed the default x pixel range spanned 680px (`[60, 740]`); the actual default is `[marginLeft, canvasWidth - marginRight] = [60, 780]`, a 720px span. Running the tests against the real `ViewportController` constructor (rather than hand-deriving expected values from a misremembered range) caught the 40px error immediately — the tests were fixed to use the real span rather than adjusting the source to match a wrong assumption.
+
+**`test/plot/ROI/ConstraintEngine.test.js`** (16 tests) — the shift rule (child moves by the parent's delta; y is only shifted when the parent has finite y bounds, i.e. not for `LinearRegion` parents), the asymmetric clamp rule (overflow on one edge shifts the *opposite* edge to preserve width, shrink-not-move when the child is wider than the parent), `xLocked` children (x is unconditionally forced to the parent's x1/x2, bypassing `_clampChild` entirely — and critically, **y is never clamped for xLocked children either**, since the `if (child.xLocked) {...} else { this._clampChild(...) }` branch skips `_clampChild`'s y-clamp logic along with its x-clamp logic; only the shift step still applies to y), multi-level cascading nesting (grandchild clamped against its *already-clamped* immediate parent, not the original pre-clamp bounds), the visited-set loop guard, and `onUpdate` emission for every visited child regardless of whether bounds actually changed.
+
+**`test/plot/ROI/ROIBase.test.js`** (14 tests) — `ROIBase` construction defaults (version 1, domain derived from x1/x2/y1/y2; explicit overrides for the deserialize path), `bumpVersion()` (increments by exactly 1, refreshes `updatedAt` to the current time under `vi.useFakeTimers()`, and re-snapshots `domain` from the *current* bounds rather than the bounds at construction time), `setBounds()` (emits `onUpdate` by default, suppressed with `silent=true`), `onDelete()` (detaches from parent, recursively deletes children, fires `onDelete` on each), and `serialize()`. Also covers `ROIController.updateFromExternal()`'s F14 version gating directly: rejects `incoming.version <= existing.version` (both the equal and strictly-lower cases, confirming bounds are left untouched by rejected updates), accepts `incoming.version > existing.version` and applies domain/version/updatedAt while emitting `roiExternalUpdate`, creates a brand-new ROI when the id isn't tracked yet, rejects (returns `false`) for an unrecognized `type` on the create path, and confirms `LinearRegion`'s x-only domain shape round-trips correctly.
+
+**`test/plot/DataStore.test.js`** (16 tests) — non-rolling append + `getGPUAttributes()` subarray correctness, the `dirty` event (including the empty-chunk no-op case), size/color defaults. The `_grow()` 1.5× policy is tested by hand-tracing the exact `ceil(capacity * 1.5)` sequence for both a single over-sized append (`4 → 6`) and a multi-step grow chain (`2 → 3 → 5 → 8 → 12` to fit 10 points), confirming data integrity survives every grow. Rolling ring-buffer coverage: `enableRolling()` throws without `maxPoints`/`maxAgeMs`, `maxPoints` eviction caps `getPointCount()`, and — the most failure-prone part of a ring buffer — `getLogicalData()` returns points in oldest-to-newest logical order *across the physical wrap boundary* (verified by hand-tracing the exact head/tail index arithmetic for a 5-point append into a 3-slot ring, both as one batched `appendData()` call and as 5 sequential single-point calls). `expireIfNeeded()` with `maxAgeMs` is tested under `vi.useFakeTimers()`/`vi.setSystemTime()`, confirming the exact eviction boundary (age `<=` maxAgeMs is kept, not evicted) and correct `dataExpired` event payload.
+
+**`test/plot/PlotDataView.test.js`** (21 tests) — lazy recomputation (dirty on construction, cached object identity across repeated `getData()` calls while clean), and the full dirty-propagation matrix specified in the plan: marks dirty on source `dirty`/`dataExpired` and on roiController `roiFinalized`/`roiExternalUpdate`, but explicitly does **NOT** mark dirty on `roiUpdated` (tested by confirming the cached snapshot's object identity is preserved across a `roiUpdated` emission — the single most load-bearing edge case in this module, since getting it wrong would mean every ROI drag frame triggers a full data recompute). Also covers parent→child `PlotDataView` dirty cascade, `filterByDomain()` (x-only, combined x+y, and the empty-result case producing correctly-zero-length typed arrays), `filterByROI()` (throws without a `roiController`, filters by ROI bounding box, gracefully degrades to unfiltered data when the ROI id isn't found), `histogram()` (bin/edge counts, max-value clamping into the last bin, the `span===0` all-equal-values case dumping into bin 0, unknown-field error), `snapshot()`'s deep-copy independence from the internal cache, and `destroy()`'s listener cleanup (verified via `listenerCount()` on both the source and the roiController).
+
+**`test/plot/axes/AxisController.test.js`** (15 tests) — construction defaults for both the ARCH-G appearance options and the F35 positioning options, `getTickSize()`, `getScale()` for linear/log/time (log verified via the geometric-midpoint-maps-to-pixel-midpoint property; time verified with real `Date` objects), `getTicks()` (screen position matches `scale(value)`, label comes from the formatter), and `formatTick()`'s default numeric formatter — the fixed-vs-scientific magnitude threshold (`abs >= 1e4 || abs < 1e-3` switches to the SI/scientific formatter) is tested by cross-checking against the *actual* `d3-format('.3~s')`/`d3-format('.4~g')` calls rather than hardcoded expected strings, so the test tracks the real d3 formatting behavior rather than a potentially-stale snapshot. Also covers the time-scale default formatter (`d3-time-format('%Y-%m-%d')`) and a custom `tickFormat` override propagating through both `formatTick()` and `getTicks()`.
+
+### Verification
+
+- `npm test` (`vitest run`) — 104 tests, 6 files, all passing
+- `npm run build` (`build:lib` + `build:demo`) — zero errors; only the two pre-existing, unrelated asset-size warnings
+- `npm pack --dry-run` — confirmed `test/` and `vitest.config.mjs` do not appear in the tarball contents (the `files` allowlist from REL2 already scopes the package correctly; no additional `.npmignore`-equivalent exclusion was needed)
+
+---
+
 ## EX20 [COMPLETED] Axis Options Showcase
 
 **Branch:** `feature/EX20`

@@ -56,11 +56,19 @@
     "dev": "webpack serve --mode development",
     "build:demo": "webpack --mode production",
     "build:lib": "rollup -c rollup.config.mjs",
-    "build": "npm run build:lib && npm run build:demo"
+    "build": "npm run build:lib && npm run build:demo",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "peerDependencies": {
     "@deck.gl/core": ">=9",
     "@deck.gl/layers": ">=9",
+    "@loaders.gl/arrow": ">=4.3.4",
+    "@loaders.gl/core": ">=4.3.4",
+    "@loaders.gl/csv": ">=4.3.4",
+    "@loaders.gl/netcdf": ">=4.3.4",
+    "@loaders.gl/parquet": ">=4.3.4",
+    "@loaders.gl/schema": ">=4.3.4",
     "@luma.gl/core": ">=9",
     "d3-format": ">=3",
     "d3-scale": ">=4",
@@ -68,22 +76,30 @@
     "events": ">=3",
     "react": ">=18",
     "react-dom": ">=18",
-    "@loaders.gl/arrow": ">=4.3.4",
-    "@loaders.gl/core": ">=4.3.4",
-    "@loaders.gl/csv": ">=4.3.4",
-    "@loaders.gl/netcdf": ">=4.3.4",
-    "@loaders.gl/parquet": ">=4.3.4",
-    "@loaders.gl/schema": ">=4.3.4",
     "zstd-codec": ">=0.1.5"
   },
   "peerDependenciesMeta": {
-    "@loaders.gl/arrow": { "optional": true },
-    "@loaders.gl/core": { "optional": true },
-    "@loaders.gl/csv": { "optional": true },
-    "@loaders.gl/netcdf": { "optional": true },
-    "@loaders.gl/parquet": { "optional": true },
-    "@loaders.gl/schema": { "optional": true },
-    "zstd-codec": { "optional": true }
+    "@loaders.gl/arrow": {
+      "optional": true
+    },
+    "@loaders.gl/core": {
+      "optional": true
+    },
+    "@loaders.gl/csv": {
+      "optional": true
+    },
+    "@loaders.gl/netcdf": {
+      "optional": true
+    },
+    "@loaders.gl/parquet": {
+      "optional": true
+    },
+    "@loaders.gl/schema": {
+      "optional": true
+    },
+    "zstd-codec": {
+      "optional": true
+    }
   },
   "dependencies": {
     "fft-windowing": "^0.1.4",
@@ -102,12 +118,14 @@
     "@rollup/plugin-babel": "^7.0.0",
     "@rollup/plugin-commonjs": "^29.0.2",
     "@rollup/plugin-node-resolve": "^16.0.3",
+    "@testing-library/react": "^16.3.2",
     "babel-loader": "^9.1.3",
     "buffer": "^6.0.3",
     "copy-webpack-plugin": "^14.0.0",
     "crypto-browserify": "^3.3.0",
     "css-loader": "^6.8.1",
     "html-webpack-plugin": "^5.5.3",
+    "jsdom": "^29.1.1",
     "lz4js": "^0.2.0",
     "mermaid": "^11.12.3",
     "path-browserify": "^1.0.1",
@@ -118,6 +136,7 @@
     "snappyjs": "^0.7.0",
     "stream-browserify": "^3.0.0",
     "style-loader": "^3.3.3",
+    "vitest": "^4.1.10",
     "vm-browserify": "^1.1.2",
     "webpack": "^5.88.2",
     "webpack-cli": "^5.1.4",

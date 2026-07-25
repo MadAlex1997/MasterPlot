@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 9.16
+**Plan Version:** 9.17
 **Last Updated:** 2026-07-24
-**Status:** Phase 7 + Phase 8 + Phase 9 complete. Phase 10 (1.0.0 Release Hardening) in progress — REL1, REL2 complete; REL3–REL9 pending. No pending feature work; all pending work is release-hardening (tests, types, CI, packaging).
+**Status:** Phase 7 + Phase 8 + Phase 9 complete. Phase 10 (1.0.0 Release Hardening) in progress — REL1, REL2, REL3 complete; REL4–REL9 pending. No pending feature work; all pending work is release-hardening (tests, types, CI, packaging).
 
 ---
 
@@ -127,7 +127,7 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | F38 | Configurable Mouse Button Bindings | ✅ COMPLETED | feature/F38 | 2026-07-24 |
 | REL1 | Dependency Footprint Audit & loaders.gl Isolation | ✅ COMPLETED | feature/REL1 | 2026-07-24 |
 | REL2 | npm Package Metadata & Publish Readiness | ✅ COMPLETED | feature/REL2 | 2026-07-24 |
-| REL3 | Test Infrastructure & Core Coverage | 🔲 PENDING | — | — |
+| REL3 | Test Infrastructure & Core Coverage | ✅ COMPLETED | feature/REL3 | 2026-07-24 |
 | REL4 | TypeScript Declarations | 🔲 PENDING | — | — |
 | REL5 | CI Quality Gate (lint + typecheck + test) | 🔲 PENDING | — | — |
 | REL6 | CHANGELOG + Semver Policy + Drop "Experimental" Framing | 🔲 PENDING | — | — |
@@ -477,25 +477,10 @@ Full spec: [docs/plan-archive.md#rel2](docs/plan-archive.md#rel2)
 
 ---
 
-### REL3 [PENDING] Test Infrastructure & Core Coverage
-**Branch:** `feature/REL3`
-**Depends on:** none (independent; land after REL1 if that PR touches build config)
-
-#### REL3a — Test Infrastructure
-- Add Vitest (fits the existing Babel/ESM/no-TS toolchain without a separate transform config) + `@testing-library/react` for the React-facing pieces (`PlotCanvas`, `usePopupChannel`)
-- `npm test` + `npm run test:watch` scripts
-- Headless WebGL is out of scope — most controller logic (domain math, ROI constraints, ring-buffer eviction) has zero WebGL dependency and is directly testable through the public API with deck.gl calls stubbed
-
-#### REL3b — Core Coverage
-Priority order — highest-risk, least-obvious-from-reading-the-code logic first:
-1. **`ViewportController`** — pan/zoom domain math, especially the y-axis inverted-range sign convention (`AGENT.md` documents this exact bug class as having bitten agents before)
-2. **`ROI/ConstraintEngine.js`** — parent/child bound clamping, cascading updates, multi-level nesting
-3. **`ROI/ROIBase.js` versioning** — `bumpVersion()`, `updateFromExternal()` version-gating (reject `incoming.version <= current.version`)
-4. **`DataStore`** — ring buffer eviction (`enableRolling`, `expireIfNeeded`), `_grow()` 1.5× policy, `getLogicalData()` correctness across the wrap boundary
-5. **`PlotDataView`** — dirty-flag propagation (dirty on `roiFinalized`/`roiExternalUpdate`, NOT on `roiUpdated`), `filterByDomain`/`filterByROI`, `histogram()`
-6. **`AxisController`** — scale/tick generation for linear/log/time, `formatTick`
-
-**Verification:** `npm test` passes in CI; each module above has tests covering the edge cases already called out in README/AGENT.md as non-obvious.
+### REL3 [COMPLETED] Test Infrastructure & Core Coverage
+**Completed:** 2026-07-24 | **Branch:** feature/REL3
+Added Vitest + jsdom + `@testing-library/react` (`test`/`test:watch` scripts, `vitest.config.mjs`, jsdom environment); 104 tests across 6 files in `test/` covering `ViewportController` (pan/zoom domain math incl. the y-axis inverted-range sign convention), `ROI/ConstraintEngine` (shift/clamp/xLocked/multi-level cascade), `ROI/ROIBase` + `ROIController` versioning (`bumpVersion`, `updateFromExternal` gating), `DataStore` (ring buffer eviction, `_grow()` 1.5× policy, wrap-boundary correctness), `PlotDataView` (dirty propagation incl. the `roiUpdated`-must-not-recompute rule, `filterByDomain`/`filterByROI`, `histogram()`), and `AxisController` (linear/log/time scales, `formatTick`).
+Full spec: [docs/plan-archive.md#rel3](docs/plan-archive.md#rel3)
 
 ---
 
@@ -592,6 +577,7 @@ Final gate — no code changes beyond version metadata and release notes.
 
 > Full history in [docs/plan-archive.md — Change Log](docs/plan-archive.md#change-log).
 
+- **2026-07-24 [Claude]**: REL3 completed (v9.17) — added `vitest`/`jsdom`/`@testing-library/react` devDependencies, `vitest.config.mjs` (jsdom environment, `test/**/*.test.js`), and `npm test`/`npm run test:watch` scripts (REL3a). Wrote 104 tests across 6 files in `test/` (REL3b), one per module in the priority order specified: `test/plot/ViewportController.test.js` (domain get/set, linear+log zoom math, `scaleDomainFromMidpoint`, and the full `panByPixels` sign-convention matrix per the AGENT.md y-inversion rule — verified against the *actual* default pixel ranges, not assumed ones, after an initial draft had the x-range span wrong by 40px and caught it via failing tests), `test/plot/ROI/ConstraintEngine.test.js` (shift rule, asymmetric clamp, xLocked bypass of `_clampChild` entirely — including that xLocked children never get y-clamped, only y-shifted — multi-level cascade, loop guard), `test/plot/ROI/ROIBase.test.js` (`bumpVersion()` increments/refreshes `updatedAt`/re-snapshots domain from current bounds, plus `ROIController.updateFromExternal()` version-gating: reject `<=`, accept `>`, create-on-unknown-id, reject-unknown-type), `test/plot/DataStore.test.js` (non-rolling `_grow()` exact 1.5× sequence, rolling `maxPoints` eviction + wrap-boundary ordering in `getLogicalData()`, `expireIfNeeded()` with `maxAgeMs` under fake timers), `test/plot/PlotDataView.test.js` (dirty propagation matrix incl. confirming `roiUpdated` does NOT mark dirty, parent→child cascade, `filterByDomain`/`filterByROI`/`histogram()` edge cases), `test/plot/axes/AxisController.test.js` (linear/log/time `getScale()`, default numeric formatter's fixed-vs-scientific magnitude threshold cross-checked against direct `d3-format` calls rather than hardcoded strings, custom `tickFormat` override). All 104 tests pass via `npm test`; `npm run build` still clean (only the two pre-existing unrelated asset-size warnings); confirmed `test/` and `vitest.config.mjs` do not leak into `npm pack --dry-run` output. Branch: `feature/REL3`.
 - **2026-07-24 [Claude]**: REL2 completed (v9.16) — `package.json` gained `author`/`homepage`/`repository`/`bugs`/`keywords`/`engines.node: ">=18"` (driven by `rollup@4`'s minimum) and `"sideEffects": false`, the last only after a subagent audit of every file reachable from `src/index.js` plus a manual check of `ui/index.js` and `loaders/index.js`'s exports found zero module-scope side effects (all `addEventListener`/`setInterval`/`console.*`/`new` calls live inside class methods, not at import time). `.npmignore` deleted after an `npm pack --dry-run` diff (with/without the file) showed byte-identical tarball output — it had been fully superseded by the `files` allowlist since that field was added in an earlier phase. `masterplot-1.0.0.tgz`/`masterplot-1.0.1.tgz` removed from the repo root (both were untracked, never actually committed despite the plan's assumption); `.gitignore`'s exact-filename entry generalized to `*.tgz`. Verified: `npm pack --dry-run` (57 files, unchanged content set, no `.tgz` written to disk), `npm publish --dry-run` (clean, fails only on the expected not-logged-in dry-run notice), `npm run build` (zero errors, only the two pre-existing unrelated asset-size warnings). Branch: `feature/REL2`.
 - **2026-07-24 [Claude]**: REL1 completed (v9.15) — `package.json`: `@loaders.gl/{arrow,core,csv,netcdf,parquet,schema}` + `zstd-codec` moved `dependencies` → `peerDependencies` (optional via `peerDependenciesMeta`) + duplicated into `devDependencies` for local build/test; `lz4js`/`snappyjs` moved to `devDependencies` (confirmed already inlined into `lib/loaders.*.js` by rollup — never a runtime need for consumers); the 6 Node polyfills (`buffer`/`crypto-browserify`/`path-browserify`/`process`/`stream-browserify`/`vm-browserify`) moved to `devDependencies` (confirmed zero direct imports anywhere in `src`/`ui`/`loaders` — they're `webpack.config.js` demo-build fallbacks only). `fft.js`/`fft-windowing` confirmed used by `AudioController` (main entry) and left in `dependencies`. README "Data Loaders" section rewritten with per-adapter install commands, dropping the old `--legacy-peer-deps` workaround. Verified: `npm install`, `npm run build:lib` (grep-confirmed `@loaders.gl/*`/`zstd-codec` still external imports, `lz4js`/`snappyjs` still inlined), `npm run build:demo`, `npm pack --dry-run` all clean. No `rollup.config.mjs` changes needed. Branch: `feature/REL1`.
 - **2026-07-24 [Claude]**: Phase 10 (1.0.0 Release Hardening) added as PENDING (v9.14) — library-as-product audit found zero automated tests, no TypeScript declarations, no CI test/lint gate (only a demo-deploy workflow), incomplete npm package metadata (`sideEffects`, `repository`/`homepage`/`bugs`/`keywords`/`engines`, `.npmignore`/`files` duplication), loaders.gl + 6 Node-polyfill packages listed under `dependencies` instead of scoped to the `masterplot/loaders` subpath (bloats install for every consumer), open-ended peer-dependency ranges, no CHANGELOG.md, and a README still marked "Experimental." Nine tasks added: REL1 (loaders.gl dependency isolation), REL2 (npm metadata/publish readiness), REL3 (test infra + core coverage of ViewportController/ConstraintEngine/ROI versioning/DataStore ring buffer/PlotDataView dirty propagation/AxisController), REL4 (hand-written `.d.ts` for the full public API), REL5 (CI quality gate: lint+typecheck+test on PRs), REL6 (CHANGELOG + semver policy + drop "Experimental" framing), REL7 (public API input validation, extending F38's mouseButtons-validation precedent), REL8 (peer dependency upper-bound audit), REL9 (final publish gate — requires explicit user go-ahead for `npm publish`). Investigated an unmerged `feature/UI1-B10-EX21` branch (VirtualPlotList/TextLayer ROI labels/seismography migration, 2026-04-05, not referenced anywhere in PLAN.md or main) — per user instruction this is intentionally left out of scope for this phase. Mandatory order: REL1 → REL2; REL3a → REL3b independent; REL4 independent; REL5 depends on REL3a+REL4; REL6 depends on REL3+REL4; REL7/REL8 independent; REL9 depends on all. No branch yet — planning only, no code changes in this commit.
