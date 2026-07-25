@@ -146,9 +146,6 @@ export default function HubPage() {
       <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 6 }}>
         <h1 style={styles.heading}>MasterPlot</h1>
         <p style={styles.sub}>Production-grade scientific plotting engine · WebGL</p>
-        <p style={{ fontSize: 11, color: '#6a3a2a', background: '#1a0e0a', border: '1px solid #4a2a1a', borderRadius: 4, padding: '4px 12px', margin: '4px auto 0' }}>
-          Prototype — not ready for production use
-        </p>
       </div>
 
       <div style={styles.grid}>

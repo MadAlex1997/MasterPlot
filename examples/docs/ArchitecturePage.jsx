@@ -183,7 +183,7 @@ export default function ArchitecturePage() {
       {/* 1. What is MasterPlot */}
       <h3 style={h3Style}>What is MasterPlot?</h3>
       <p style={pStyle}>
-        MasterPlot is a prototype (eventually production-grade) scientific plotting engine built on React and deck.gl. Unlike
+        MasterPlot is a production-grade scientific plotting engine built on React and deck.gl. Unlike
         chart libraries that re-render through the React reconciler, MasterPlot is controller-driven:
         all geometry, zoom state, and ROI data live exclusively inside plain JavaScript controller
         objects that communicate via Node-style EventEmitter events. React only manages UI toggles and
