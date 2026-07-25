@@ -1235,7 +1235,12 @@ npm start        # webpack dev server on http://localhost:3000
 npm run build    # production bundle in dist/
 npm test         # run the Vitest suite (test/**/*.test.js)
 npm run test:watch
+npm run typecheck   # tsc --noEmit against test-types/smoke.tsx
 ```
+
+### TypeScript
+
+MasterPlot ships hand-written `.d.ts` declarations for all three entry points (`masterplot`, `masterplot/ui`, `masterplot/loaders`) — no `@types/masterplot` package needed. `import { PlotController } from 'masterplot'` gets full autocomplete and type-checking out of the box. Declarations live next to their source (`src/index.d.ts`, `ui/index.d.ts`, `loaders/index.d.ts`) and are wired up via the `types` condition on each `exports` subpath in `package.json`. `test-types/smoke.tsx` is a throwaway fixture (not published) exercising a representative slice of the API — run `npm run typecheck` to catch declaration drift against the real source.
 
 ---
 
@@ -1261,4 +1266,3 @@ Unscheduled:
 - Full multi-level RectROI nesting
 - High-resolution PNG export (`plotController.exportPNG(options)`)
 - Snapping constraints for ROIs
-- TypeScript migration

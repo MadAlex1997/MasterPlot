@@ -121,6 +121,61 @@ Notable: the first draft of the pan tests assumed the default x pixel range span
 
 ---
 
+## REL4 [COMPLETED] TypeScript Declarations
+
+**Branch:** `feature/REL4`
+**Completed:** 2026-07-24
+**Depends on:** none (independent)
+
+### Problem
+
+prompt.md has always required the design be "TypeScript-ready" even though the implementation is plain JS. No `.d.ts` files existed, so TypeScript consumers got `any` across the entire public surface — three package entry points (`masterplot`, `masterplot/ui`, `masterplot/loaders`), roughly 38 exported symbols in total.
+
+### Research approach
+
+Given the size of the surface, four parallel research subagents each extracted the full API shape (constructor options with inferred types/defaults, every public method's signature, every public getter/property, every emitted event name + exact payload shape, and any ambiguous/runtime-unvalidated behavior worth flagging) from a disjoint slice of the source tree, reporting back structured findings rather than draft `.d.ts` text — so every line of the actual declarations was hand-authored against those findings, not pasted from agent output:
+
+1. `PlotController.js` alone (the largest and most central file, ~41KB)
+2. All layer classes/builders (`BitmapDataLayer`, `BitmapViewGenerator`, `LUTController`, `ROILayer`, `ScatterLayer`, `LineLayer`, `PlotLayer`, `TraceGroup`, `SignalDataLayer`) + `LUTHistogramController` + `AxisRenderer`
+3. `LineROI` (diffed against the already-understood `ROIBase`) + the audio trio (`AudioController`, `FilterController`, `PlaybackController`)
+4. Integration adapters (`ExternalDataAdapter`/`ExternalROIAdapter`/`MockDataAdapter`/`MockROIAdapter`), popup utilities (`PopupWindowManager`/`usePopupChannel`), `PlotCanvas`, all three `ui/` components, both `loaders/` adapters
+
+Several real API quirks surfaced during this research that shaped the declarations rather than being smoothed over:
+- `PlotController`'s `'zoomChanged'` event has **three structurally different payloads** depending on trigger site (wheel/`setZoom`: `{factor, focalDataX, focalDataY}`; F21 axis-drag: `{factor, axis}`; F37 rect-zoom commit: `{mode:'rect', xDomain, yDomain}`) — modeled as a discriminated union rather than one loosely-typed object.
+- `ConstraintEngine`'s xLocked-child branch skips `_clampChild` (and therefore y-clamping) entirely, not just x-clamping (already known from REL3's test-writing pass, reused here).
+- `LineROI.serialize()` omits `flags`, unlike the `ROIBase.serialize()` it overrides — a real divergence, not a typo, so the two `serialize()` return types are declared separately (`SerializedROI` vs `SerializedLineROI`) rather than sharing one shape.
+- `PlaybackController`'s `'stateChanged'` payload shape is **not** the same as `AudioController`'s (`PlaybackController` includes `duration` only for `state:'loaded'`; `AudioController` has no `'loaded'` state on `stateChanged` at all — it uses a wholly separate `'loaded'` event) — kept as two distinct payload types rather than one shared union that would paper over the difference.
+- `PlotCanvas`'s `bordered` prop is only forwarded to the underlying `PlotController` when truthy (`...(bordered ? {bordered} : {})`), so `bordered={false}` silently has no effect — documented in a doc-comment on the prop rather than "fixed" (out of scope; a behavior-changing fix would be a separate feature-track decision).
+- Several string-typed fields (`LineROI.mode`, `FilterController.setType()`'s `type` param, `AudioController.computeSTFT()`'s `windowFn`) are **not runtime-validated** against their documented literal unions — typed as the union anyway (since that's the documented contract) but this is a known-soft boundary, not a hard guarantee enforced by the JS at runtime.
+
+### Changes made
+
+**Declaration files** (co-located with their `.js`/`.jsx` sources, not under `lib/`, so hand-written types never risk being clobbered by a rollup rebuild):
+- `src/index.d.ts` (~1150 lines) — every export re-exported from `src/index.js`. Every `EventEmitter`-based class (`ViewportController`, `DataStore`, `PlotDataView`, `ROIBase`, `ROIController`, `PlotController`, `BitmapViewGenerator`, `LUTController`, `AudioController`, `FilterController`, `PlaybackController`, `PopupWindowManager`) got explicit `on`/`once`/`off`/`emit` overloads per known event name (in addition to a generic `string` fallback for forward-compat), rather than leaving events as an untyped `(event: string, ...args: any[]) => void` passthrough — the biggest single DX lever for "zero `any` leakage at the top level."
+- `ui/index.d.ts` — `FilterPanel`, `LUTPanel`, `HelpOverlay` prop types.
+- `loaders/index.d.ts` — `TableLoaderAdapter`, `RasterLoaderAdapter`.
+
+**`package.json`:**
+- `"types": "./src/index.d.ts"` at the package root.
+- A `"types"` condition added first in each of the three `exports` subpaths (`.`, `./ui`, `./loaders`), pointing at the matching co-located `.d.ts`.
+- New devDependencies: `typescript`, `@types/react`, `@types/react-dom` (the rest of the type sources needed to typecheck the declarations — `@types/node` for the `'events'` module ambient declaration, `@types/d3-scale`/`@types/d3-format`/`@types/d3-time-format`, deck.gl's own bundled `.d.ts` — were already present transitively via npm 7+'s peer-dependency auto-install, confirmed present in `node_modules` before adding anything).
+- New `"typecheck": "tsc --noEmit -p test-types"` script.
+
+**Smoke test** (`test-types/`, excluded from the npm package — not listed in `files`):
+- `tsconfig.json` — `moduleResolution: "bundler"`, `strict: true`, `jsx: "react-jsx"`.
+- `smoke.tsx` — imports from the **self-referencing** package specifiers `'masterplot'` / `'masterplot/ui'` / `'masterplot/loaders'` (not relative paths into `src/`/`ui/`/`loaders/`), so it validates the actual `exports`-map + `types`-condition resolution a real consumer would hit, not just that the `.d.ts` files are internally well-formed. Exercises construction, method calls, and typed event listeners across every exported class, plus a JSX tree using `PlotCanvas` + all three `ui/` components.
+
+### Verification
+
+- `npx tsc --noEmit -p test-types` — zero errors.
+- Sanity-checked the typecheck was real (not a silent no-op config) by temporarily appending a deliberate type error (`const bogus: number = 'a string'`) and confirming `tsc` reported it (exit code 1) before reverting.
+- `npx tsc --noEmit --strict --skipLibCheck ... src/index.d.ts ui/index.d.ts loaders/index.d.ts` (no smoke test involved) — zero errors standalone.
+- `npm test` — 104 tests, all passing (unaffected).
+- `npm run build` — zero errors; only the two pre-existing, unrelated asset-size warnings.
+- `npm pack --dry-run` — confirmed all three `.d.ts` files are included (already covered by REL2's `files` allowlist, no changes needed there) and `test-types/` is excluded.
+
+---
+
 ## EX20 [COMPLETED] Axis Options Showcase
 
 **Branch:** `feature/EX20`
