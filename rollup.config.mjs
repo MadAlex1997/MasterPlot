@@ -7,7 +7,7 @@ const babelPlugin = babel({
   babelHelpers: 'bundled',
   presets: [
     ['@babel/preset-env', { targets: '> 0.5%, last 2 versions, not dead' }],
-    ['@babel/preset-react', { runtime: 'classic' }],
+    ['@babel/preset-react', { runtime: 'automatic' }],
   ],
   extensions: ['.js', '.jsx'],
   exclude: 'node_modules/**',

@@ -1,6 +1,6 @@
 {
   "name": "masterplot",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Production-grade scientific plotting engine with WebGL rendering",
   "license": "MIT",
   "author": "Alexander Carey",
