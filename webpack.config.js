@@ -21,6 +21,7 @@ module.exports = (env, argv) => {
       'bitmap-lod':          './examples/src/bitmap-lod.js',
       'data-loaders':        './examples/src/data-loaders.js',
       'axis-showcase':       './examples/src/axis-showcase.js',
+      'time-axis-showcase':  './examples/src/time-axis-showcase.js',
     },
     output: {
       path: path.resolve(__dirname, 'dist'),
@@ -128,6 +129,11 @@ module.exports = (env, argv) => {
         template: './public/axis-showcase.html',
         filename: 'axis-showcase.html',
         chunks:   ['axis-showcase'],
+      }),
+      new HtmlWebpackPlugin({
+        template: './public/time-axis-showcase.html',
+        filename: 'time-axis-showcase.html',
+        chunks:   ['time-axis-showcase'],
       }),
       new webpack.ProvidePlugin({
         process: 'process/browser',

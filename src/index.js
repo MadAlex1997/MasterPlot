@@ -11,6 +11,13 @@ export { default as LUTHistogramController }  from './plot/LUTHistogramControlle
 // ── Axes ───────────────────────────────────────────────────────────────────
 export { default as AxisController }  from './plot/axes/AxisController.js';
 export { default as AxisRenderer }    from './plot/axes/AxisRenderer.js';
+// F40: epoch-offset high-precision time axis — for advanced users wiring a
+// custom/shared xAxis manually instead of PlotController's timeOrigin option.
+export {
+  buildEpochTickFormatter,
+  dataXToEpochSeconds,
+  epochSecondsToDataX,
+} from './plot/axes/epochTickFormat.js';
 
 // ── Layers ─────────────────────────────────────────────────────────────────
 export { default as BitmapDataLayer }      from './plot/layers/BitmapDataLayer.js';

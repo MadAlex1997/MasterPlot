@@ -32,6 +32,8 @@ See [CHANGELOG.md](CHANGELOG.md) for the version history.
 - Arbitrary custom layers via a pluggable layer registry
 - **Pluggable layer registry** — `PlotController.registerDataLayer(id, buildFn)` replaces the default scatter layer with any deck.gl layer; `unregisterDataLayer` and `updateDataLayerProps` for runtime management; `disableDefaultDataLayer` constructor option to start empty
 - **Linear, log, and time axes** via d3-scale; canvas 2D overlay for tick labels and grid
+- **Multi-granularity time tick formatting** — `scaleType: 'time'` axes use d3-scale's built-in default formatter, auto-switching label granularity (year → month → day → hour → minute → second → millisecond) as you zoom
+- **High-precision epoch-offset time axis** — `timeOrigin` / `timeOriginUnits` constructor options work around `DataStore`'s `Float32Array` x-buffer precision limit (~7 significant digits, too coarse for absolute epoch-seconds timestamps with microsecond precision) by keeping small offsets in the buffer and reconstructing absolute time for tick labels from a double-precision reference; `dataXToEpochSeconds()` / `epochSecondsToDataX()` / `dataXToDate()` conversion helpers
 - **Axis positioning modes** — axes can sit at fixed canvas edges (border mode) or float at a data coordinate with optional edge-snapping (relative mode); axes can be mirrored (ticks on both sides)
 - **Bordered plot mode** — fills axis gutter areas with the container's CSS background color, useful for dark-background layouts
 - **Wheel zoom** (cursor-centered), **drag pan**, and **right-click drag zoom**
@@ -93,6 +95,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the version history.
 | Bitmap LOD | `bitmap-lod.html` | BitmapViewGenerator: bilinear resample (local) and HiPS2FITS fetch (remote) |
 | Data Loaders | `data-loaders.html` | TableLoaderAdapter (CSV/Arrow) and RasterLoaderAdapter (NetCDF/image) |
 | Axis Showcase | `axis-showcase.html` | 2×3 grid covering all axis positioning and border-mode combinations |
+| Time Axis Showcase | `time-axis-showcase.html` | A real `scaleType:'time'` axis showing multi-granularity tick switching, plus a `timeOrigin` epoch-offset axis over a synthetic 200 kHz waveform showing microsecond-precision labels |
 
 ---
 
@@ -195,6 +198,8 @@ Central controller. Extends `EventEmitter`. Owns the render loop, deck.gl instan
 | `yLabel` | `string` | `''` | Label text painted beside the Y axis |
 | `xAxis` | `AxisController` | (auto) | Config-only x-axis descriptor (scale type, tick format, label, positioning mode) |
 | `yAxis` | `AxisController` | (auto) | Config-only y-axis descriptor |
+| `timeOrigin` | `Date\|number` | (none) | F40: reference epoch (Date or epoch-ms). Activates epoch-offset high-precision time mode for the x-axis. See [High-Precision Time Axis](#high-precision-time-axis-f40) below. |
+| `timeOriginUnits` | `'seconds'\|'ms'` | `'seconds'` | F40: unit convention for x-domain offsets relative to `timeOrigin` |
 | `panMode` | `'follow'\|'drag'` | `'drag'` | Initial pan mode |
 | `mouseButtons` | `object` | `{ left: 'pan', middle: 'none', right: 'zoomDrag' }` | Button→action map (F38). Values: `'pan'`, `'zoomDrag'` (F6), `'rectZoom'` (F37, opt-in), `'none'` |
 | `bordered` | `boolean` | `true` | Fill axis gutter areas with the container element's CSS `backgroundColor` before rendering ticks |
@@ -224,6 +229,9 @@ Central controller. Extends `EventEmitter`. Owns the render loop, deck.gl instan
 | `unregisterDataLayer(id)` | `void` | Remove a registered layer by id. No-op if not found. |
 | `updateDataLayerProps(id, props)` | `void` | Merge static props forwarded into the RenderContext for an already-registered layer. |
 | `markDirty()` | `void` | Schedule a re-render on the next RAF tick. Call when external state changes outside the DataStore/ROI event chain. |
+| `dataXToEpochSeconds(x)` | `number` | F40: convert a data-x offset to absolute epoch seconds (double precision). Throws if `timeOrigin` was not set. |
+| `epochSecondsToDataX(epochSeconds)` | `number` | F40: inverse of `dataXToEpochSeconds()` — convert an absolute timestamp to the small offset to write into `DataStore`/ROI positions. |
+| `dataXToDate(x)` | `Date` | F40: convenience, millisecond precision only — prefer `dataXToEpochSeconds()` for full-precision display. |
 
 ### Getters
 
@@ -327,6 +335,47 @@ new AxisController({
 | `mode: 'relative'`, `snapTolerancePx: 0` | Stationary crossing axis |
 | `mode: 'relative'`, `snapTolerancePx: 30`, `offscreen: 'border'` | Mobile axis, snaps to edge |
 | `mode: 'relative'`, `snapTolerancePx: 30`, `offscreen: 'hide'` | Mobile axis, hides off-screen |
+
+### Time Axis Tick Formatting (F39)
+
+`scaleType: 'time'` axes use d3-scale's own built-in default `tickFormat()` — a multi-granularity formatter that auto-selects label precision per tick from year down to millisecond, based on which time boundary each tick falls on. No configuration needed; pass a `tickFormat` option to override it, same as any other scale type.
+
+```js
+new AxisController({ scaleType: 'time' })
+// Zoomed out: "2024", "Mar 2024"...
+// Zoomed in:  "14:32", "14:32:07", "14:32:07.250"...
+```
+
+### High-Precision Time Axis (F40)
+
+`DataStore`'s GPU x-buffer is a `Float32Array` (~7 significant decimal digits). An absolute epoch-seconds timestamp with microsecond precision (e.g. `1712345678.123456`) can't survive that round-trip — at that magnitude float32's representable gap already exceeds 100, aliasing point positions, not just losing sub-second precision.
+
+The fix: feed `DataStore`/ROI x-values as **small offsets from a reference time**, and let `PlotController`'s `timeOrigin` option reconstruct absolute time for tick labels using double-precision math.
+
+```js
+const originMs = Date.now(); // your reference time
+const ctrl = new PlotController({
+  timeOrigin: originMs,
+  timeOriginUnits: 'seconds', // x-domain offsets are in seconds since originMs (default)
+  xDomain: [0, 0.02],         // 20 ms window
+});
+
+// Feed small offsets (seconds since originMs) into appendData — these fit
+// Float32Array precision fine, unlike raw epoch-seconds values would.
+ctrl.appendData({ x: offsetsInSeconds, y: samples });
+
+// Convert back to absolute time for display/logging (double precision, no
+// GPU buffer involved — safe down to microseconds):
+const epochSeconds = ctrl.dataXToEpochSeconds(offsetsInSeconds[0]);
+```
+
+Tick labels auto-scale granularity the same way as F39, extended down to microseconds (`HH:MM:SS.ssssss`) for sub-millisecond zoom.
+
+**Caveats:**
+- X-axis only. If you pass your own `xAxis` alongside `timeOrigin`, the shared instance is never mutated (consistent with `AxisController`'s shareable-config design) — only the `dataXToEpochSeconds()`/`epochSecondsToDataX()`/`dataXToDate()` conversion methods become active. Pass `buildEpochTickFormatter()` (also exported) to your own `xAxis`'s `tickFormat` if you want the labels too.
+- The offset itself still lives in a `Float32Array`, so precision is bounded by keeping the offset small — a live-streaming session running for hours will eventually re-exhaust float32's ~7 significant digits even with a well-chosen origin. Rebasing `timeOrigin` periodically for long-running sessions is a caller responsibility (not automated).
+
+See the [Time Axis Showcase](#examples) example for both F39 and F40 side by side.
 
 ### Axis Drag Scaling
 

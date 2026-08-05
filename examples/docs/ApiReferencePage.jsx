@@ -159,6 +159,8 @@ function PlotControllerSection() {
           <tr><Td mono>yDomain</Td><Td type>number[]</Td><Td mono>[0, 100]</Td><Td>Initial Y domain [min, max]. Same validation as xDomain; falls back to [0, 100] (REL7).</Td></tr>
           <tr><Td mono>xLabel</Td><Td type>string</Td><Td mono>''</Td><Td>Label text painted beside the X axis</Td></tr>
           <tr><Td mono>yLabel</Td><Td type>string</Td><Td mono>''</Td><Td>Label text painted beside the Y axis</Td></tr>
+          <tr><Td mono>timeOrigin</Td><Td type>Date|number</Td><Td mono>(none)</Td><Td>F40: reference epoch (Date or epoch-ms). Activates epoch-offset high-precision time mode for the x-axis — see the AxisController section's "High-precision time axis" callout below.</Td></tr>
+          <tr><Td mono>timeOriginUnits</Td><Td type>'seconds'|'ms'</Td><Td mono>'seconds'</Td><Td>F40: unit convention for x-domain offsets relative to timeOrigin.</Td></tr>
           <tr><Td mono>panMode</Td><Td type>'follow'|'drag'</Td><Td mono>'drag'</Td><Td>Initial pan mode. Unrecognized value warns and falls back to 'drag' (REL7).</Td></tr>
           <tr><Td mono>mouseButtons</Td><Td type>object</Td><Td mono>{'{ left: \'pan\', middle: \'none\', right: \'zoomDrag\' }'}</Td><Td>Button→action map (F38). Values: 'pan', 'zoomDrag' (F6), 'rectZoom' (F37, opt-in), 'none'</Td></tr>
           <tr><Td mono>bordered</Td><Td type>boolean</Td><Td mono>true</Td><Td>Fill axis gutter areas with the container element's CSS backgroundColor before rendering ticks (F34). Disable for transparent/overlay layouts.</Td></tr>
@@ -191,6 +193,9 @@ function PlotControllerSection() {
           <tr><Td mono>updateDataLayerProps(id, props)</Td><Td mono>void</Td><Td>Merge static props forwarded into the RenderContext for an already-registered layer.</Td></tr>
           <tr><Td mono>markDirty()</Td><Td mono>void</Td><Td>Schedule a re-render on the next RAF tick. Call when external state (e.g. TraceGroup visibility) changes outside the DataStore/ROI event chain.</Td></tr>
           <tr><Td mono>exportPNG(options?)</Td><Td mono>void</Td><Td>Placeholder for future high-resolution PNG export; currently logs a warning. Options: hideAxes, resolutionMultiplier.</Td></tr>
+          <tr><Td mono>dataXToEpochSeconds(x)</Td><Td type>number</Td><Td>F40: convert a data-x offset to absolute epoch seconds (double precision, no GPU buffer involved). Throws if timeOrigin was not set at construction.</Td></tr>
+          <tr><Td mono>epochSecondsToDataX(epochSeconds)</Td><Td type>number</Td><Td>F40: inverse of dataXToEpochSeconds() — convert an absolute timestamp to the small offset to feed into appendData()/ROI positions.</Td></tr>
+          <tr><Td mono>dataXToDate(x)</Td><Td type>Date</Td><Td>F40: convenience, millisecond precision only — prefer dataXToEpochSeconds() for full-precision display.</Td></tr>
         </tbody>
       </table>
       <h4 style={h4Style}>Getters</h4>
@@ -257,7 +262,7 @@ function AxisControllerSection() {
           <tr><Td mono>scaleType</Td><Td type>'linear'|'log'|'time'</Td><Td mono>'linear'</Td><Td>d3 scale type</Td></tr>
           <tr><Td mono>tickCount</Td><Td type>number</Td><Td mono>5</Td><Td>Approximate target tick count</Td></tr>
           <tr><Td mono>label</Td><Td type>string|null</Td><Td mono>null</Td><Td>Axis label text rendered next to the gutter</Td></tr>
-          <tr><Td mono>tickFormat</Td><Td type>fn|null</Td><Td mono>null</Td><Td>Custom tick formatter <code style={inlineCode}>(value, index) =&gt; string</code>; defaults to SI/fixed auto-formatter</Td></tr>
+          <tr><Td mono>tickFormat</Td><Td type>fn|null</Td><Td mono>null</Td><Td>Custom tick formatter <code style={inlineCode}>(value, index, step?) =&gt; string</code>; defaults to SI/fixed for linear/log, or d3-scale's multi-granularity default for 'time' (F39). <code style={inlineCode}>step</code> is the delta between consecutive ticks — undefined when there are fewer than 2.</Td></tr>
           <tr><Td mono colSpan={4} style={{paddingTop:'0.6em',fontStyle:'italic',color:'#888'}}>F35 — Axis positioning mode</Td></tr>
           <tr><Td mono>mode</Td><Td type>'border'|'relative'</Td><Td mono>'border'</Td><Td>'border' — axis rendered at fixed canvas edges (default). 'relative' — axis line tracks a data coordinate and can snap/hide at edges.</Td></tr>
           <tr><Td mono>edges</Td><Td type>string[]|null</Td><Td mono>null</Td><Td>Border mode only. Which edges to render the axis on, e.g. <code style={inlineCode}>['bottom','top']</code> for mirrored axes. null = renderer default (bottom for x, left for y).</Td></tr>
@@ -273,8 +278,8 @@ function AxisControllerSection() {
         <thead><tr><Th>Method</Th><Th>Returns</Th><Th>Description</Th></tr></thead>
         <tbody>
           <tr><Td mono>getScale(domain, range)</Td><Td type>Function</Td><Td>Build and return a fresh d3 scale with the given domain and range. Does not mutate internal state.</Td></tr>
-          <tr><Td mono>getTicks(scale)</Td><Td type>object[]</Td><Td>Generate tick descriptors from a pre-built d3 scale: <code style={inlineCode}>{'{ value, screen, label }[]'}</code>. Count controlled by <code style={inlineCode}>tickCount</code>.</Td></tr>
-          <tr><Td mono>formatTick(value, index?)</Td><Td type>string</Td><Td>Format a single tick value as a display string using the configured formatter.</Td></tr>
+          <tr><Td mono>getTicks(scale)</Td><Td type>object[]</Td><Td>Generate tick descriptors from a pre-built d3 scale: <code style={inlineCode}>{'{ value, screen, label }[]'}</code>. Count controlled by <code style={inlineCode}>tickCount</code>. Label formatter receives the step between consecutive ticks as a 3rd arg (F39/F40).</Td></tr>
+          <tr><Td mono>formatTick(value, index?, step?)</Td><Td type>string</Td><Td>Format a single tick value as a display string using the configured formatter.</Td></tr>
           <tr><Td mono>getTickSize()</Td><Td type>number</Td><Td>Tick mark length in pixels (default 5).</Td></tr>
         </tbody>
       </table>
@@ -286,6 +291,22 @@ function AxisControllerSection() {
         <code style={inlineCode}>ctrl.viewport.zoomAroundX(focal, factor)</code>,{' '}
         <code style={inlineCode}>ctrl.viewport.panByPixels({'{ dx, dy }'})</code>, etc.
         See the <strong>ViewportController</strong> section below.
+      </div>
+
+      <div style={calloutStyle}>
+        <strong>High-precision time axis (F40).</strong><br />
+        DataStore's GPU x-buffer is a Float32Array (~7 significant digits) — too coarse for
+        an absolute epoch-seconds timestamp with microsecond precision. Instead of a raw
+        epoch value, feed DataStore/ROI x-values as small offsets from a reference time via{' '}
+        <code style={inlineCode}>{'new PlotController({ timeOrigin, timeOriginUnits })'}</code>{' '}
+        — tick labels are reconstructed from a double-precision reference, auto-scaling
+        granularity down to microseconds (<code style={inlineCode}>HH:MM:SS.ssssss</code>).
+        Use <code style={inlineCode}>ctrl.dataXToEpochSeconds(x)</code> /{' '}
+        <code style={inlineCode}>ctrl.epochSecondsToDataX(epochSeconds)</code> to convert
+        between the small offset and absolute time. For a custom/shared xAxis, import{' '}
+        <code style={inlineCode}>buildEpochTickFormatter()</code> from{' '}
+        <code style={inlineCode}>'../src/plot/axes/epochTickFormat.js'</code> and pass it as
+        that AxisController's own <code style={inlineCode}>tickFormat</code>.
       </div>
     </section>
   );

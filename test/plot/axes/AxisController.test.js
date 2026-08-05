@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { format } from 'd3-format';
-import { timeFormat } from 'd3-time-format';
+import { scaleTime } from 'd3-scale';
 import { AxisController } from '../../../src/plot/axes/AxisController.js';
 
 describe('AxisController — construction defaults', () => {
@@ -117,11 +117,21 @@ describe('AxisController.formatTick — default numeric formatter', () => {
   });
 });
 
-describe('AxisController.formatTick — time scale default formatter', () => {
-  it('formats dates as %Y-%m-%d', () => {
+describe('AxisController.formatTick — time scale default formatter (F39)', () => {
+  it('matches d3-scale\'s own multi-granularity default tickFormat exactly', () => {
     const axis = new AxisController({ scaleType: 'time' });
-    const d = new Date('2024-03-14T12:00:00');
-    expect(axis.formatTick(d)).toBe(timeFormat('%Y-%m-%d')(d));
+    const expected = scaleTime().tickFormat();
+    const dCoarse = new Date('2024-03-14T00:00:00'); // day boundary
+    const dFine   = new Date('2024-03-14T12:34:56.789'); // sub-second
+    expect(axis.formatTick(dCoarse)).toBe(expected(dCoarse));
+    expect(axis.formatTick(dFine)).toBe(expected(dFine));
+  });
+
+  it('switches granularity depending on which time boundary a tick falls on', () => {
+    const axis = new AxisController({ scaleType: 'time' });
+    const dCoarse = new Date('2024-03-14T00:00:00'); // day boundary -> coarse label
+    const dFine   = new Date('2024-03-14T12:34:56.789'); // sub-second -> fine label
+    expect(axis.formatTick(dCoarse)).not.toBe(axis.formatTick(dFine));
   });
 });
 
@@ -142,5 +152,48 @@ describe('AxisController.formatTick — custom tickFormat override', () => {
     for (const t of ticks) {
       expect(t.label).toBe(`v${t.value}`);
     }
+  });
+});
+
+describe('AxisController.getTicks — step 3rd arg (F39/F40)', () => {
+  it('passes the delta between consecutive ticks for a linear scale', () => {
+    const steps = [];
+    const axis = new AxisController({
+      tickFormat: (v, i, step) => { steps.push(step); return String(v); },
+      tickCount: 5,
+    });
+    const scale = axis.getScale([0, 100], [0, 500]);
+    const ticks = axis.getTicks(scale);
+
+    expect(steps.length).toBe(ticks.length);
+    expect(steps[0]).toBeGreaterThan(0);
+    for (const s of steps) expect(s).toBeCloseTo(steps[0], 10);
+  });
+
+  it('passes a millisecond delta for a time scale (Date subtraction)', () => {
+    const steps = [];
+    const axis = new AxisController({
+      scaleType: 'time',
+      tickFormat: (v, i, step) => { steps.push(step); return ''; },
+      tickCount: 5,
+    });
+    const scale = axis.getScale([new Date('2024-01-01T00:00:00Z'), new Date('2024-01-02T00:00:00Z')], [0, 500]);
+    axis.getTicks(scale);
+
+    expect(steps[0]).toBeGreaterThan(0);
+    expect(Number.isFinite(steps[0])).toBe(true);
+  });
+
+  it('leaves step undefined when fewer than 2 ticks are produced', () => {
+    let captured = 'not-called';
+    const axis = new AxisController({
+      tickFormat: (v, i, step) => { captured = step; return ''; },
+    });
+    // Zero-width domain collapses to a single tick under d3-scale's linear ticks().
+    const scale = axis.getScale([5, 5], [0, 100]);
+    const ticks = axis.getTicks(scale);
+
+    expect(ticks.length).toBe(1);
+    expect(captured).toBeUndefined();
   });
 });

@@ -83,6 +83,11 @@ export default function HubPage() {
       title: 'Axis Options Showcase (EX20)',
       desc: '2×3 grid of independently pannable/zoomable plots covering all F34/F35 axis modes: border (default), no-border fill, mirrored edges, relative/stationary at zero, mobile (snaps to edge), and mobile/hide-when-offscreen. Each plot is seeded with the same 200-point deterministic scatter.',
     },
+    {
+      href: 'time-axis-showcase.html',
+      title: 'Time Axis Showcase (F39/F40/EX22)',
+      desc: 'Two panels: a real scaleType:\'time\' axis showing d3-scale\'s multi-granularity tick formatter switch from dates down to sub-minute (F39), and a timeOrigin-configured epoch-offset axis over a synthetic 200 kHz sensor waveform showing microsecond-precision tick labels (F40) — the pattern for plotting high-precision timestamps without losing precision in DataStore\'s Float32Array buffers.',
+    },
   ];
 
   const styles = {

@@ -1,8 +1,8 @@
 # MasterPlot Implementation Plan
 
-**Plan Version:** 9.22
+**Plan Version:** 9.23
 **Last Updated:** 2026-08-05
-**Status:** Phase 7 + Phase 8 + Phase 9 + Phase 10 (1.0.0 Release Hardening) complete — v1.0.0 published, currently at v1.0.2 on npm. Phase 11 (High-Precision Time Axes & Configurable Keybindings) in progress.
+**Status:** Phase 7 + Phase 8 + Phase 9 + Phase 10 (1.0.0 Release Hardening) complete — v1.0.0 published, currently at v1.0.2 on npm. Phase 11 (High-Precision Time Axes & Configurable Keybindings): F39/F40/EX22 complete; F41 in progress.
 
 ---
 
@@ -134,9 +134,9 @@ Full spec: [docs/plan-archive.md#fxx](docs/plan-archive.md#fxx)
 | REL7 | Public API Input Validation | ✅ COMPLETED | feature/REL7-REL8 | 2026-07-25 |
 | REL8 | Peer Dependency Range Audit | ✅ COMPLETED | feature/REL7-REL8 | 2026-07-25 |
 | REL9 | Cut & Publish v1.0.0 | ✅ COMPLETED | feature/REL9 | 2026-07-25 |
-| F39 | Time Axis Multi-Scale Tick Formatting | 🔲 PENDING | — | — |
-| F40 | Epoch-Offset High-Precision Time Axis | 🔲 PENDING | — | — |
-| EX22 | Time Axis Showcase Example | 🔲 PENDING | — | — |
+| F39 | Time Axis Multi-Scale Tick Formatting | ✅ COMPLETED | feature/F39-F40-EX22 | 2026-08-05 |
+| F40 | Epoch-Offset High-Precision Time Axis | ✅ COMPLETED | feature/F39-F40-EX22 | 2026-08-05 |
+| EX22 | Time Axis Showcase Example | ✅ COMPLETED | feature/F39-F40-EX22 | 2026-08-05 |
 | F41 | Configurable Keybindings (ROI + Zoom/Pan + Scale Presets) | 🔲 PENDING | — | — |
 
 ---
@@ -187,7 +187,7 @@ REL8  (independent — no dependencies)
 
 REL9  (depends on REL1–REL8 — final release gate, requires explicit user go-ahead before `npm publish`) ✅
 
-F39 → F40 → EX22  (single branch feature/F39-F40-EX22 — F40 needs F39's getTicks() step-arg change, EX22 demos both)
+F39 → F40 → EX22  (single branch feature/F39-F40-EX22 — F40 needs F39's getTicks() step-arg change, EX22 demos both) ✅
 
 F41  (independent — no dependencies; separate branch feature/F41)
 ```
@@ -550,57 +550,24 @@ are backward-compatible additions — no major version bump required.
 
 ---
 
-### F39 [PENDING] Time Axis Multi-Scale Tick Formatting
-
-**Branch:** `feature/F39-F40-EX22`
-**Depends on:** none (independent; F40 depends on this feature's `getTicks()` change)
-
-**Problem:** `AxisController`'s `defaultFormatter('time')` (`src/plot/axes/AxisController.js:23-26`) hardcodes `timeFormat('%Y-%m-%d')` — every time-axis tick shows only a date regardless of zoom level.
-
-**New files:** none
-**Modified:** `src/plot/axes/AxisController.js`, `src/index.d.ts`, `test/plot/axes/AxisController.test.js`
-
-- Module scope: `const defaultTimeFormat = scaleTime().tickFormat();` — d3-scale's own built-in multi-granularity default (ms→sec→min→hour→day/week→month→year, auto-selected per tick from which time boundary it falls on), confirmed domain/range-independent so a single instance built at module load is safe to reuse forever. `scaleTime` is already imported; no new dependency.
-- `defaultFormatter('time')` returns `defaultTimeFormat` instead of the fixed specifier.
-- `getTicks(scale)` gains a 3rd formatter arg — the step between consecutive ticks (`ticks[1] - ticks[0]`, `undefined` if fewer than 2 ticks) — needed by F40. Existing 2-arg `tickFormat` functions are unaffected (JS ignores extra call args).
-- `src/index.d.ts`: `tickFormat` type gains optional 3rd `step` param.
-- **Required same-PR test fix:** an existing test (~line 132) asserts the old fixed `%Y-%m-%d` output and must be rewritten to assert against `scaleTime().tickFormat()`'s actual multi-granularity behavior instead. Add a `getTicks()` test for the new `step` value (linear + time cases, plus the `<2`-ticks degenerate case).
-
-**Verification:** `npm test`; manually confirm a `scaleType:'time'` axis shows coarse date labels when zoomed out and time-of-day/millisecond labels when zoomed into a sub-minute span (EX22 provides the visual proof).
+### F39 [COMPLETED] Time Axis Multi-Scale Tick Formatting
+**Completed:** 2026-08-05 | **Branch:** feature/F39-F40-EX22
+`AxisController`'s time-scale formatter now uses d3-scale's own built-in `scaleTime().tickFormat()` multi-granularity default (year→...→millisecond, auto-selected per tick) instead of a fixed `%Y-%m-%d`; `getTicks()` gained a 3rd `step` arg (delta between consecutive ticks) passed to the formatter, needed by F40.
+Full spec: [docs/plan-archive.md#f39](docs/plan-archive.md#f39)
 
 ---
 
-### F40 [PENDING] Epoch-Offset High-Precision Time Axis
-
-**Branch:** `feature/F39-F40-EX22`
-**Depends on:** F39 (needs the `step` 3rd arg)
-
-**Problem:** `DataStore`'s GPU buffers are `Float32Array` (`src/plot/DataStore.js:37-38`, `enableRolling()` reallocation `:80-84`); an absolute epoch-seconds timestamp with microsecond precision can't survive that round-trip. `ViewportController` domain state and `ROIBase.domain` are already double-precision plain JS numbers — the problem is specifically GPU point positions written via `appendData()`.
-
-**New files:** `src/plot/axes/epochTickFormat.js`
-**Modified:** `src/plot/PlotController.js`, `src/index.js`, `src/index.d.ts`, `test/plot/axes/epochTickFormat.test.js` (new), `test/plot/PlotController.test.js`
-
-- `epochTickFormat.js` exports `buildEpochTickFormatter({ timeOriginMs, unitsPerSecond })` → `(value, index, step) => string`. Computes `epochSeconds = timeOriginMs/1000 + value/unitsPerSecond` in JS double precision; picks a granularity tier from `step` (÷ `unitsPerSecond` for seconds): ≥1 day → `%Y-%m-%d`; ≥1 hr → `%m-%d %H:%M`; ≥1 min → `%H:%M`; ≥1 sec → `%H:%M:%S`; ≥1 ms → `%H:%M:%S.mmm`; below that → `%H:%M:%S.ssssss` (microseconds). **Critical:** the sub-second digits come from the double `epochSeconds - Math.floor(epochSeconds)`, never from `Date.getMilliseconds()` (which truncates at 1ms and would defeat the feature). Also exports pure `dataXToEpochSeconds`/`epochSecondsToDataX` inverse helpers.
-- `PlotController` gains `opts.timeOrigin` (`Date | number` epoch-ms; undefined = off) and `opts.timeOriginUnits` (`'seconds'|'ms'`, default `'seconds'`) — **x-axis only**. Normalize to `this._timeOriginMs`/`_unitsPerSecond` *before* the `this._xAxis = opts.xAxis || new AxisController(...)` line, and when `timeOrigin` is set and the caller did **not** supply their own `xAxis`, pass the built formatter in at construction time via `tickFormat:` (must happen at construction — `AxisController` resolves `_formatter` once in its constructor with no post-hoc setter, by design per ARCH-G). If the caller *did* supply a custom/shared `xAxis`, don't mutate it — warn once, still expose the conversion methods.
-- New public methods: `dataXToEpochSeconds(x)`, `epochSecondsToDataX(epochSeconds)`, `dataXToDate(x)` (ms-precision convenience only — document loudly, recommend `dataXToEpochSeconds` for full-precision display). Throw if called before `timeOrigin` is set.
-- Document the inherent limitation: the offset itself still lives in a Float32 buffer, so precision is bounded by keeping the offset small — a long-running live session will eventually re-exhaust float32's ~7 significant digits even with a well-chosen origin. Out of scope for F40: periodic origin rebasing.
-- Export `buildEpochTickFormatter`/`dataXToEpochSeconds`/`epochSecondsToDataX` from `src/index.js` for advanced users wiring a custom/shared `xAxis` manually.
-
-**Verification:** `test/plot/axes/epochTickFormat.test.js` — tier-boundary selection, fractional-second correctness at real epoch magnitudes, and a precision-preservation test proving two offsets `1e-6` apart produce different labels. `test/plot/PlotController.test.js` additions (constructor-only, matching this file's existing WebGL-less scope) for `timeOrigin` normalization, round-trip conversion math, and the warn-and-skip-mutation path when both `xAxis` and `timeOrigin` are supplied.
+### F40 [COMPLETED] Epoch-Offset High-Precision Time Axis
+**Completed:** 2026-08-05 | **Branch:** feature/F39-F40-EX22
+New `src/plot/axes/epochTickFormat.js` (`buildEpochTickFormatter`, `dataXToEpochSeconds`, `epochSecondsToDataX`) plus `PlotController`'s new `timeOrigin`/`timeOriginUnits` options and `dataXToEpochSeconds()`/`epochSecondsToDataX()`/`dataXToDate()` methods — works around `DataStore`'s `Float32Array` x-buffer precision limit by keeping small offsets in the GPU buffer and reconstructing absolute time from a double-precision reference for tick labels, auto-scaling to microsecond granularity.
+Full spec: [docs/plan-archive.md#f40](docs/plan-archive.md#f40)
 
 ---
 
-### EX22 [PENDING] Time Axis Showcase Example
-
-(Not `EX21` — already claimed by the unmerged local branch `feature/UI1-B10-EX21`, per this file's own 2026-07-24 changelog entry; reusing it would collide with that history.)
-
-**Branch:** `feature/F39-F40-EX22`
-**Depends on:** F39 + F40
-
-Two-panel demo following `AxisShowcaseExample.jsx`'s established structure (webpack entry, HTML template, HubPage card, README section, `ApiReferencePage.jsx` rows). Panel 1: normal `scaleType:'time'` axis with a real `Date`/ms domain, zoomable from years down to milliseconds (demonstrates F39). Panel 2: a `timeOrigin`-configured `PlotController` with synthetic microsecond-spaced sample data (simulated >1kHz sensor), demonstrating `.ssssss`-precision tick labels and non-aliased point positions when zoomed into a sub-millisecond span (demonstrates F40).
-
-**New files:** `examples/TimeAxisShowcaseExample.jsx`, `examples/src/time-axis-showcase.js`, `public/time-axis-showcase.html`
-**Modified:** `webpack.config.js`, `examples/HubPage.jsx`, `README.md`, `examples/docs/ApiReferencePage.jsx`
+### EX22 [COMPLETED] Time Axis Showcase Example
+**Completed:** 2026-08-05 | **Branch:** feature/F39-F40-EX22
+Two-panel demo (`examples/TimeAxisShowcaseExample.jsx` + webpack entry + HTML template): Panel 1 is a real `scaleType:'time'` axis over 2 years of sparse data showing F39's multi-granularity tick switch; Panel 2 is a `timeOrigin`-configured axis over a synthetic 200 kHz/5 kHz-tone waveform showing F40's microsecond-precision tick labels. HubPage card + README + ApiReferencePage updated.
+Full spec: [docs/plan-archive.md#ex22](docs/plan-archive.md#ex22)
 
 ---
 
@@ -633,6 +600,7 @@ Two-panel demo following `AxisShowcaseExample.jsx`'s established structure (webp
 
 > Full history in [docs/plan-archive.md — Change Log](docs/plan-archive.md#change-log).
 
+- **2026-08-05 [Claude]**: F39/F40/EX22 completed (v9.23), on `feature/F39-F40-EX22`. **F39**: `AxisController`'s time-scale formatter now uses d3-scale's own built-in `scaleTime().tickFormat()` multi-granularity default (confirmed via `node_modules/d3-scale/src/time.js` that the no-arg call returns a reusable domain-independent closure) instead of a fixed `%Y-%m-%d`; `getTicks()` gained a 3rd `step` arg passed to the formatter (delta between consecutive ticks; `undefined` when fewer than 2). Required rewriting one existing test that asserted the old fixed-format behavior. **F40**: new `src/plot/axes/epochTickFormat.js` (`buildEpochTickFormatter`/`dataXToEpochSeconds`/`epochSecondsToDataX`) plus `PlotController`'s new `timeOrigin`/`timeOriginUnits` constructor options and `dataXToEpochSeconds()`/`epochSecondsToDataX()`/`dataXToDate()` instance methods — works around `DataStore`'s `Float32Array` x-buffer precision limit (~7 significant digits, aliases point positions for absolute epoch-seconds timestamps) by keeping small offsets in the GPU buffer and reconstructing absolute time for tick labels from a double-precision reference, auto-scaling granularity down to microseconds (`HH:MM:SS.ssssss`). A `roundFraction()` helper avoids the classic `toFixed()` rounding-carry bug that would otherwise silently mislabel the current second; caught by a dedicated test. The epoch formatter is passed into `AxisController`'s constructor (not assigned post-hoc — `AxisController` resolves its formatter once at construction with no public setter, by design); a caller-supplied shared `xAxis` is never mutated, only warned about once. 14 new tests in `test/plot/axes/epochTickFormat.test.js` plus additions to `test/plot/PlotController.test.js`; full suite now 162/162 (up from 148). **EX22**: two-panel `examples/TimeAxisShowcaseExample.jsx` demo (not `EX21`, which collides with an unmerged branch's already-claimed ID) — Panel 1 shows F39's tick-granularity switch over 2 years of sparse calendar data; Panel 2 shows F40's microsecond-precision labels over a synthetic 200 kHz/5 kHz-tone waveform, with a live readout proving `dataXToEpochSeconds()` tracks the visible domain. HubPage card, README (Core Engine bullets, Examples table, new AxisController "Time Axis Tick Formatting"/"High-Precision Time Axis" subsections, PlotController options/methods tables), and `ApiReferencePage.jsx` (options/methods rows + a new callout) all updated; `src/index.d.ts` and `test-types/smoke.tsx` cover the new public surface. Verification: `npm test` (162/162), `npm run build`/`lint`/`typecheck` all clean; webpack-dev-server compiled the new page and served it with HTTP 200, but **no browser/screenshot tool was available in this environment to visually confirm rendering/interaction** — flagged rather than claimed as fully verified. `F41` (configurable keybindings) remains pending on its own branch.
 - **2026-08-05 [Claude]**: Housekeeping + Phase 11 planned (v9.22) — `REL9` was actually completed and published back on 2026-07-25 (`v1.0.0` tagged, `feature/REL9` merged via `40f91db`) but `PLAN.md` was never updated to reflect it; corrected the status line, Feature Status Index row, and replaced the pending spec block with a compact `[COMPLETED]` summary (full spec retroactively archived to `docs/plan-archive.md#rel9`), noting the repo is now at `v1.0.2` (two small untracked patch fixes shipped directly to `main` after the 1.0.0 cut: package-lock npm-10 regen, an unrelated "agent information" commit, and a React import fix). Also fixed a real inconsistency in `prompt.md`'s Y-axis Coordinate Convention section: the "Follow scroll" worked example claimed `y uses panByPixels(+dy)`, but F5's actual shipped code (`PlotController.js`'s follow-pan RAF tick) negates both `dx` and `dy`; rewrote the rule to stop asserting a universal "negate dy relative to dx" law (neither of the two real examples actually follows one) and instead point at both verified call sites. Added **Phase 11 — High-Precision Time Axes & Configurable Keybindings** as PENDING, covering three user-requested features validated via direct source reading plus a Plan-subagent verification pass: **F39** (time axis tick labels don't adapt to zoom level — fix is adopting d3-scale's own built-in `scaleTime().tickFormat()` multi-granularity default instead of the current hardcoded `%Y-%m-%d`, confirmed against `node_modules/d3-scale/src/time.js` that the no-arg call returns a reusable domain-independent formatter); **F40** (no supported way to plot microsecond-precision epoch timestamps — `DataStore`'s `Float32Array` buffers can't hold them at that magnitude; fix is the user's own proposed pattern of small offsets-from-a-reference-time in the GPU buffer plus a `PlotController`-level `timeOrigin` reference kept in JS double precision for tick-label reconstruction); **EX22** (two-panel showcase demoing both — not `EX21`, which collides with an unmerged local branch's already-claimed ID); **F41** (ROI-creation keys and zoom/pan are unconfigurable — unifies them under one `PlotController.keyBindings` map mirroring F38's `mouseButtons` precedent, adds new keyboard zoom-in/out and arrow-key pan actions, and adds a new opt-in `scalePresets` array for binding a key to a fixed-view jump on one or both axes). All three are backward-compatible additions post-1.0.0 (no major bump) — per user decision, `autoScaleKey` is kept as a deprecated alias into `keyBindings.autoScale` rather than removed, and arrow-key pan direction was locked to "camera pans toward the arrow" (matching F5's follow-pan precedent) after re-deriving the correct `dx`/`dy` signs numerically from `ViewportController._panDomain` rather than trusting the (now-corrected) `prompt.md` example. Mandatory order: `F39 → F40 → EX22` (bundled on one branch, `feature/F39-F40-EX22`, since F40 needs F39's `getTicks()` step-arg change and EX22 demos both together); `F41` fully independent (`feature/F41`). No code changes yet — planning only.
 - **2026-07-25 [Claude]**: REL7 + REL8 completed (v9.21) — the two remaining independent Phase 10 hardening tasks, done together on `feature/REL7-REL8`; only REL9 (the actual `npm publish`, requiring explicit user go-ahead) remains before 1.0.0. **REL7** extends F38's warn+fallback precedent to the rest of `PlotController`'s constructor options (`xDomain`/`yDomain`: malformed → warn + fall back to `[0,1]`/`[0,100]`; `xScaleType`/`yScaleType`: unrecognized → warn + fall back to `'linear'`; `panMode` incl. `setPanMode()`: unrecognized → warn + fall back to `'drag'`, a small behavior change from the old silent-normalize-to-`'follow'` but no call site in the repo passes anything but the two valid values). Added fail-fast throws where no sensible fallback exists: `DataStore.appendData()` now validates `chunk` shape (`x`/`y` array-like and same length; `size`/`color` length-matched) before any buffer write, naming the offending field. `ExternalDataAdapter`/`ExternalROIAdapter` constructors validate that subclasses actually override the required methods (`replaceData`/`appendData`; `load`/`save`/`subscribe`) at construction time rather than deferring to the base class's existing throw on first *use* — works correctly through `super()` since subclass prototype methods exist before the base constructor body runs; direct instantiation of the base classes now also throws immediately. `ROIController.updateFromExternal()` validates serialized-ROI shape (id/type/version/domain, matching `_roiFromSerialized`'s supported types and per-type domain requirements) before version-gating, warning and rejecting without mutating existing ROI state. `src/index.d.ts` gained doc-only notes on the affected signatures (no type changes — validation is runtime behavior). 30 new tests across 5 files (`test/plot/PlotController.test.js` new — constructor-only, no `init()`, since that needs a real WebGL canvas jsdom can't provide; additions to `DataStore.test.js`/`ROIBase.test.js`; new `test/integration/{ExternalDataAdapter,ExternalROIAdapter}.test.js`); suite now 136/136 across 9 files (up from 104/6). **REL8** added a tested upper bound to every `peerDependencies` entry, derived from versions actually present in this repo's `node_modules` (verified via `require(...).version`, not guessed): `@deck.gl/*`/`@luma.gl/core` → `>=9 <10` (tested 9.2.11/9.2.6), `react`/`react-dom` → `>=18 <20` (tested 19.2.4 — capped at the next major past what's verified, not at the peer floor), `d3-scale` → `>=4 <5`, `d3-format` → `>=3 <4`, `d3-time-format` → `>=4 <5`, `events` → `>=3 <4`, the 6 optional `@loaders.gl/*` packages → `>=4.3.4 <5`, optional `zstd-codec` → `>=0.1.5 <0.2.0` (capped at the next *minor*, not major, since it's a pre-1.0 package). Regenerated `package-lock.json` via `--package-lock-only` (diff confirmed: only the root package's `peerDependencies` object changed, no dependency-tree changes). New README "Peer Dependencies" subsection (under Installation & Running, before TypeScript) documents the tested-upper-bound policy and reproduces the version table. Verification for both: `npm run build`, `npm test` (136/136), `npm run lint` (0 errors, 2 pre-existing unrelated warnings), `npm run typecheck` all pass; `lib/` rebuilt via `npm run build` (rollup output changed, committed alongside — same "don't ship stale lib/" discipline as the prior rebuild). Branch: `feature/REL7-REL8`.
 - **2026-07-25 [Claude]**: REL6 completed (v9.20) — created `CHANGELOG.md` (Keep a Changelog format): an `[Unreleased]` section for the remaining REL7/REL8 hardening still pending before `npm publish`, and a single dated `[1.0.0] - 2026-07-25` entry summarizing all pre-1.0 work by subsystem (core rendering/interaction, ROI system, data pipeline, bitmap/LUT + viewport LOD, audio, data loaders, utilities, release engineering) as user-facing capability bullets rather than implementation diffs — pre-1.0 history had no per-version compatibility guarantees, so it's deliberately not reconstructed as a fictitious multi-version history. Removed the README's `> **Experimental**` banner and replaced it with a `## Stability` section: states that 1.0.0 is the first release where a breaking change requires a major bump, plus a 3-row table mapping each package entry point to its stability tier (`masterplot`/`src` = semver-stable; `masterplot/ui` and `masterplot/loaders` = convenience layers that may move faster, tracking upstream churn per REL1's loaders.gl isolation); links to the new CHANGELOG. Verified via grep that no "Experimental" framing remains outside PLAN.md's own historical entries. Branch: `feature/REL6`.

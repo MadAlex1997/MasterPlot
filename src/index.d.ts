@@ -57,8 +57,13 @@ export interface AxisTick {
 export interface AxisControllerOptions {
   /** @default 'linear' */
   scaleType?: ScaleType;
-  /** (value, index) => string. Overrides the built-in numeric/time formatter. */
-  tickFormat?: ((value: number | Date, index: number) => string) | null;
+  /**
+   * (value, index, step?) => string. Overrides the built-in numeric/time formatter.
+   * `step` (F39/F40) is the delta between consecutive tick values, passed by
+   * getTicks() — undefined when there are fewer than 2 ticks. Existing 2-arg
+   * formatters can ignore it.
+   */
+  tickFormat?: ((value: number | Date, index: number, step?: number) => string) | null;
   /** @default 5 */
   tickCount?: number;
   /** @default null */
@@ -94,7 +99,7 @@ export class AxisController {
   scaleType: ScaleType;
   tickCount: number;
   label: string | null;
-  tickFormat: ((value: number | Date, index: number) => string) | null;
+  tickFormat: ((value: number | Date, index: number, step?: number) => string) | null;
 
   mode: 'border' | 'relative';
   edges: string[] | null;
@@ -105,9 +110,30 @@ export class AxisController {
 
   getScale(domain: any[], range: number[]): D3Scale;
   getTicks(scale: D3Scale): AxisTick[];
-  formatTick(value: number | Date, index?: number): string;
+  formatTick(value: number | Date, index?: number, step?: number): string;
   getTickSize(): number;
 }
+
+// ════════════════════════════════════════════════════════════════════════
+// epochTickFormat (src/plot/axes/epochTickFormat.js) — F40
+// ════════════════════════════════════════════════════════════════════════
+
+/**
+ * Build a tick formatter for an epoch-offset x-axis. For advanced users wiring
+ * a custom/shared xAxis manually instead of PlotController's `timeOrigin` option.
+ */
+export function buildEpochTickFormatter(opts: {
+  /** Reference epoch, milliseconds (JS double). */
+  timeOriginMs: number;
+  /** 1 if x-domain units are seconds, 1000 if ms. @default 1 */
+  unitsPerSecond?: number;
+}): (value: number, index?: number, step?: number) => string;
+
+/** Convert a data-x offset value into an absolute epoch-seconds timestamp (double precision). */
+export function dataXToEpochSeconds(x: number, timeOriginMs: number, unitsPerSecond?: number): number;
+
+/** Inverse of dataXToEpochSeconds — convert an absolute epoch-seconds timestamp into a small offset. */
+export function epochSecondsToDataX(epochSeconds: number, timeOriginMs: number, unitsPerSecond?: number): number;
 
 // ════════════════════════════════════════════════════════════════════════
 // AxisRenderer (src/plot/axes/AxisRenderer.js)
@@ -1000,6 +1026,20 @@ export interface PlotControllerOptions {
   xLabel?: string;
   yLabel?: string;
 
+  /**
+   * F40: reference epoch (Date or epoch-ms). Activates epoch-offset high-precision
+   * time mode for the x-axis — x-domain/DataStore values are treated as small
+   * offsets from this reference, since DataStore's Float32Array x-buffer can't
+   * hold an absolute epoch-seconds timestamp with sub-second precision. X-axis
+   * only. If `xAxis` is also supplied, the shared instance is never mutated —
+   * only dataXToEpochSeconds()/epochSecondsToDataX()/dataXToDate() become active;
+   * pass buildEpochTickFormatter() to your own xAxis's tickFormat for the labels.
+   * @default undefined (off)
+   */
+  timeOrigin?: Date | number;
+  /** F40: unit convention for x-domain offsets relative to timeOrigin. @default 'seconds' */
+  timeOriginUnits?: 'seconds' | 'ms';
+
   /** Malformed values (not a 2-element finite-number array with min !== max) warn and fall back (REL7). @default [0, 1] */
   xDomain?: Domain;
   /** Malformed values warn and fall back, same rule as xDomain (REL7). @default [0, 100] */
@@ -1057,6 +1097,13 @@ export class PlotController extends EventEmitter {
   readonly yAxis: AxisController;
   readonly viewport: ViewportController;
   readonly roiController: ROIController;
+
+  /** F40: data-x offset → absolute epoch seconds (double precision). @throws if timeOrigin was not set. */
+  dataXToEpochSeconds(x: number): number;
+  /** F40: inverse of dataXToEpochSeconds. @throws if timeOrigin was not set. */
+  epochSecondsToDataX(epochSeconds: number): number;
+  /** F40: convenience, ms-precision only — prefer dataXToEpochSeconds() for full precision. */
+  dataXToDate(x: number): Date;
 
   init(webglCanvas: HTMLCanvasElement, axisCanvas: HTMLCanvasElement): void;
   destroy(): void;

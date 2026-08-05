@@ -14,15 +14,20 @@
 
 import { scaleLinear, scaleLog, scaleTime } from 'd3-scale';
 import { format } from 'd3-format';
-import { timeFormat } from 'd3-time-format';
 
 // Scientific number formatter: uses SI prefix for large/small numbers
 const formatSci = format('.3~s');
 const formatFixed = format('.4~g');
 
+// F39: d3-scale's own multi-granularity default time formatter (ms→sec→min→hour→
+// day/week→month→year, auto-selected per tick from which time boundary it falls on).
+// Built once — confirmed against d3-scale's source that this closure is domain/range
+// -independent, so a single instance is safe to reuse across every 'time' axis.
+const defaultTimeFormat = scaleTime().tickFormat();
+
 function defaultFormatter(scaleType) {
   if (scaleType === 'time') {
-    return timeFormat('%Y-%m-%d');
+    return defaultTimeFormat;
   }
   return (v) => {
     const abs = Math.abs(v);
@@ -40,7 +45,9 @@ export class AxisController {
    *
    * Scale / tick appearance (ARCH-G):
    * @param {'linear'|'log'|'time'} [opts.scaleType='linear']
-   * @param {function|null}          [opts.tickFormat=null]  — (value, index) => string
+   * @param {function|null}          [opts.tickFormat=null]  — (value, index, step?) => string
+   *   `step` (F39/F40) is the delta between consecutive tick values — undefined when
+   *   there are fewer than 2 ticks. Existing 2-arg formatters can ignore it.
    * @param {number}                 [opts.tickCount=5]
    * @param {string|null}            [opts.label=null]
    *
@@ -117,10 +124,15 @@ export class AxisController {
    */
   getTicks(scale) {
     const ticks = scale.ticks(this.tickCount);
+    // F39/F40: step between consecutive ticks, passed as a 3rd arg to the formatter
+    // so it can pick a display granularity (e.g. epoch-offset µs formatting in F40).
+    // For 'time' scales this is a millisecond delta (Date - Date coerces via valueOf());
+    // for 'linear'/'log' it's raw domain units. undefined when there are <2 ticks.
+    const step = ticks.length >= 2 ? ticks[1] - ticks[0] : undefined;
     return ticks.map((v, i) => ({
       value:  v,
       screen: scale(v),
-      label:  this._formatter(v, i),
+      label:  this._formatter(v, i, step),
     }));
   }
 

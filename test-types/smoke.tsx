@@ -9,6 +9,9 @@ import {
   DataStore,
   PlotDataView,
   AxisController,
+  buildEpochTickFormatter,
+  dataXToEpochSeconds,
+  epochSecondsToDataX,
   ROIController,
   ROIBase,
   LinearRegion,
@@ -70,6 +73,25 @@ ctrl.on('roiFinalized', ({ roi, version, domain }) => {
   void v;
   void domain;
 });
+
+// ── F40: epoch-offset high-precision time axis ──────────────────────────
+const timeOriginMs = Date.now();
+const epochCtrl = new PlotController({
+  timeOrigin: timeOriginMs,
+  timeOriginUnits: 'seconds',
+});
+const epochSeconds: number = epochCtrl.dataXToEpochSeconds(12.5);
+const offsetX: number = epochCtrl.epochSecondsToDataX(epochSeconds);
+const asDate: Date = epochCtrl.dataXToDate(12.5);
+void offsetX;
+void asDate;
+
+const manualFormatter = buildEpochTickFormatter({ timeOriginMs, unitsPerSecond: 1 });
+const label: string = manualFormatter(12.5, 0, 1);
+void label;
+const es: number = dataXToEpochSeconds(12.5, timeOriginMs, 1);
+const ox: number = epochSecondsToDataX(es, timeOriginMs, 1);
+void ox;
 
 const webglCanvas = document.createElement('canvas');
 const axisCanvas = document.createElement('canvas');

@@ -30,6 +30,11 @@ import { DataStore }          from './DataStore.js';
 import { ViewportController } from './ViewportController.js';
 import { AxisController }     from './axes/AxisController.js';
 import { AxisRenderer }       from './axes/AxisRenderer.js';
+import {
+  buildEpochTickFormatter,
+  dataXToEpochSeconds as _dataXToEpochSeconds,
+  epochSecondsToDataX as _epochSecondsToDataX,
+} from './axes/epochTickFormat.js';
 import { ROIController }      from './ROI/ROIController.js';
 import { buildScatterLayer }  from './layers/ScatterLayer.js';
 import { ROILayer }           from './layers/ROILayer.js';
@@ -115,6 +120,22 @@ export class PlotController extends EventEmitter {
    *                                                 REL7: unrecognized value warns and falls back to 'linear'.
    * @param {string}  [opts.xLabel]             — convenience; sets xAxis.label when not sharing
    * @param {string}  [opts.yLabel]             — convenience; sets yAxis.label when not sharing
+   * @param {Date|number} [opts.timeOrigin]     — F40: reference epoch (Date or epoch-ms).
+   *                                                Activates epoch-offset high-precision time
+   *                                                mode for the x-axis: x-domain/DataStore
+   *                                                values are treated as small offsets from
+   *                                                this reference (fits Float32Array precision;
+   *                                                DataStore's x buffer can't hold an absolute
+   *                                                epoch-seconds timestamp with sub-second
+   *                                                precision — see dataXToEpochSeconds()).
+   *                                                Undefined (default) leaves the feature off.
+   *                                                X-axis only. If opts.xAxis is also supplied,
+   *                                                the shared instance is never mutated — only
+   *                                                the conversion helper methods become active;
+   *                                                pass buildEpochTickFormatter() to your own
+   *                                                xAxis's tickFormat if you want the labels too.
+   * @param {'seconds'|'ms'} [opts.timeOriginUnits='seconds'] — F40: unit convention for x-domain
+   *                                                offsets relative to timeOrigin.
    * @param {number[]} [opts.xDomain=[0,1]]     — REL7: malformed (not a 2-element finite-number array
    *                                                 with min !== max) warns and falls back to [0,1].
    * @param {number[]} [opts.yDomain=[0,100]]   — REL7: same validation as xDomain; falls back to [0,100].
@@ -156,10 +177,36 @@ export class PlotController extends EventEmitter {
     this._onDataViewDirty      = () => { this._dirty = true; };
     this._onDataViewRecomputed = () => { this._dataTrigger++; };
 
+    // F40: epoch-offset high-precision time axis — resolve the reference time and
+    // build its tick formatter *before* constructing the default xAxis, since
+    // AxisController resolves its formatter once at construction time and has no
+    // post-hoc setter (config-only, shareable-across-plots, per ARCH-G).
+    this._timeOriginMs = opts.timeOrigin !== undefined
+      ? (opts.timeOrigin instanceof Date ? opts.timeOrigin.getTime() : opts.timeOrigin)
+      : null;
+    this._unitsPerSecond = opts.timeOriginUnits === 'ms' ? 1000 : 1;
+
+    let _epochTickFormat = null;
+    if (this._timeOriginMs !== null) {
+      if (opts.xAxis) {
+        console.warn(
+          'PlotController: both "xAxis" and "timeOrigin" were supplied; the shared xAxis ' +
+          'instance will not be mutated. Pass buildEpochTickFormatter() (from ' +
+          '"masterplot") as that AxisController\'s own tickFormat if you want epoch-offset labels.'
+        );
+      } else {
+        _epochTickFormat = buildEpochTickFormatter({
+          timeOriginMs: this._timeOriginMs,
+          unitsPerSecond: this._unitsPerSecond,
+        });
+      }
+    }
+
     // ARCH-G: AxisController is config-only.  Accept a shared instance or create a default.
     this._xAxis = opts.xAxis || new AxisController({
       scaleType: _validateScaleType(opts.xScaleType, 'xScaleType') || 'linear',
       label:     opts.xLabel     || null,
+      tickFormat: _epochTickFormat,
     });
     this._yAxis = opts.yAxis || new AxisController({
       scaleType: _validateScaleType(opts.yScaleType, 'yScaleType') || 'linear',
@@ -523,6 +570,50 @@ export class PlotController extends EventEmitter {
   /** ViewportController — owns domain state and all zoom/pan mutations. */
   get viewport()       { return this._viewport;  }
   get roiController()  { return this._roiController; }
+
+  // ─── F40: epoch-offset high-precision time conversion ─────────────────────
+
+  /**
+   * Convert a data-x offset value into an absolute epoch-seconds timestamp,
+   * computed entirely in JS double precision (never touches a Float32 buffer,
+   * so no precision loss at the point of use/display). Requires `timeOrigin`
+   * to have been set at construction.
+   *
+   * @param {number} x
+   * @returns {number} epoch seconds (double precision)
+   */
+  dataXToEpochSeconds(x) {
+    if (this._timeOriginMs === null) {
+      throw new Error('PlotController.dataXToEpochSeconds(): "timeOrigin" was not set at construction.');
+    }
+    return _dataXToEpochSeconds(x, this._timeOriginMs, this._unitsPerSecond);
+  }
+
+  /**
+   * Inverse of dataXToEpochSeconds() — convert an absolute epoch-seconds
+   * timestamp into the small offset value to feed into DataStore.appendData()
+   * or an ROI position, so it stays precise once written into a Float32Array.
+   *
+   * @param {number} epochSeconds
+   * @returns {number}
+   */
+  epochSecondsToDataX(epochSeconds) {
+    if (this._timeOriginMs === null) {
+      throw new Error('PlotController.epochSecondsToDataX(): "timeOrigin" was not set at construction.');
+    }
+    return _epochSecondsToDataX(epochSeconds, this._timeOriginMs, this._unitsPerSecond);
+  }
+
+  /**
+   * Convenience: data-x offset → Date. Millisecond precision only (Date can't
+   * hold sub-ms) — prefer dataXToEpochSeconds() for full-precision display.
+   *
+   * @param {number} x
+   * @returns {Date}
+   */
+  dataXToDate(x) {
+    return new Date(this.dataXToEpochSeconds(x) * 1000);
+  }
 
   /**
    * Swap the active DataView at runtime.

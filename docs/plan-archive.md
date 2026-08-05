@@ -5388,3 +5388,182 @@ was a stale "prototype" framing left in two doc pages that hadn't been swept up 
   and Phase 10 status line are updated alongside it to stop claiming REL9 is pending.
 
 ---
+
+## F39 [COMPLETED] Time Axis Multi-Scale Tick Formatting
+
+**Branch:** `feature/F39-F40-EX22`
+**Completed:** 2026-08-05
+**Depends on:** none
+
+### Problem
+
+`AxisController`'s `defaultFormatter('time')` hardcoded `timeFormat('%Y-%m-%d')`, so a
+`scaleType:'time'` axis showed only a date string regardless of zoom level — an hour-wide
+domain rendered five identical `"2024-03-14"` labels.
+
+### Changes made
+
+**`src/plot/axes/AxisController.js`:**
+- Module scope: `const defaultTimeFormat = scaleTime().tickFormat();` — d3-scale's own
+  built-in multi-granularity default (ms→sec→min→hour→day/week→month→year, auto-selected
+  per tick from which time boundary it falls on). Confirmed against d3-scale's source that
+  this closure is domain/range-independent, so a single module-level instance is safe to
+  reuse across every 'time' axis. `scaleTime` was already imported for `getScale()`; the
+  now-unused `timeFormat` import from `d3-time-format` was removed.
+- `defaultFormatter('time')` returns `defaultTimeFormat` instead of the fixed specifier.
+- `getTicks(scale)` now computes the step between consecutive ticks
+  (`ticks[1] - ticks[0]`, `undefined` when fewer than 2 ticks) and passes it as a 3rd arg
+  to the formatter — needed by F40's epoch-offset tier selection. For time scales this is
+  a millisecond delta (`Date - Date` coerces via `valueOf()`); for linear/log it's raw
+  domain units. Existing 2-arg `tickFormat` functions are unaffected (JS ignores extra
+  call args).
+
+**`src/index.d.ts`:** `tickFormat` option/field and `formatTick()`/`getTicks()` signatures
+gained the optional 3rd `step` parameter.
+
+**`test/plot/axes/AxisController.test.js`:** rewrote the test that asserted the old fixed
+`%Y-%m-%d` behavior (it would have failed under the new default) to instead assert against
+`scaleTime().tickFormat()`'s actual output, plus a test proving granularity switches between
+a day-aligned date and a sub-second one. Added a `getTicks() — step` describe block covering
+linear-scale step, time-scale millisecond step, and the `<2`-ticks-leaves-step-undefined
+degenerate case (verified via a zero-width domain, which d3-scale's linear `.ticks()`
+collapses to a single tick).
+
+### Verification
+
+- `npm test` — all passing (19 tests in `AxisController.test.js`, part of a 162-test suite).
+- `npm run build` / `npm run lint` / `npm run typecheck` all clean.
+- Manual: confirmed via `node -e` against the real `d3-scale` package that
+  `scaleTime().tickFormat()` returns a reusable, domain-independent multi-format closure
+  before writing any code (the crux technical assumption of this feature).
+
+---
+
+## F40 [COMPLETED] Epoch-Offset High-Precision Time Axis
+
+**Branch:** `feature/F39-F40-EX22`
+**Completed:** 2026-08-05
+**Depends on:** F39 (the `getTicks()` step-arg change)
+
+### Problem
+
+`DataStore`'s GPU buffers are `Float32Array` (~7 significant decimal digits). An absolute
+epoch-seconds timestamp with microsecond precision (e.g. `1712345678.123456`) cannot survive
+that round-trip — at that magnitude float32's representable gap already exceeds 100,
+aliasing point positions on the GPU, not just losing sub-second precision. `ViewportController`
+domain state and `ROIBase.domain` are plain double-precision JS numbers and were never
+affected — the problem is specifically GPU point positions written via `appendData()`.
+
+### Design
+
+Small offsets-from-a-reference-time go into the GPU buffer (fits float32 fine); a separate
+reference time (`timeOrigin`) is kept in JS double precision on `PlotController` and used
+only to reconstruct absolute time for tick-label display and conversion helpers — never
+written back into a Float32Array.
+
+### New file: `src/plot/axes/epochTickFormat.js`
+
+- `buildEpochTickFormatter({ timeOriginMs, unitsPerSecond = 1 })` → `(value, index, step) => string`.
+  Computes `epochSeconds = timeOriginMs/1000 + value/unitsPerSecond` in double precision;
+  picks a granularity tier from `step` (÷ `unitsPerSecond` for seconds): ≥1 day → `%Y-%m-%d`;
+  ≥1 hr → `%m-%d %H:%M`; ≥1 min → `%H:%M`; ≥1 sec → `%H:%M:%S`; ≥1 ms → `%H:%M:%S.mmm`;
+  below that → `%H:%M:%S.ssssss` (microseconds). The sub-second digits come from the double
+  `epochSeconds - Math.floor(epochSeconds)`, never from `Date.getMilliseconds()` (which
+  truncates at 1ms and would defeat the feature). A `roundFraction()` helper avoids the
+  classic `toFixed()` carry bug (e.g. `0.9999996.toFixed(6) === "1.000000"`, which would
+  silently mislabel the current second instead of carrying into the next one) — verified
+  with a dedicated test.
+- `dataXToEpochSeconds(x, timeOriginMs, unitsPerSecond)` / `epochSecondsToDataX(epochSeconds, timeOriginMs, unitsPerSecond)`
+  — pure inverse conversion functions.
+
+### `src/plot/PlotController.js` changes
+
+- New constructor options: `opts.timeOrigin` (`Date | number` epoch-ms; undefined = off)
+  and `opts.timeOriginUnits` (`'seconds'|'ms'`, default `'seconds'`) — **x-axis only**.
+- Normalized to `this._timeOriginMs`/`_unitsPerSecond` and the epoch formatter built
+  **before** the `this._xAxis = opts.xAxis || new AxisController(...)` line, then passed
+  into the `new AxisController({..., tickFormat})` call at construction time — not via a
+  post-hoc `axis.tickFormat = fn` assignment, since `AxisController` resolves `_formatter`
+  once in its own constructor with no public setter (config-only, shareable-across-plots,
+  per ARCH-G's design). If the caller supplied their own `opts.xAxis`, the shared instance
+  is never mutated — a one-time `console.warn` points at `buildEpochTickFormatter()` for
+  manual wiring instead.
+- New public methods `dataXToEpochSeconds(x)`, `epochSecondsToDataX(epochSeconds)`,
+  `dataXToDate(x)` (ms-precision convenience only) — all throw if called before
+  `timeOrigin` was set (no sensible fallback exists, unlike REL7's warn+fallback
+  constructor validation).
+- Exported `buildEpochTickFormatter`/`dataXToEpochSeconds`/`epochSecondsToDataX` from
+  `src/index.js` for advanced users wiring a custom/shared `xAxis` manually.
+
+**Documented, not solved:** the offset itself still lives in a Float32Array, so precision
+is bounded by keeping the offset small — a long-running live-streaming session will
+eventually re-exhaust float32's ~7 significant digits even with a well-chosen origin.
+Periodic origin rebasing is an explicit out-of-scope future item.
+
+### Tests
+
+- `test/plot/axes/epochTickFormat.test.js` (new, 14 tests): tier-boundary selection at
+  every threshold, exact fractional-second correctness at realistic epoch magnitudes, a
+  precision-preservation test proving two offsets `1e-6` apart produce different labels,
+  an explicit test of the `toFixed()` rounding-carry edge case, and round-trip conversion
+  tests (tolerances reflect the real double-precision error at epoch magnitude — ~1e-7s for
+  seconds units, ~1e-4s for ms units — which is itself a demonstration of the documented
+  inherent-limitation caveat, not a test bug).
+- `test/plot/PlotController.test.js` additions: `timeOrigin` normalization (Date vs number),
+  `timeOriginUnits` defaulting/handling, round-trip conversion methods, throwing when
+  `timeOrigin` was never set, the default-xAxis formatter installation path, and the
+  warn-and-skip-mutation path when both `xAxis` and `timeOrigin` are supplied together.
+- `src/index.d.ts` gained full declarations; `test-types/smoke.tsx` exercises the new
+  constructor options, instance methods, and standalone exported functions through the
+  real `masterplot` package-name import path.
+
+### Verification
+
+- `npm test` — 162/162 passing (up from 148 pre-Phase-11).
+- `npm run build` / `npm run lint` / `npm run typecheck` all clean.
+
+---
+
+## EX22 [COMPLETED] Time Axis Showcase Example
+
+**Branch:** `feature/F39-F40-EX22`
+**Completed:** 2026-08-05
+**Depends on:** F39, F40
+
+### Summary
+
+Two-panel demo following `AxisShowcaseExample.jsx`'s established structure (per-panel
+`PlotCell` with its own canvas pair and `PlotController` instance).
+
+- **Panel 1 (F39):** `xScaleType: 'time'` with a real epoch-ms domain spanning
+  `2023-01-01`–`2024-12-31`, seeded with 180 sparse synthetic "sensor reading" points
+  (seasonal sine + noise). Zooming demonstrates d3-scale's multi-granularity tick label
+  switch. A live readout below the panel shows the current visible domain as ISO
+  timestamps (via `domainChanged` → `new Date(x).toISOString()`).
+- **Panel 2 (F40):** `timeOrigin: Date.now()`, `timeOriginUnits: 'seconds'`, x-domain
+  `[0, 0.02]` (20 ms window), seeded with a synthetic 200 kHz-sampled 5 kHz tone
+  (+ a smaller 47 kHz harmonic) — 4000 points, offsets in seconds so they fit
+  `Float32Array` precision without aliasing. A live readout shows both the raw offset
+  domain and the domain converted through `ctrl.dataXToEpochSeconds()` to prove the
+  conversion helpers track the visible range correctly, plus the span in microseconds.
+
+**New files:** `examples/TimeAxisShowcaseExample.jsx`, `examples/src/time-axis-showcase.js`,
+`public/time-axis-showcase.html`.
+**Modified:** `webpack.config.js` (entry + `HtmlWebpackPlugin`), `examples/HubPage.jsx`
+(card), `README.md` (Examples table + Core Engine bullets + new AxisController subsections),
+`examples/docs/ApiReferencePage.jsx` (PlotController options/methods rows, AxisController
+`tickFormat`/`getTicks`/`formatTick` rows, a new "High-precision time axis (F40)" callout).
+`HelpOverlay` included with a unique `storageKey`, matching EX15's convention (note: EX20,
+the immediately preceding example page, did not get a `HelpOverlay` — an existing gap in
+that page, not reproduced here).
+
+### Verification
+
+- `npm run build` — zero errors, new `time-axis-showcase` entry emitted correctly.
+- `npm run dev` (webpack-serve) — compiled successfully, page served with HTTP 200.
+- **Not independently visually verified in a browser** — no screenshot/browser-automation
+  tool was available in this environment. Build success and a clean dev-server compile are
+  necessary but not sufficient evidence the page renders/interacts correctly; flagged here
+  rather than claimed as fully verified.
+
+---
