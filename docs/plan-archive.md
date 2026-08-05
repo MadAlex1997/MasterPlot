@@ -5350,3 +5350,41 @@ All `peerDependencies` in `package.json` were open-ended lower bounds (`>=9`, `>
 - Installing a peer one major above a tested range (e.g. a hypothetical `react@20`) would now produce an `ERESOLVE`/peer warning under npm 7+'s peer resolution, instead of silently succeeding — not independently re-verified against a real React 20 release (doesn't exist yet), but the range mechanics are the same npm semver-range behavior already exercised by the existing lower-bound-only ranges.
 
 ---
+
+## REL9 [COMPLETED] Cut & Publish v1.0.0
+
+**Branch:** `feature/REL9`
+**Completed:** 2026-07-25 (retroactively archived 2026-08-05 — it had run and shipped, but
+`PLAN.md` was never updated to reflect it, so the Feature Status Index and status line kept
+showing it as pending)
+**Depends on:** REL1–REL8 (all)
+
+### Problem
+
+Everything else in Phase 10 was done, but `PLAN.md` still gated the actual `npm publish` behind
+explicit maintainer go-ahead per the final-release-gate rule, and the last remaining blocker
+was a stale "prototype" framing left in two doc pages that hadn't been swept up by REL6's
+"Experimental" banner removal.
+
+### Changes made
+
+- `chore(REL9): drop stale prototype framing from HubPage and ArchitecturePage` (commit
+  `77dfb8e`) — removed HubPage's "Prototype — not ready for production use" disclaimer banner
+  and fixed ArchitecturePage's opening line ("MasterPlot is a prototype (eventually
+  production-grade)…" → "MasterPlot is a production-grade…"), merged to `main` via `40f91db`.
+- `npm publish` ran with maintainer go-ahead; `v1.0.0` tagged and released.
+- Two follow-up patch fixes shipped afterward directly to `main`, outside the
+  PLAN.md-tracked feature workflow (small enough not to warrant their own feature IDs):
+  `chore: regenerate package-lock.json with npm 10 for npm-ci CI compatibility` (`b2fe251`),
+  `agent information` (`cff968d`), `fix react import` (`67734c6`) — published as `v1.0.2`
+  (tagged; no separate `v1.0.1` tag exists in the repo).
+
+### Verification
+
+- `npm install masterplot` resolves the real published package at v1.0.2 (`npm view
+  masterplot version` → `1.0.2`, matching local `package.json`).
+- `git tag` shows `v1.0.0` and `v1.0.2`.
+- This retroactive archive entry itself is the correction: `PLAN.md`'s Feature Status Index
+  and Phase 10 status line are updated alongside it to stop claiming REL9 is pending.
+
+---

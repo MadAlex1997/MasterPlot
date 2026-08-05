@@ -423,11 +423,18 @@ x axis: pxSpan > 0  →  panByPixels(+n) decreases domain (viewport shifts right
 y axis: pxSpan < 0  →  panByPixels(+n) increases domain (double-negation — opposite of x!)
 ```
 
-**Rule for any new pan/interaction code:** to achieve the same directional behavior on y as on x, **negate `dy`** relative to what you would use for `dx`.
+**Rule for any new pan/interaction code:** don't assume a universal "negate dy relative to dx"
+law — the two shipped examples below don't actually follow one (one negates both dx and dy,
+the other negates neither). Instead, verify the desired direction against the actual formula
+above and cross-check against whichever of these two examples is the closer semantic match to
+what you're building.
 
-Examples:
-- Follow scroll: x uses `panByPixels(-dx)`, y must use `panByPixels(+dy)` ← `+dy` not `-dy`
-- Drag (grab) pan: x uses `panByPixels(+dx)`, y must use `panByPixels(+dy)` as well ← same sign, NOT negated
+Examples (verified against shipped code, not just described from memory):
+- Follow scroll (F5, velocity-based pan while holding the mouse away from the anchor point):
+  `panByPixels({ dx: -dx * speed, dy: -dy * speed })` — **both** negated
+  (`src/plot/PlotController.js`, `_scheduleRender()`'s follow-pan tick).
+- Drag (grab) pan (content follows the cursor 1:1): `panByPixels({ dx, dy })` — raw values,
+  **neither** negated (`src/plot/PlotController.js`, `_onMouseMove`'s grab-pan branch).
 
 ---
 

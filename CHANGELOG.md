@@ -13,9 +13,8 @@ Pre-1.0 development had no compatibility guarantees and is summarized below as a
 
 ## [Unreleased]
 
-Release-hardening work is complete. The only remaining step ahead of the first publish is
-cutting and publishing `1.0.0` itself, which requires explicit maintainer go-ahead. No
-user-facing feature changes.
+Phase 11 (high-precision time axes + configurable keybindings) planned, not yet implemented —
+see [PLAN.md](PLAN.md).
 
 ## [1.0.0] - 2026-07-25
 
