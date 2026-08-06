@@ -565,6 +565,9 @@ export default function ExampleApp() {
             { key: 'D',       description: 'Delete selected ROI' },
             { key: 'Esc',     description: 'Cancel ROI creation' },
             { key: 'Space',   description: 'Auto-scale (reset zoom to home domain)' },
+            { key: '=',       description: 'Zoom in (keyboard)' },
+            { key: '-',       description: 'Zoom out (keyboard)' },
+            { key: 'Arrows',  description: 'Pan the view (F41)' },
             { key: 'Mid-drag', description: 'Rect zoom (when "Rect zoom" checkbox is enabled)' },
           ]}
         />

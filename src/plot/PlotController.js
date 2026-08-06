@@ -64,6 +64,66 @@ const DEFAULT_MOUSE_BUTTONS = { left: 'pan', middle: 'none', right: 'zoomDrag' }
 const BUTTON_NAME_TO_CODE   = { left: 0, middle: 1, right: 2 };
 const VALID_MOUSE_ACTIONS   = new Set(['pan', 'zoomDrag', 'rectZoom', 'none']);
 
+// F41: configurable keybindings — unifies ROI-creation actions (forwarded to
+// ROIController) and zoom/pan actions (handled here) under one map, mirroring
+// F38's mouseButtons pattern. 'autoScale' replaces the old standalone
+// autoScaleKey option; autoScaleKey is kept as a deprecated alias (see below).
+const DEFAULT_KEY_BINDINGS = {
+  createLinear: 'l', createRect: 'r', createVLine: 'v', createHLine: 'h',
+  deleteROI: 'd', cancel: 'escape',
+  autoScale: ' ',
+  zoomIn: '=', zoomOut: '-',
+  panLeft: 'arrowleft', panRight: 'arrowright', panUp: 'arrowup', panDown: 'arrowdown',
+};
+const ROI_KEY_ACTIONS  = new Set(['createLinear', 'createRect', 'createVLine', 'createHLine', 'deleteROI', 'cancel']);
+const ZOOM_PAN_ACTIONS = new Set(['autoScale', 'zoomIn', 'zoomOut', 'panLeft', 'panRight', 'panUp', 'panDown']);
+const VALID_KEY_ACTIONS = new Set([...ROI_KEY_ACTIONS, ...ZOOM_PAN_ACTIONS]);
+const PAN_STEP_PX    = 40;
+const ZOOM_IN_FACTOR  = 1.25;
+const ZOOM_OUT_FACTOR = 0.8;
+
+// F41: opt-in scale-preset keybinds — press a bound key to jump to a fixed
+// view on one or both axes. No defaults (domain-specific); array, not part
+// of keyBindings, since presets aren't a fixed action set.
+function _validateScalePresets(presets) {
+  if (presets === undefined) return [];
+  if (!Array.isArray(presets)) {
+    console.warn(`PlotController: "scalePresets" must be an array; got ${JSON.stringify(presets)}. Ignoring.`);
+    return [];
+  }
+  const valid = [];
+  const seenKeys = new Set();
+  for (const p of presets) {
+    if (!p || typeof p.bind !== 'string' || p.bind.length === 0) {
+      console.warn(`PlotController: scalePresets entry missing a valid "bind" string; skipping: ${JSON.stringify(p)}`);
+      continue;
+    }
+    const hasX = p.xMin !== undefined || p.xMax !== undefined;
+    const hasY = p.yMin !== undefined || p.yMax !== undefined;
+    if (!hasX && !hasY) {
+      console.warn(`PlotController: scalePresets entry "${p.bind}" has neither an x nor y bound pair; skipping.`);
+      continue;
+    }
+    const pairOk = (min, max) =>
+      min !== undefined && max !== undefined && Number.isFinite(min) && Number.isFinite(max) && min !== max;
+    if (hasX && !pairOk(p.xMin, p.xMax)) {
+      console.warn(`PlotController: scalePresets entry "${p.bind}" has an invalid xMin/xMax pair; skipping.`);
+      continue;
+    }
+    if (hasY && !pairOk(p.yMin, p.yMax)) {
+      console.warn(`PlotController: scalePresets entry "${p.bind}" has an invalid yMin/yMax pair; skipping.`);
+      continue;
+    }
+    const key = p.bind.toLowerCase();
+    if (seenKeys.has(key)) {
+      console.warn(`PlotController: multiple scalePresets bind to "${key}"; the last one wins.`);
+    }
+    seenKeys.add(key);
+    valid.push({ ...p, bind: key });
+  }
+  return valid;
+}
+
 // REL7: constructor option validation — extends F38's warn+fallback precedent
 // to the rest of the public constructor surface.
 const VALID_SCALE_TYPES = new Set(['linear', 'log', 'time']);
@@ -146,6 +206,18 @@ export class PlotController extends EventEmitter {
    *                                                  values 'pan'|'zoomDrag'|'rectZoom'|'none'.
    *                                                  Default: { left: 'pan', middle: 'none', right: 'zoomDrag' }.
    *                                                  F37's rect-zoom is opt-in — assign 'rectZoom' to a button to enable it.
+   * @param {object}  [opts.keyBindings]           — F41: action→key map. Actions: 'createLinear'('l'),
+   *                                                  'createRect'('r'), 'createVLine'('v'), 'createHLine'('h'),
+   *                                                  'deleteROI'('d'), 'cancel'('escape') — forwarded to ROIController —
+   *                                                  plus 'autoScale'(' '), 'zoomIn'('='), 'zoomOut'('-'),
+   *                                                  'panLeft'('arrowleft'), 'panRight'('arrowright'),
+   *                                                  'panUp'('arrowup'), 'panDown'('arrowdown'). Pass null for an
+   *                                                  action to disable its key. Unrecognized keys warn + fall back.
+   * @param {Array<{bind: string, xMin?: number, xMax?: number, yMin?: number, yMax?: number}>} [opts.scalePresets=[]]
+   *   — F41: press `bind` to jump the view to the given bounds on whichever axis/axes are supplied;
+   *     the other axis (or both, if omitted) is left at its current value. No defaults — fully opt-in.
+   * @param {string|null} [opts.autoScaleKey]      — DEPRECATED, use keyBindings.autoScale instead.
+   *                                                  Kept as a warn-once alias for backward compatibility.
    */
   constructor(opts = {}) {
     super();
@@ -223,7 +295,28 @@ export class PlotController extends EventEmitter {
     this._viewport._yDomain = _validateDomain(opts.yDomain, 'yDomain', [0, 100]);
     this._viewport.setAxisConfig(this._xAxis, this._yAxis);
 
-    this._roiController = new ROIController(this._viewport);
+    // F41: unified keyBindings — build before constructing ROIController so we
+    // can pass it the ROI-relevant slice.
+    this._keyBindings = null;
+    this._setKeyBindingMap(opts.keyBindings);
+
+    // F23/F41: autoScaleKey is deprecated in favor of keyBindings.autoScale,
+    // kept as a warn-once alias for backward compatibility (published API).
+    if (opts.autoScaleKey !== undefined && (!opts.keyBindings || opts.keyBindings.autoScale === undefined)) {
+      console.warn(
+        'PlotController: "autoScaleKey" is deprecated; use keyBindings.autoScale instead. ' +
+        `Mapping autoScaleKey (${JSON.stringify(opts.autoScaleKey)}) into keyBindings.autoScale.`
+      );
+      this._keyBindings.autoScale = opts.autoScaleKey
+        ? String(opts.autoScaleKey).toLowerCase()
+        : null; // falsy (null/''/undefined-after-check) disables, matching old semantics
+    }
+
+    // F41: opt-in scale-preset keybinds — no defaults, fully user-supplied.
+    this._scalePresets = _validateScalePresets(opts.scalePresets);
+    this._scalePresetMap = new Map(this._scalePresets.map(p => [p.bind, p]));
+
+    this._roiController = new ROIController(this._viewport, { keyBindings: this._pickRoiKeyBindings() });
 
     // Canvas references (set during init)
     this._webglCanvas = null;
@@ -283,7 +376,6 @@ export class PlotController extends EventEmitter {
 
     // F23: auto-scale / home domain
     this._homeDomain   = { x: null, y: null };
-    this._autoScaleKey = opts.autoScaleKey !== undefined ? opts.autoScaleKey : ' ';
     this._onKeyDown    = null;  // assigned in init()
 
     // Bound event handlers for cleanup
@@ -348,14 +440,49 @@ export class PlotController extends EventEmitter {
     this._resizeObserver = new ResizeObserver(() => this._onResize());
     this._resizeObserver.observe(this._webglCanvas.parentElement);
 
-    // F23: spacebar → autoScale (skipped when pan/zoom is disabled)
+    // F23/F41: autoScale + keyboard zoom/pan + scale presets (skipped when pan/zoom is disabled)
     if (!this._disablePanZoom) {
       this._onKeyDown = (e) => {
         if (e.repeat) return;
         if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
-        if (e.key === this._autoScaleKey) { e.preventDefault(); this.autoScale(); }
+
+        const k = e.key.toLowerCase();
+        const kb = this._keyBindings;
+
+        if (k === kb.autoScale) { e.preventDefault(); this.autoScale(); return; }
+        if (k === kb.zoomIn) {
+          e.preventDefault();
+          this._viewport.scaleDomainFromMidpointX(ZOOM_IN_FACTOR);
+          this._viewport.scaleDomainFromMidpointY(ZOOM_IN_FACTOR);
+          this._dirty = true;
+          return;
+        }
+        if (k === kb.zoomOut) {
+          e.preventDefault();
+          this._viewport.scaleDomainFromMidpointX(ZOOM_OUT_FACTOR);
+          this._viewport.scaleDomainFromMidpointY(ZOOM_OUT_FACTOR);
+          this._dirty = true;
+          return;
+        }
+        // Camera pans toward the arrow (matches F5 follow-pan's precedent, not
+        // grab-drag's opposite metaphor) — see prompt.md's Y-axis Coordinate
+        // Convention section for the sign derivation.
+        if (k === kb.panLeft)  { e.preventDefault(); this._viewport.panByPixels({ dx:  PAN_STEP_PX }); this._dirty = true; return; }
+        if (k === kb.panRight) { e.preventDefault(); this._viewport.panByPixels({ dx: -PAN_STEP_PX }); this._dirty = true; return; }
+        if (k === kb.panUp)    { e.preventDefault(); this._viewport.panByPixels({ dy:  PAN_STEP_PX }); this._dirty = true; return; }
+        if (k === kb.panDown)  { e.preventDefault(); this._viewport.panByPixels({ dy: -PAN_STEP_PX }); this._dirty = true; return; }
+
+        // F41: scale presets — jump to a fixed view on one or both axes.
+        const preset = this._scalePresetMap.get(k);
+        if (preset) {
+          e.preventDefault();
+          const xDomain = preset.xMin !== undefined ? [preset.xMin, preset.xMax] : this._viewport.getXDomain();
+          const yDomain = preset.yMin !== undefined ? [preset.yMin, preset.yMax] : this._viewport.getYDomain();
+          this._viewport.setDomains(xDomain, yDomain);
+          this._dirty = true;
+        }
       };
-      if (this._autoScaleKey) window.addEventListener('keydown', this._onKeyDown);
+      window.addEventListener('keydown', this._onKeyDown);
     }
 
     // Start render loop
@@ -478,6 +605,77 @@ export class PlotController extends EventEmitter {
       map[code] = action;
     }
     this._buttonActions = map;
+  }
+
+  // ─── F41: Configurable keybindings ─────────────────────────────────────────
+
+  /**
+   * Remap ROI-creation and/or zoom/pan keybinds at runtime. Partial override,
+   * merged over DEFAULT_KEY_BINDINGS (same "merge over the default" semantics
+   * as setMouseButtons()). Pass null for an action's key to disable it.
+   * @param {object} patch — subset of DEFAULT_KEY_BINDINGS's keys
+   */
+  setKeyBindings(patch) {
+    this._setKeyBindingMap(patch);
+    this._roiController.setKeyBindings(this._pickRoiKeyBindings());
+  }
+
+  /** @private */
+  _setKeyBindingMap(cfg) {
+    const merged = { ...DEFAULT_KEY_BINDINGS, ...(cfg || {}) };
+    const map = {};
+    const seen = new Map();
+
+    for (const action of VALID_KEY_ACTIONS) {
+      let key = merged[action];
+      if (key === null) {
+        map[action] = null;
+        continue;
+      }
+      if (typeof key !== 'string' || key.length === 0) {
+        console.warn(
+          `PlotController: invalid keyBindings.${action} value ${JSON.stringify(merged[action])}; ` +
+          `falling back to default "${DEFAULT_KEY_BINDINGS[action]}"`
+        );
+        key = DEFAULT_KEY_BINDINGS[action];
+      }
+      key = key.toLowerCase();
+      map[action] = key;
+
+      const prior = seen.get(key);
+      if (prior) {
+        console.warn(`PlotController: keyBindings "${prior}" and "${action}" both bind to "${key}"; both will fire on that keypress.`);
+      }
+      seen.set(key, action);
+    }
+
+    if (cfg) {
+      for (const action of Object.keys(cfg)) {
+        if (!VALID_KEY_ACTIONS.has(action)) {
+          console.warn(`PlotController: unknown keyBindings action "${action}"; ignored.`);
+        }
+      }
+    }
+
+    this._keyBindings = map;
+  }
+
+  /** @private */
+  _pickRoiKeyBindings() {
+    const roi = {};
+    for (const action of ROI_KEY_ACTIONS) roi[action] = this._keyBindings[action];
+    return roi;
+  }
+
+  /**
+   * F41: replace the scale-presets array at runtime. Unlike setKeyBindings()/
+   * setMouseButtons(), this REPLACES the whole array rather than merging —
+   * presets have no meaningful default array to merge against.
+   * @param {Array<{bind: string, xMin?: number, xMax?: number, yMin?: number, yMax?: number}>} presets
+   */
+  setScalePresets(presets) {
+    this._scalePresets = _validateScalePresets(presets);
+    this._scalePresetMap = new Map(this._scalePresets.map(p => [p.bind, p]));
   }
 
   // ─── F23: Auto-scale ───────────────────────────────────────────────────────

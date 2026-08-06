@@ -163,9 +163,11 @@ function PlotControllerSection() {
           <tr><Td mono>timeOriginUnits</Td><Td type>'seconds'|'ms'</Td><Td mono>'seconds'</Td><Td>F40: unit convention for x-domain offsets relative to timeOrigin.</Td></tr>
           <tr><Td mono>panMode</Td><Td type>'follow'|'drag'</Td><Td mono>'drag'</Td><Td>Initial pan mode. Unrecognized value warns and falls back to 'drag' (REL7).</Td></tr>
           <tr><Td mono>mouseButtons</Td><Td type>object</Td><Td mono>{'{ left: \'pan\', middle: \'none\', right: \'zoomDrag\' }'}</Td><Td>Button→action map (F38). Values: 'pan', 'zoomDrag' (F6), 'rectZoom' (F37, opt-in), 'none'</Td></tr>
+          <tr><Td mono>keyBindings</Td><Td type>object</Td><Td mono>(see below)</Td><Td>F41: action→key map covering ROI creation (forwarded to ROIController) and zoom/pan actions. Merged over defaults: createLinear 'l', createRect 'r', createVLine 'v', createHLine 'h', deleteROI 'd', cancel 'escape', autoScale ' ', zoomIn '=', zoomOut '-', panLeft/panRight/panUp/panDown = arrow keys. Pass <code style={inlineCode}>null</code> for an action to disable its key.</Td></tr>
+          <tr><Td mono>scalePresets</Td><Td type>object[]</Td><Td mono>[]</Td><Td>F41: opt-in — each entry {'{ bind, xMin?, xMax?, yMin?, yMax? }'} jumps the view to fixed bounds on whichever axis/axes are supplied when <code style={inlineCode}>bind</code> is pressed; the other axis is left at its current value. No defaults.</Td></tr>
           <tr><Td mono>bordered</Td><Td type>boolean</Td><Td mono>true</Td><Td>Fill axis gutter areas with the container element's CSS backgroundColor before rendering ticks (F34). Disable for transparent/overlay layouts.</Td></tr>
           <tr><Td mono>autoExpand</Td><Td type>boolean</Td><Td mono>true</Td><Td>Expand domain automatically when new data exceeds current bounds</Td></tr>
-          <tr><Td mono>autoScaleKey</Td><Td type>string|null</Td><Td mono>' '</Td><Td>Keyboard key that triggers autoScale(); <code style={inlineCode}>null</code> to disable the spacebar binding</Td></tr>
+          <tr><Td mono>autoScaleKey</Td><Td type>string|null</Td><Td mono>' '</Td><Td><strong>Deprecated</strong> — use keyBindings.autoScale instead. Keyboard key that triggers autoScale(); <code style={inlineCode}>null</code> to disable. Kept as a warn-once alias.</Td></tr>
           <tr><Td mono>disableDefaultDataLayer</Td><Td type>boolean</Td><Td mono>false</Td><Td>Omit the built-in scatter layer; register custom layers via registerDataLayer() instead</Td></tr>
           <tr><Td mono>disablePanZoom</Td><Td type>boolean</Td><Td mono>false</Td><Td>Disable wheel zoom and mouse-drag pan/zoom. ROI hit-testing still works. Used by LUTHistogramController to create a read-only histogram viewer.</Td></tr>
           <tr><Td mono>dataStore</Td><Td type>DataStore</Td><Td mono>(auto)</Td><Td>External DataStore; ownership NOT transferred — destroy() will not destroy it</Td></tr>
@@ -183,6 +185,8 @@ function PlotControllerSection() {
           <tr><Td mono>setAutoExpand(enabled)</Td><Td mono>void</Td><Td>Toggle whether appendData() widens the visible domain to encompass new data.</Td></tr>
           <tr><Td mono>setPanMode(mode)</Td><Td mono>void</Td><Td>Switch between 'follow' (velocity-based, cursor chases) and 'drag' (cursor-locked) pan modes. Unrecognized value warns and falls back to 'drag' (REL7).</Td></tr>
           <tr><Td mono>setMouseButtons(cfg)</Td><Td mono>void</Td><Td>Remap button→action bindings (F38) at runtime. Partial override of {'{ left, middle, right }'}; cancels any in-progress drag. Unrecognized action names fall back to the default with a console warning.</Td></tr>
+          <tr><Td mono>setKeyBindings(patch)</Td><Td mono>void</Td><Td>F41: remap ROI-creation and/or zoom/pan keybinds at runtime. Partial override merged over the defaults; forwards the ROI-relevant slice to ROIController.setKeyBindings().</Td></tr>
+          <tr><Td mono>setScalePresets(presets)</Td><Td mono>void</Td><Td>F41: replace the scale-presets array entirely — not a merge, unlike setKeyBindings()/setMouseButtons().</Td></tr>
           <tr><Td mono>setFollowPanSpeed(speed)</Td><Td mono>void</Td><Td>Set follow-pan velocity scalar. Recommended range 0.005–0.1; values below 0.001 are clamped.</Td></tr>
           <tr><Td mono>autoScale()</Td><Td mono>void</Td><Td>Fit both axes to full data extents (±5 % padding) or to the registered home domain if both x and y are set. Emits 'autoScaled'.</Td></tr>
           <tr><Td mono>setHomeDomain(xDomain, yDomain)</Td><Td mono>void</Td><Td>Register explicit home bounds used by autoScale(). Either argument may be <code style={inlineCode}>null</code> to fall back to data extents for that axis.</Td></tr>
@@ -385,9 +389,12 @@ function ROIControllerSection() {
 
       <div style={calloutStyle}>
         <strong>Constructor:</strong>{' '}
-        <code style={inlineCode}>new ROIController(viewport)</code> — takes a single{' '}
-        <code style={inlineCode}>ViewportController</code> argument (not an opts object).
-        PlotController constructs this automatically; you typically access it via{' '}
+        <code style={inlineCode}>new ROIController(viewport, opts?)</code> — takes a{' '}
+        <code style={inlineCode}>ViewportController</code> and an optional opts object
+        with <code style={inlineCode}>{'{ keyBindings }'}</code> (F41: partial override of the
+        ROI-creation action→key map, merged over defaults <code style={inlineCode}>{'{ createLinear: \'l\', createRect: \'r\', createVLine: \'v\', createHLine: \'h\', deleteROI: \'d\', cancel: \'escape\' }'}</code>).
+        PlotController constructs this automatically (forwarding its own <code style={inlineCode}>keyBindings</code> option's
+        ROI-relevant slice); you typically access it via{' '}
         <code style={inlineCode}>ctrl.roiController</code>.
       </div>
 
@@ -407,6 +414,7 @@ function ROIControllerSection() {
           <tr><Td mono>updateFromExternal(serializedROI)</Td><Td type>boolean</Td><Td>Version-gated update: rejects silently if <code style={inlineCode}>incoming.version {'<='} current.version</code>; rejects with a <code style={inlineCode}>console.warn</code> naming the offending field for a shape-invalid payload (missing/wrong-type id/type/version/domain — REL7). Emits 'roiExternalUpdate' + 'roisChanged' on accept. Returns true if accepted.</Td></tr>
           <tr><Td mono>enterCreateMode(type)</Td><Td mono>void</Td><Td>Put controller in creation mode: 'linear' (2-click), 'rect' (2-click), 'vline' (1-click), 'hline' (1-click). Emits 'modeChanged'.</Td></tr>
           <tr><Td mono>cancelCreateMode()</Td><Td mono>void</Td><Td>Exit creation mode without placing a ROI. Emits 'modeChanged'.</Td></tr>
+          <tr><Td mono>setKeyBindings(patch)</Td><Td mono>void</Td><Td>F41: remap ROI-creation keybinds at runtime. Partial override merged over the defaults; invalid/unrecognized values warn and fall back.</Td></tr>
         </tbody>
       </table>
 

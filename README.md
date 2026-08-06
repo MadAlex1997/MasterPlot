@@ -202,9 +202,11 @@ Central controller. Extends `EventEmitter`. Owns the render loop, deck.gl instan
 | `timeOriginUnits` | `'seconds'\|'ms'` | `'seconds'` | F40: unit convention for x-domain offsets relative to `timeOrigin` |
 | `panMode` | `'follow'\|'drag'` | `'drag'` | Initial pan mode |
 | `mouseButtons` | `object` | `{ left: 'pan', middle: 'none', right: 'zoomDrag' }` | Button→action map (F38). Values: `'pan'`, `'zoomDrag'` (F6), `'rectZoom'` (F37, opt-in), `'none'` |
+| `keyBindings` | `object` | see [Configurable Keybindings](#configurable-keybindings-f41) | F41: action→key map covering ROI creation + zoom/pan; `null` per-action to disable |
+| `scalePresets` | `object[]` | `[]` | F41: opt-in fixed-view-jump keybinds; see [Scale Presets](#scale-presets-f41) |
 | `bordered` | `boolean` | `true` | Fill axis gutter areas with the container element's CSS `backgroundColor` before rendering ticks |
 | `autoExpand` | `boolean` | `true` | Expand domain automatically when new data exceeds current bounds |
-| `autoScaleKey` | `string\|null` | `' '` | Keyboard key that triggers `autoScale()`; `null` to disable the spacebar binding |
+| `autoScaleKey` | `string\|null` | `' '` | **Deprecated** — use `keyBindings.autoScale` instead. Keyboard key that triggers `autoScale()`; `null` to disable. Kept as a warn-once alias. |
 | `disableDefaultDataLayer` | `boolean` | `false` | Omit the built-in scatter layer; register custom layers via `registerDataLayer()` instead |
 | `disablePanZoom` | `boolean` | `false` | Disable wheel zoom and mouse-drag pan/zoom. ROI hit-testing still works. Used by `LUTHistogramController`. |
 | `dataStore` | `DataStore` | (auto) | External DataStore; ownership NOT transferred — `destroy()` will not destroy it |
@@ -232,6 +234,8 @@ Central controller. Extends `EventEmitter`. Owns the render loop, deck.gl instan
 | `dataXToEpochSeconds(x)` | `number` | F40: convert a data-x offset to absolute epoch seconds (double precision). Throws if `timeOrigin` was not set. |
 | `epochSecondsToDataX(epochSeconds)` | `number` | F40: inverse of `dataXToEpochSeconds()` — convert an absolute timestamp to the small offset to write into `DataStore`/ROI positions. |
 | `dataXToDate(x)` | `Date` | F40: convenience, millisecond precision only — prefer `dataXToEpochSeconds()` for full-precision display. |
+| `setKeyBindings(patch)` | `void` | F41: remap ROI-creation and/or zoom/pan keybinds at runtime. Partial override, merged over the defaults; forwards the ROI-relevant slice to `ROIController`. |
+| `setScalePresets(presets)` | `void` | F41: replace the scale-presets array entirely (not a merge, unlike `setKeyBindings`/`setMouseButtons`). |
 
 ### Getters
 
@@ -422,6 +426,54 @@ ctrl.autoScale();
 // Register an explicit home domain — spacebar restores these exact bounds instead of scanning data
 ctrl.setHomeDomain([0, 10], [0, 100]);
 ```
+
+### Configurable Keybindings (F41)
+
+`PlotController` maps every keyboard-driven action to a key via `keyBindings` (constructor option) or `setKeyBindings()` (runtime), mirroring `mouseButtons`' merge-over-defaults pattern. This covers both ROI-creation actions (forwarded to `ROIController`) and zoom/pan actions (handled directly). Pass `null` for an action to disable its key entirely.
+
+| Action | Default key | Handled by |
+|---|---|---|
+| `createLinear` | `l` | ROIController |
+| `createRect` | `r` | ROIController |
+| `createVLine` | `v` | ROIController |
+| `createHLine` | `h` | ROIController |
+| `deleteROI` | `d` | ROIController |
+| `cancel` | `Escape` | ROIController |
+| `autoScale` | `Space` | PlotController |
+| `zoomIn` | `=` | PlotController — `viewport.scaleDomainFromMidpointX/Y(1.25)` |
+| `zoomOut` | `-` | PlotController — `viewport.scaleDomainFromMidpointX/Y(0.8)` |
+| `panLeft` / `panRight` / `panUp` / `panDown` | arrow keys | PlotController — `viewport.panByPixels()`, 40px step |
+
+```js
+// Remap ROI creation to different keys and disable delete-by-key
+ctrl.setKeyBindings({ createLinear: 'q', createRect: 'w', deleteROI: null });
+
+// ROIController is independently configurable too, if used standalone
+import { ROIController } from './src/plot/ROI/ROIController.js';
+const roiCtrl = new ROIController(viewport, { keyBindings: { cancel: 'x' } });
+```
+
+Arrow-key panning follows the "camera pans toward the arrow" convention (matching F5's follow-pan mode) — `ArrowRight` reveals more content to the right, `ArrowUp` reveals more content above. Note: `keyBindings` keys are scoped per sub-controller — a preset or zoom-action key colliding with a ROI-action key (e.g. binding `zoomIn` to `l`) will fire both, since they're independent `keydown` listeners.
+
+`opts.autoScaleKey` (the old F23 option) is **deprecated** in favor of `keyBindings.autoScale`; it's still accepted as a warn-once alias for backward compatibility.
+
+#### Scale Presets (F41)
+
+Bind a key to a fixed-view jump on one or both axes — e.g. press `1` to snap the y-axis to a known sensor range while leaving the current x-view untouched:
+
+```js
+const ctrl = new PlotController({
+  scalePresets: [
+    { bind: '1', yMin: 0, yMax: 200 },                    // y-only; x stays as-is
+    { bind: '2', xMin: 0, xMax: 10, yMin: -5, yMax: 5 },   // both axes
+  ],
+});
+
+// Replace the whole array at runtime (not a merge, unlike setKeyBindings/setMouseButtons)
+ctrl.setScalePresets([{ bind: '3', yMin: -1, yMax: 1 }]);
+```
+
+No default presets — bounds are domain-specific, so this is fully opt-in. Invalid entries (missing `bind`, a one-sided `xMin`/`xMax` pair, non-finite bounds, or `min === max`) are skipped with a console warning rather than thrown. Recommend digits (`1`–`9`) as bind keys to avoid colliding with the default ROI/zoom letter keys.
 
 ---
 
@@ -886,6 +938,8 @@ signals.trimBefore(signals.xCounter - windowSize);
 | `H` | Horizontal LineROI | one click |
 | `D` | Delete selected ROI | — |
 | `Esc` | Cancel creation mode | — |
+
+These are the defaults — all six keys are configurable via `keyBindings` / `setKeyBindings()` (F41); see [Configurable Keybindings](#configurable-keybindings-f41).
 
 ### Behaviour Flags
 
