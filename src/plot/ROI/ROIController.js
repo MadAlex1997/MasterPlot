@@ -9,7 +9,7 @@
  *   current axis scales.  This means ROI positions are always in data space
  *   and remain valid across zoom/pan operations.
  *
- * Creation modes:
+ * Creation modes (F41: keys are configurable via opts.keyBindings / setKeyBindings()):
  *   'L' key → LinearRegion creation (2 clicks: x1, x2)
  *   'R' key → RectROI creation (2 clicks: top-left, bottom-right)
  *   'D' key → delete active/selected ROI
@@ -62,15 +62,37 @@ function _validateSerializedROI(s) {
   return null;
 }
 
+// F41: configurable ROI-creation keybinds — action name -> key (lowercased).
+// 'deleteROI' fires regardless of mouse position (see _onKeyDown); the rest
+// are gated on the mouse being over this controller's canvas.
+const DEFAULT_ROI_KEY_BINDINGS = {
+  createLinear: 'l',
+  createRect:   'r',
+  createVLine:  'v',
+  createHLine:  'h',
+  deleteROI:    'd',
+  cancel:       'escape',
+};
+const VALID_ROI_KEY_ACTIONS = new Set(Object.keys(DEFAULT_ROI_KEY_BINDINGS));
+
 export class ROIController extends EventEmitter {
   /**
    * @param {ViewportController} viewport
+   * @param {object} [opts]
+   * @param {object} [opts.keyBindings] — F41: partial override of
+   *   { createLinear, createRect, createVLine, createHLine, deleteROI, cancel },
+   *   merged over DEFAULT_ROI_KEY_BINDINGS. Unrecognized action names or
+   *   non-string/empty values warn and fall back to the default.
    */
-  constructor(viewport) {
+  constructor(viewport, opts = {}) {
     super();
 
     this._viewport       = viewport;
     this._constraintEngine = new ConstraintEngine();
+
+    // F41: configurable keybinds — this._keyBindings: { [action]: key }
+    this._keyBindings = null;
+    this._setKeyBindingMap(opts.keyBindings);
 
     // All ROIs keyed by id
     this._rois = new Map();
@@ -301,10 +323,67 @@ export class ROIController extends EventEmitter {
 
   // ─── Event handlers ───────────────────────────────────────────────────────────
 
+  // ─── F41: Configurable keybinds ───────────────────────────────────────────────
+
+  /**
+   * Remap ROI-creation keybinds at runtime. Partial override, merged over
+   * DEFAULT_ROI_KEY_BINDINGS (not over the current map — matches setMouseButtons()'s
+   * "merge over the default" semantics from F38).
+   * @param {object} patch — subset of { createLinear, createRect, createVLine, createHLine, deleteROI, cancel }
+   */
+  setKeyBindings(patch) {
+    this._setKeyBindingMap(patch);
+  }
+
+  /** @private */
+  _setKeyBindingMap(cfg) {
+    const merged = { ...DEFAULT_ROI_KEY_BINDINGS, ...(cfg || {}) };
+    const map = {};
+    const seen = new Map(); // key -> action, for collision detection
+
+    for (const action of VALID_ROI_KEY_ACTIONS) {
+      let key = merged[action];
+      if (key === null) {
+        // Explicitly disabled — no key triggers this action.
+        map[action] = null;
+        continue;
+      }
+      if (typeof key !== 'string' || key.length === 0) {
+        console.warn(
+          `ROIController: invalid keyBindings.${action} value ${JSON.stringify(merged[action])}; ` +
+          `falling back to default "${DEFAULT_ROI_KEY_BINDINGS[action]}"`
+        );
+        key = DEFAULT_ROI_KEY_BINDINGS[action];
+      }
+      key = key.toLowerCase();
+      map[action] = key;
+
+      const prior = seen.get(key);
+      if (prior) {
+        console.warn(`ROIController: keyBindings "${prior}" and "${action}" both bind to "${key}"; both will fire on that keypress.`);
+      }
+      seen.set(key, action);
+    }
+
+    // Warn on unrecognized action names in the supplied config (ignored otherwise)
+    if (cfg) {
+      for (const action of Object.keys(cfg)) {
+        if (!VALID_ROI_KEY_ACTIONS.has(action)) {
+          console.warn(`ROIController: unknown keyBindings action "${action}"; ignored.`);
+        }
+      }
+    }
+
+    this._keyBindings = map;
+  }
+
   _onKeyDown(e) {
-    // D key: delete active/selected ROI regardless of whether the mouse is
-    // over this canvas — allows deletion after selecting from a table row.
-    if (e.key.toLowerCase() === 'd') {
+    const k = e.key.toLowerCase();
+    const kb = this._keyBindings;
+
+    // deleteROI fires regardless of whether the mouse is over this canvas —
+    // allows deletion after selecting from a table row.
+    if (k === kb.deleteROI) {
       const target = this._activeROI
         ?? [...this._rois.values()].find(r => r.selected)
         ?? null;
@@ -316,25 +395,11 @@ export class ROIController extends EventEmitter {
     // so multiple plots on the same page don't all activate simultaneously.
     if (!this._mouseIsOver) return;
 
-    switch (e.key.toLowerCase()) {
-      case 'l':
-        this.enterCreateMode('linear');
-        break;
-      case 'r':
-        this.enterCreateMode('rect');
-        break;
-      case 'v':
-        this.enterCreateMode('vline');
-        break;
-      case 'h':
-        this.enterCreateMode('hline');
-        break;
-      case 'escape':
-        this.cancelCreateMode();
-        break;
-      default:
-        break;
-    }
+    if (k === kb.createLinear) this.enterCreateMode('linear');
+    else if (k === kb.createRect) this.enterCreateMode('rect');
+    else if (k === kb.createVLine) this.enterCreateMode('vline');
+    else if (k === kb.createHLine) this.enterCreateMode('hline');
+    else if (k === kb.cancel) this.cancelCreateMode();
   }
 
   _onMouseDown(e) {

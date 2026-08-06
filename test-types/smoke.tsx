@@ -50,7 +50,14 @@ const ctrl = new PlotController({
   disablePanZoom: false,
   mouseButtons: { middle: 'rectZoom' },
   panMode: 'drag',
+  // F41
+  keyBindings: { createLinear: 'q', zoomIn: 'i', panLeft: null },
+  scalePresets: [{ bind: '1', yMin: 0, yMax: 200 }, { bind: '2', xMin: 0, xMax: 10 }],
 });
+
+// F41: configurable keybindings + scale presets
+ctrl.setKeyBindings({ zoomOut: 'o' });
+ctrl.setScalePresets([{ bind: '3', xMin: 0, xMax: 1, yMin: 0, yMax: 1 }]);
 
 ctrl.on('domainChanged', ({ xDomain, yDomain }) => {
   const x: Domain = xDomain;
@@ -95,6 +102,9 @@ void hist.counts;
 
 // ── ROI system ───────────────────────────────────────────────────────────
 const roiCtrl: ROIController = ctrl.roiController;
+roiCtrl.setKeyBindings({ createRect: 'z', deleteROI: null }); // F41
+const standaloneRoiCtrl = new ROIController(viewport, { keyBindings: { cancel: 'esc' } }); // F41
+void standaloneRoiCtrl;
 const region = new LinearRegion({ x1: 0, x2: 10 });
 const rect = new RectROI({ x1: 0, x2: 5, y1: 0, y2: 5, xLocked: true });
 const line = new LineROI({ orientation: 'vertical', mode: 'vline-half-top', position: 3, label: 'P-wave' });

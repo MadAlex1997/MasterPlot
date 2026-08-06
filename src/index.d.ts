@@ -560,8 +560,23 @@ export interface ModeChangedPayload {
   mode: 'idle' | 'createLinear' | 'createRect' | 'createVLine' | 'createHLine';
 }
 
+/** F41: ROI-creation action→key map. Pass null for an action to disable its key. */
+export interface ROIKeyBindingsConfig {
+  createLinear?: string | null;
+  createRect?: string | null;
+  createVLine?: string | null;
+  createHLine?: string | null;
+  deleteROI?: string | null;
+  cancel?: string | null;
+}
+
+export interface ROIControllerOptions {
+  /** F41: partial override, merged over the default { l, r, v, h, d, escape } map. */
+  keyBindings?: ROIKeyBindingsConfig;
+}
+
 export class ROIController extends EventEmitter {
-  constructor(viewport: ViewportController);
+  constructor(viewport: ViewportController, opts?: ROIControllerOptions);
 
   init(canvas: HTMLElement): void;
   destroy(): void;
@@ -571,6 +586,8 @@ export class ROIController extends EventEmitter {
   addROI(roi: ROIBase): void;
   deleteROI(id: string): void;
   setFlags(id: string, flagsPatch: Partial<ROIFlags>): void;
+  /** F41: remap ROI-creation keybinds at runtime. Partial override, merged over the defaults. */
+  setKeyBindings(patch: ROIKeyBindingsConfig): void;
 
   serializeAll(): SerializedROI[];
   deserializeAll(array: SerializedROI[]): void;
@@ -967,6 +984,33 @@ export class LUTHistogramController {
 // PlotController (src/plot/PlotController.js)
 // ════════════════════════════════════════════════════════════════════════
 
+/**
+ * F41: unified action→key map. ROI-creation actions (createLinear/createRect/
+ * createVLine/createHLine/deleteROI/cancel) are forwarded to ROIController;
+ * the rest are handled directly by PlotController. null disables an action.
+ */
+export interface KeyBindingsConfig extends ROIKeyBindingsConfig {
+  autoScale?: string | null;
+  zoomIn?: string | null;
+  zoomOut?: string | null;
+  panLeft?: string | null;
+  panRight?: string | null;
+  panUp?: string | null;
+  panDown?: string | null;
+}
+
+/**
+ * F41: a keybind that jumps the view to fixed bounds on whichever axis/axes
+ * are supplied; an axis with no bounds given is left at its current value.
+ */
+export interface ScalePreset {
+  bind: string;
+  xMin?: number;
+  xMax?: number;
+  yMin?: number;
+  yMax?: number;
+}
+
 export type MouseAction = 'pan' | 'zoomDrag' | 'rectZoom' | 'none';
 
 export interface MouseButtonsConfig {
@@ -1017,6 +1061,14 @@ export interface PlotControllerOptions {
 
   /** F38: partial override, merged over { left: 'pan', middle: 'none', right: 'zoomDrag' }. */
   mouseButtons?: MouseButtonsConfig;
+  /**
+   * F41: action→key map, merged over the defaults. Covers ROI-creation actions
+   * (forwarded to ROIController) plus 'autoScale'/'zoomIn'/'zoomOut'/'panLeft'/
+   * 'panRight'/'panUp'/'panDown'. Pass null for an action to disable its key.
+   */
+  keyBindings?: KeyBindingsConfig;
+  /** F41: opt-in — press `bind` to jump the view to the given bounds. No defaults. */
+  scalePresets?: ScalePreset[];
 
   /** @default true */
   autoExpand?: boolean;
@@ -1026,7 +1078,10 @@ export interface PlotControllerOptions {
   bordered?: boolean;
   /** Unrecognized values warn and fall back to 'drag' (REL7). @default 'drag' */
   panMode?: 'drag' | 'follow';
-  /** Key that triggers autoScale(). null/'' disables the listener. @default ' ' */
+  /**
+   * DEPRECATED — use keyBindings.autoScale instead. Kept as a warn-once alias.
+   * Key that triggers autoScale(); null disables it. @default ' '
+   */
   autoScaleKey?: string | null;
   /** ARCH-B: wraps all data layers + ROI layer into a single PlotLayer composite. @default false */
   usePlotLayer?: boolean;
@@ -1066,6 +1121,10 @@ export class PlotController extends EventEmitter {
   setPanMode(mode: 'follow' | 'drag'): void;
   setFollowPanSpeed(speed: number): void;
   setMouseButtons(cfg?: MouseButtonsConfig): void;
+  /** F41: remap ROI-creation and/or zoom/pan keybinds at runtime. Partial override, merged over the defaults. */
+  setKeyBindings(patch: KeyBindingsConfig): void;
+  /** F41: replace the scale-presets array entirely (not a merge). */
+  setScalePresets(presets: ScalePreset[]): void;
 
   autoScale(): void;
   setHomeDomain(xDomain: Domain | null, yDomain: Domain | null): void;

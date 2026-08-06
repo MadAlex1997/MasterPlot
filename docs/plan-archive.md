@@ -5388,3 +5388,127 @@ was a stale "prototype" framing left in two doc pages that hadn't been swept up 
   and Phase 10 status line are updated alongside it to stop claiming REL9 is pending.
 
 ---
+
+## F41 [COMPLETED] Configurable Keybindings (ROI Creation + Zoom/Pan + Scale Presets)
+
+**Branch:** `feature/F41`
+**Completed:** 2026-08-05
+**Depends on:** none (independent of F39/F40/EX22)
+
+### Problem
+
+`ROIController._onKeyDown` hardcoded `d`/`l`/`r`/`v`/`h`/`Escape`; its constructor took no
+`opts`. `PlotController` had exactly one configurable key (`autoScaleKey`, F23), no keyboard
+zoom-in/out, arrow-key panning, or a way to jump to a fixed preset view.
+
+### Changes made
+
+**`src/plot/ROI/ROIController.js`:**
+- Constructor is now `(viewport, opts = {})`, accepting `opts.keyBindings` scoped to
+  `createLinear`/`createRect`/`createVLine`/`createHLine`/`deleteROI`/`cancel` (defaults
+  `l`/`r`/`v`/`h`/`d`/`escape`, unchanged from pre-F41 behavior).
+- New `setKeyBindings(patch)` + private `_setKeyBindingMap(cfg)`: merges the patch over
+  `DEFAULT_ROI_KEY_BINDINGS`, validates each value (non-empty string, or explicit `null` to
+  disable that action's key — warn + fall back to default on anything else), warns on
+  unrecognized action names in the supplied config and on two actions sharing the same key
+  (both still fire; not treated as an error).
+- `_onKeyDown` rewritten to look up `e.key.toLowerCase()` against the configured map instead
+  of a hardcoded switch. Preserved exactly: `deleteROI` fires regardless of `_mouseIsOver`
+  (deletion after selecting from a table row); the rest stay gated on it.
+
+**`src/plot/PlotController.js`:**
+- New module-level `DEFAULT_KEY_BINDINGS` unifying ROI actions (forwarded to `ROIController`)
+  and new zoom/pan actions: `autoScale`(`' '`), `zoomIn`(`'='`), `zoomOut`(`'-'`),
+  `panLeft`/`panRight`/`panUp`/`panDown` (arrow keys).
+- New `opts.keyBindings` constructor option, `setKeyBindings(patch)` runtime setter (mirrors
+  `setMouseButtons()`; forwards the ROI-relevant slice to `roiController.setKeyBindings()`),
+  and internal `_setKeyBindingMap`/`_pickRoiKeyBindings` following the same validate/warn/
+  fallback/collision-warn shape as `ROIController`'s (and F38's `_setMouseButtonMap`)
+  precedent. `_keyBindings` is built *before* `new ROIController(...)` so the ROI slice can
+  be passed at construction time.
+- `opts.autoScaleKey` (F23) is **kept working as a deprecated alias**, not removed — the
+  package is already published (v1.0.2), so removing it would be a breaking change requiring
+  a major bump per REL6's semver policy. If supplied (and `keyBindings.autoScale` wasn't also
+  explicitly given), it's mapped into `keyBindings.autoScale` with a one-time `console.warn`;
+  falsy values (`null`/`''`) disable the key, matching the old semantics exactly.
+- `zoomIn`/`zoomOut` call the existing F21 `viewport.scaleDomainFromMidpointX/Y(factor)`
+  (`1.25` in, `0.8` out — `factor > 1` = zoom in, per that method's own docstring).
+  `panLeft`/`panRight`/`panUp`/`panDown` call `viewport.panByPixels({dx, dy})` with a 40px
+  step. **Sign convention locked to "camera pans toward the arrow"** (matching F5's
+  follow-pan precedent — both `dx` and `dy` treated symmetrically, per the housekeeping fix
+  to `prompt.md`'s Y-axis Coordinate Convention section done alongside this feature, since
+  the doc's own prior "Follow scroll" example was inconsistent with F5's actual shipped
+  code): `panRight → dx:-40`, `panLeft → dx:+40`, `panUp → dy:+40`, `panDown → dy:-40`.
+  All zoom/pan/autoScale actions stay gated behind `!this._disablePanZoom` (ROI keys remain
+  ungated, handled entirely inside `ROIController`, matching pre-existing semantics exactly).
+
+**Scale presets (new capability, not in the original three feature requests — added during
+plan review at the user's request):**
+- New `opts.scalePresets`: an array, not part of `keyBindings` (arbitrary count, no sensible
+  shared defaults since bounds are domain-specific) — defaults to `[]`, fully opt-in. Each
+  entry `{ bind, xMin?, xMax?, yMin?, yMax? }`: either axis pair is optional, but if either
+  half of a pair is present the other must be too, both finite, and `min !== max` (reusing
+  REL7's `_validateDomain` precedent) — invalid entries warn and are skipped, not fatal.
+  Duplicate `bind` keys across presets warn; the last one wins.
+- New `setScalePresets(presets)` — **replaces** the whole array rather than merging (documented
+  as a deliberate difference from `setKeyBindings`/`setMouseButtons`, since there's no
+  meaningful "default array" to merge a patch against).
+- Handled in the same `_onKeyDown`, same `!disablePanZoom` gate: look up the pressed key in a
+  prebuilt `Map<key, preset>`; for each axis present in the matched preset, override that
+  domain, otherwise keep the viewport's current value via `getXDomain()`/`getYDomain()`;
+  apply atomically via the existing `viewport.setDomains(xDomain, yDomain)`.
+- Documented, not silently papered over: preset keys are checked for collisions against each
+  other but **not** against `keyBindings` (separate `ROIController` listener for ROI actions,
+  separate lookup table in `PlotController` for zoom/pan/preset actions) — binding a preset
+  to `'l'` fires alongside ROI's `createLinear` since they're independent listeners. Digits
+  (`1`–`9`) recommended in docs as the natural collision-free convention.
+
+**`src/index.d.ts`:** new `ROIKeyBindingsConfig`/`ROIControllerOptions`/`KeyBindingsConfig`/
+`ScalePreset` interfaces; `ROIController` constructor gains `opts?`, gains `setKeyBindings()`;
+`PlotControllerOptions` gains `keyBindings`/`scalePresets`, `autoScaleKey` marked deprecated;
+`PlotController` gains `setKeyBindings()`/`setScalePresets()`. `test-types/smoke.tsx` exercises
+the new constructor options, both runtime setters, and standalone `new ROIController(viewport,
+{ keyBindings })` construction.
+
+### Tests
+
+- `test/plot/ROI/ROIController.test.js` (new, 12 tests): default keybind behavior (mode
+  changes, `Escape` cancel, `d` delete bypassing `_mouseIsOver`, delete via `selected` when no
+  `_activeROI`), `setKeyBindings()` remap (old key stops working, new key takes over, including
+  for `deleteROI`), constructor `opts.keyBindings`, invalid-value warn+fallback, unrecognized
+  action name warning, same-key collision warning, and one end-to-end test using a real
+  `document.createElement('canvas')` + `init()` + a genuine `window.dispatchEvent(new
+  KeyboardEvent(...))` to confirm the actual DOM wiring path (not just direct `_onKeyDown()`
+  calls) — confirmed `ROIController.init()` needs no WebGL/`getContext` calls, so this is fully
+  testable in jsdom.
+- `test/plot/PlotController.test.js` additions (constructor-only, matching this file's existing
+  documented WebGL-less scope): `keyBindings` defaults/merge/validation/collision-warning,
+  forwarding the ROI slice to the constructed `ROIController`, `null`-disables-an-action,
+  `setKeyBindings()` updating both sides; the `autoScaleKey` deprecated-alias mapping,
+  `null`-disables, and `keyBindings.autoScale`-takes-precedence-when-both-given cases;
+  `scalePresets` defaulting/validation (missing bind, no axis pair, partial pair, non-finite,
+  `min===max`, duplicate bind, non-array) and `setScalePresets()` replacing rather than merging.
+- Full suite: 171/171 passing (up from 136 on this branch's `main` baseline — 12 new
+  `ROIController.test.js` + 23 new `PlotController.test.js` cases).
+
+### Docs
+
+`examples/ExampleApp.jsx`'s `HelpOverlay` controls list gained rows for `=`/`-` (keyboard
+zoom) and arrow keys (pan). `README.md` gained a "Configurable Keybindings (F41)" section
+(table of all actions/defaults/handlers) and a "Scale Presets (F41)" subsection, updated the
+`PlotController` options/methods tables, and added a note to the ROI "Creation" keybind table
+that all six keys are now configurable. `examples/docs/ApiReferencePage.jsx` gained matching
+option/method rows plus an updated `ROIController` constructor callout.
+
+### Verification
+
+- `npm test` — 171/171 passing.
+- `npm run build` / `npm run lint` (0 errors, 2 pre-existing unrelated warnings) /
+  `npm run typecheck` all clean.
+- **Not independently visually verified in a browser** — no screenshot/browser-automation
+  tool was available in this environment. Default-behavior-unchanged and remap-works claims
+  rest on the unit tests above plus code review, not manual interactive confirmation of feel
+  (e.g. arrow-key pan direction, zoom-in/out responsiveness) — flagged rather than claimed as
+  fully verified, matching this session's standard for UI/interaction changes.
+
+---
