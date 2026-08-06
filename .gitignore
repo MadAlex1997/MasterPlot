@@ -5,3 +5,5 @@ dist/
 .env
 package-lock.json
 *.tgz
+offline-bundle/
+*-offline-bundle.tar.gz

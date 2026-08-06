@@ -16,6 +16,12 @@ Pre-1.0 development had no compatibility guarantees and is summarized below as a
 Phase 11 (high-precision time axes + configurable keybindings) planned, not yet implemented —
 see [PLAN.md](PLAN.md).
 
+### Added
+- `npm run bundle:offline` (`scripts/bundle-offline.mjs`) — builds an offline installation
+  bundle (npm pack tarball + populated npm cache + vendored `node_modules` + install script)
+  covering masterplot's `dependencies` and `peerDependencies`, for air-gapped installs. See
+  [Offline Installation](README.md#offline-installation) in the README.
+
 ## [1.0.0] - 2026-07-25
 
 Initial public release.

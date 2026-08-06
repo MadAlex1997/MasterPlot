@@ -41,6 +41,37 @@ disagree:
 
 `CHANGELOG.md` does **not** ship in the package — don't look for it there.
 
+## Installing on an air-gapped machine
+
+If `masterplot` isn't in `node_modules` yet and there is no registry access,
+`npm install masterplot` won't work — look for an offline bundle instead of
+giving up or stubbing the dependency:
+
+```
+ls masterplot-*-offline-bundle.tar.gz offline-bundle/ 2>&1   # already present in this project?
+```
+
+If one exists (or someone with network access hands you one — built from the
+`masterplot` source repo via `npm run bundle:offline`, see
+`scripts/bundle-offline.mjs` there), it contains the `masterplot` package
+tarball plus every `dependencies`/`peerDependencies` package, installable
+with **zero network access**:
+
+```
+tar -xzf masterplot-*-offline-bundle.tar.gz    # → offline-bundle/
+cat offline-bundle/INSTALL-OFFLINE.md          # full instructions, both methods below
+```
+
+- **Method A (recommended):** `./offline-bundle/install-offline.sh /path/to/your/project`
+  — installs via a populated npm cache (`npm install --offline --cache ...`),
+  merges cleanly with a project that already has other dependencies.
+- **Method B (fastest):** extract `offline-bundle/node_modules.tar.gz` and
+  `offline-bundle/masterplot-<version>.tgz` directly into your project's
+  `node_modules/` — no `npm` invocation at all.
+
+Do not attempt to hand-write stub versions of `masterplot` or its peer
+dependencies to work around a missing offline bundle — ask for one instead.
+
 ## Entry points
 
 | Import from | Contains |
@@ -80,6 +111,70 @@ ctrl.appendData({ x: new Float32Array([...]), y: new Float32Array([...]) });
 // ...
 ctrl.destroy(); // on teardown
 ```
+
+## Time axes (F39/F40)
+
+Time-scale tick labels (`scaleType: 'time'`) auto-switch granularity with
+zoom level (year → ... → millisecond) via d3-scale's built-in formatter — no
+configuration needed.
+
+For **microsecond-precision absolute timestamps**, don't put raw epoch
+values into `x`/`y` `Float32Array` buffers — float32 only holds ~7
+significant digits, which aliases point positions at that magnitude. Instead
+use `timeOrigin`: keep small offsets-from-a-reference-time in the data
+buffer, and let `PlotController` reconstruct absolute time (double
+precision) for tick labels and conversions:
+
+```js
+const ctrl = new PlotController({
+  timeOrigin: originMs,        // Date or epoch-ms reference
+  timeOriginUnits: 'seconds',  // x-domain offsets are in seconds since originMs (default)
+});
+ctrl.appendData({ x: offsetsInSeconds, y: ... }); // small offsets, not raw epoch values
+
+ctrl.dataXToEpochSeconds(offsetsInSeconds[0]); // → absolute epoch seconds, double precision
+ctrl.epochSecondsToDataX(absoluteTimestamp);   // → small offset to write back into buffers/ROIs
+ctrl.dataXToDate(x);                           // → Date, millisecond precision only
+```
+
+X-axis only. If you pass your own `xAxis` config alongside `timeOrigin`, it
+is never mutated — only the conversion methods activate; pass
+`buildEpochTickFormatter()` (also exported) to your own `xAxis.tickFormat`
+for the labels too. Rebase `timeOrigin` periodically in long-running
+live-streaming sessions — float32 precision re-exhausts even with a
+well-chosen origin.
+
+## Configurable keybindings (F41)
+
+Every keyboard-driven action — ROI creation (`l`/`r`/`v`/`h`/`d`/`escape`),
+zoom (`=`/`-`), pan (arrow keys), autoscale (`' '`) — is remappable via one
+`keyBindings` option (constructor or `setKeyBindings()` at runtime, merge-
+over-defaults like `mouseButtons`). Pass `null` for an action to disable its
+key.
+
+```js
+const ctrl = new PlotController({ keyBindings: { createLinear: 'q', deleteROI: null } });
+ctrl.setKeyBindings({ zoomIn: ']', zoomOut: '[' }); // runtime remap, merged over current
+```
+
+`opts.autoScaleKey` (pre-F41) still works but is deprecated — use
+`keyBindings.autoScale` instead.
+
+Opt-in `scalePresets` bind a key to a fixed-view jump on one or both axes
+(`setScalePresets()` **replaces** the array — not a merge, unlike
+`setKeyBindings`):
+
+```js
+const ctrl = new PlotController({
+  scalePresets: [{ bind: '1', xMin: 0, xMax: 100, yMin: -1, yMax: 1 }],
+});
+ctrl.setScalePresets([{ bind: '2', yMin: -10, yMax: 10 }]); // whole-array replace
+```
+
+Arrow-key pan direction is "camera pans toward the arrow" (`ArrowRight`
+reveals more content to the right). `keyBindings` are scoped per
+sub-controller — a preset/zoom key colliding with a ROI-action key fires
+both, since they're independent `keydown` listeners.
 
 ## Rules that matter to consumers
 
@@ -123,9 +218,11 @@ Dependencies" (same info as `package.json` → `peerDependencies`, but with
 narrative context).
 
 If a required peer is missing and you have no registry access, the fix is to
-vendor it (e.g. from a pre-populated package cache or an internal mirror),
-not to work around the missing import — do not stub or reimplement a peer
-dependency.
+vendor it (e.g. from a pre-populated package cache or an internal mirror) —
+the offline bundle described in "Installing on an air-gapped machine" above
+already includes every peer dependency if that's how `masterplot` got
+installed. Do not stub or reimplement a peer dependency to work around a
+missing one.
 
 ## Where to look next
 

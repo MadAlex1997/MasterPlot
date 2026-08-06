@@ -1372,6 +1372,18 @@ npm run lint         # eslint (src/, ui/, loaders/, test/) — correctness rules
 | `@loaders.gl/*` (optional) | `>=4.3.4 <5` | 4.3.4 |
 | `zstd-codec` (optional) | `>=0.1.5 <0.2.0` | 0.1.5 |
 
+### Offline Installation
+
+For air-gapped or network-restricted environments, `npm run bundle:offline` (`scripts/bundle-offline.mjs`) builds a self-contained bundle of masterplot plus every package in its `dependencies` and `peerDependencies` (including optional loaders):
+
+```bash
+npm run bundle:offline
+# → offline-bundle/                       (contents below)
+# → masterplot-<version>-offline-bundle.tar.gz  (single-file archive)
+```
+
+The bundle contains the `npm pack` tarball, a populated npm cache (`npm-cache.tar.gz`, for `npm install --offline --cache`), a vendored `node_modules.tar.gz` (extract-and-go, no npm step), a resolved `package-lock.json` for reference, and `install-offline.sh` (installs into a target project via the cache method — see `INSTALL-OFFLINE.md` inside the bundle for both methods in full). Regenerate it whenever `dependencies`/`peerDependencies` change.
+
 ### TypeScript
 
 MasterPlot ships hand-written `.d.ts` declarations for all three entry points (`masterplot`, `masterplot/ui`, `masterplot/loaders`) — no `@types/masterplot` package needed. `import { PlotController } from 'masterplot'` gets full autocomplete and type-checking out of the box. Declarations live next to their source (`src/index.d.ts`, `ui/index.d.ts`, `loaders/index.d.ts`) and are wired up via the `types` condition on each `exports` subpath in `package.json`. `test-types/smoke.tsx` is a throwaway fixture (not published) exercising a representative slice of the API — run `npm run typecheck` to catch declaration drift against the real source.
